@@ -37,7 +37,7 @@ env:
   DEFAULT_UNIVERSE: |-
     [
       {"platform": "linux/amd64", "os": "linux", "architecture": "amd64", "build-os": "ubuntu-latest"},
-      {"platform": "linux/arm64", "os": "linux", "architecture": "arm64", "build-os": "ubuntu-latest"}
+      {"platform": "linux/arm64", "os": "linux", "architecture": "arm64", "build-os": "ubuntu-24.04-arm"}
     ]
 
 jobs:
