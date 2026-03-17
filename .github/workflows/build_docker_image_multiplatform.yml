@@ -173,43 +173,16 @@ jobs:
           username: ${{ secrets.registry_username }}
           password: ${{ secrets.registry_token }}
 
-      - name: Capture current latest digest
-        id: previous-latest
-        run: |
-          if docker buildx imagetools inspect ${{ env.REGISTRY_IMAGE }}:latest >/dev/null 2>&1; then
-            digest=$(docker buildx imagetools inspect ${{ env.REGISTRY_IMAGE }}:latest | awk '/^Digest:/ {print $2; exit}')
-            if [[ "$digest" =~ ^sha256: ]]; then
-              echo "digest=$digest" >> $GITHUB_OUTPUT
-              echo "Previous latest digest: $digest"
-            else
-              echo "digest=" >> $GITHUB_OUTPUT
-              echo "Could not detect a valid latest digest."
-            fi
-          else
-            echo "digest=" >> $GITHUB_OUTPUT
-            echo "No existing latest tag found."
-          fi
-          
       - name: Create manifest list and push
         working-directory: /tmp/digests
         run: |
           docker buildx imagetools create \
             -t ${{ env.REGISTRY_IMAGE }}:${{ inputs.tag }} \
-            -t ${{ env.REGISTRY_IMAGE }}:latest \
             $(printf '${{ env.REGISTRY_IMAGE }}@sha256:%s ' *)
 
       - name: Inspect image
         run: |
           docker buildx imagetools inspect ${{ env.REGISTRY_IMAGE }}:${{ inputs.tag }}
-
-      - name: Show manual rollback command
-        if: ${{ steps.previous-latest.outputs.digest != '' && startsWith(steps.previous-latest.outputs.digest, 'sha256:') }}
-        run: |
-          echo "To roll back 'latest' locally, run:"
-          echo
-          echo "  docker buildx imagetools create -t ${{ env.REGISTRY_IMAGE }}:latest ${{ env.REGISTRY_IMAGE }}@${{ steps.previous-latest.outputs.digest }}"
-          echo
-          echo "Ensure you're logged in to ${{ inputs.registry_name }} and have push permissions."
 
 
       # - name: Repository Dispatch
