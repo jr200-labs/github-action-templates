@@ -109,6 +109,18 @@ jobs:
           username: ${{ secrets.registry_username }}
           password: ${{ secrets.registry_token }}
 
+      - name: Detect Dockerfile
+        id: detect-dockerfile
+        run: |
+          if [ -f docker/Dockerfile ]; then
+            echo "dockerfile=docker/Dockerfile" >> $GITHUB_OUTPUT
+          elif [ -f Dockerfile ]; then
+            echo "dockerfile=Dockerfile" >> $GITHUB_OUTPUT
+          else
+            echo "::error::No Dockerfile found at docker/Dockerfile or ./Dockerfile"
+            exit 1
+          fi
+
       - name: Build and push Docker image
         id: build-and-push
         uses: docker/build-push-action@v6
@@ -116,7 +128,7 @@ jobs:
           platforms: ${{ matrix.platform }}
           labels: ${{ steps.meta.outputs.labels }}
           outputs: type=image,name=${{ env.REGISTRY_IMAGE }},push-by-digest=true,name-canonical=true,push=true
-          file: docker/Dockerfile
+          file: ${{ steps.detect-dockerfile.outputs.dockerfile }}
           context: .
           provenance: false
           cache-from: type=gha
