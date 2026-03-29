@@ -74,8 +74,8 @@ jobs:
           SERVICES='[]'
 
           for svc in $(yq -r '.services | keys | .[]' "$REGISTRY"); do
-            vf=$(yq -r ".services.\"$svc\".version_file // empty" "$REGISTRY")
-            repo=$(yq -r ".services.\"$svc\".repo // empty" "$REGISTRY")
+            vf=$(yq -r ".services.\"$svc\".version_file // \"\"" "$REGISTRY")
+            repo=$(yq -r ".services.\"$svc\".repo // \"\"" "$REGISTRY")
 
             # Only Python services
             [ "$vf" = "pyproject.toml" ] || continue
