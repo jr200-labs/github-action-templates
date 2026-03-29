@@ -135,7 +135,7 @@ jobs:
         env:
           UV_GIT_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
-          uv python install
+          uv python install 3.12
           uv sync --group dev
 
       - name: Force-install library under test
