@@ -155,10 +155,18 @@ jobs:
             echo "Integration tests FAILED (test result: $TEST_RESULT)"
           fi
 
+      - name: Generate callback token
+        uses: actions/create-github-app-token@v2
+        id: callback-token
+        with:
+          app-id: ${{ secrets.app_id }}
+          private-key: ${{ secrets.app_private_key }}
+          owner: ${{ github.repository_owner }}
+
       - name: Dispatch result callback
         uses: peter-evans/repository-dispatch@v3
         with:
-          token: ${{ needs.generate-token.outputs.token }}
+          token: ${{ steps.callback-token.outputs.token }}
           repository: ${{ inputs.callback_repo }}
           event-type: ${{ inputs.callback_event_type }}
           client-payload: |-
