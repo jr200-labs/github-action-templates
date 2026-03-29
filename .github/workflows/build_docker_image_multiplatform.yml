@@ -126,7 +126,6 @@ jobs:
           fi
 
       - name: Write git token secret file
-        if: ${{ secrets.git_token != '' }}
         run: echo "${{ secrets.git_token }}" > /tmp/git_token
 
       - name: Build and push Docker image
