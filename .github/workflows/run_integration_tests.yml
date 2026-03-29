@@ -29,12 +29,28 @@ on:
         required: true
         type: string
     secrets:
-      cross_repo_token:
+      app_id:
         required: true
-        description: "PAT or GitHub App token with repo scope"
+        description: "GitHub App ID for cross-repo token generation"
+      app_private_key:
+        required: true
+        description: "GitHub App private key for cross-repo token generation"
 
 jobs:
+  generate-token:
+    runs-on: ubuntu-latest
+    outputs:
+      token: ${{ steps.app-token.outputs.token }}
+    steps:
+      - uses: actions/create-github-app-token@v1
+        id: app-token
+        with:
+          app-id: ${{ secrets.app_id }}
+          private-key: ${{ secrets.app_private_key }}
+          owner: ${{ github.repository_owner }}
+
   discover-services:
+    needs: generate-token
     runs-on: ubuntu-latest
     outputs:
       matrix: ${{ steps.discover.outputs.matrix }}
@@ -50,7 +66,7 @@ jobs:
       - name: Discover dependent Python services
         id: discover
         env:
-          GH_TOKEN: ${{ secrets.cross_repo_token }}
+          GH_TOKEN: ${{ needs.generate-token.outputs.token }}
           LIBRARY_NAME: ${{ inputs.library_name }}
           LIBRARY_REPO: ${{ inputs.library_repo }}
         run: |
@@ -82,7 +98,7 @@ jobs:
           echo "Discovered $COUNT services depending on $LIBRARY_NAME"
 
   test-service:
-    needs: discover-services
+    needs: [generate-token, discover-services]
     if: fromJson(needs.discover-services.outputs.count) > 0
     strategy:
       fail-fast: false
@@ -94,21 +110,21 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: ${{ matrix.repo }}
-          token: ${{ secrets.cross_repo_token }}
+          token: ${{ needs.generate-token.outputs.token }}
 
       - name: Install uv
         uses: astral-sh/setup-uv@v5
 
       - name: Install Python and sync dependencies
         env:
-          UV_GIT_TOKEN: ${{ secrets.cross_repo_token }}
+          UV_GIT_TOKEN: ${{ needs.generate-token.outputs.token }}
         run: |
           uv python install
           uv sync --group dev
 
       - name: Force-install library under test
         env:
-          UV_GIT_TOKEN: ${{ secrets.cross_repo_token }}
+          UV_GIT_TOKEN: ${{ needs.generate-token.outputs.token }}
         run: |
           uv pip install \
             "${{ inputs.library_name }} @ git+https://github.com/${{ inputs.library_repo }}.git@${{ inputs.library_tag }}" \
@@ -121,7 +137,7 @@ jobs:
         run: make test
 
   report-result:
-    needs: [discover-services, test-service]
+    needs: [generate-token, discover-services, test-service]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -131,7 +147,6 @@ jobs:
           TEST_RESULT="${{ needs.test-service.result }}"
           COUNT="${{ needs.discover-services.outputs.count }}"
 
-          # Pass if: all tests passed, or no services to test
           if [ "$TEST_RESULT" = "success" ] || [ "$TEST_RESULT" = "skipped" -a "$COUNT" = "0" ]; then
             echo "outcome=pass" >> $GITHUB_OUTPUT
             echo "Integration tests PASSED"
@@ -143,7 +158,7 @@ jobs:
       - name: Dispatch result callback
         uses: peter-evans/repository-dispatch@v3
         with:
-          token: ${{ secrets.cross_repo_token }}
+          token: ${{ needs.generate-token.outputs.token }}
           repository: ${{ inputs.callback_repo }}
           event-type: ${{ inputs.callback_event_type }}
           client-payload: |-
