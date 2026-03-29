@@ -1,0 +1,156 @@
+name: template-run-integration-tests
+
+on:
+  workflow_call:
+    inputs:
+      library_name:
+        description: "Pip package name to test (e.g. pyapi-service-kit)"
+        required: true
+        type: string
+      library_repo:
+        description: "GitHub repo containing the library (e.g. whengas/pyapi-service-kit)"
+        required: true
+        type: string
+      library_tag:
+        description: "Git tag of the library version to test"
+        required: true
+        type: string
+      service_registry_path:
+        description: "Path to service-registry.yaml in this repo"
+        required: false
+        type: string
+        default: "scripts/service-registry.yaml"
+      callback_repo:
+        description: "Repo to dispatch results back to"
+        required: true
+        type: string
+      callback_event_type:
+        description: "Event type for the callback dispatch"
+        required: true
+        type: string
+    secrets:
+      cross_repo_token:
+        required: true
+        description: "PAT or GitHub App token with repo scope"
+
+jobs:
+  discover-services:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.discover.outputs.matrix }}
+      count: ${{ steps.discover.outputs.count }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install yq
+        run: |
+          sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
+          sudo chmod +x /usr/local/bin/yq
+
+      - name: Discover dependent Python services
+        id: discover
+        env:
+          GH_TOKEN: ${{ secrets.cross_repo_token }}
+          LIBRARY_NAME: ${{ inputs.library_name }}
+          LIBRARY_REPO: ${{ inputs.library_repo }}
+        run: |
+          REGISTRY="${{ inputs.service_registry_path }}"
+          SERVICES='[]'
+
+          for svc in $(yq -r '.services | keys | .[]' "$REGISTRY"); do
+            vf=$(yq -r ".services.\"$svc\".version_file // empty" "$REGISTRY")
+            repo=$(yq -r ".services.\"$svc\".repo // empty" "$REGISTRY")
+
+            # Only Python services
+            [ "$vf" = "pyproject.toml" ] || continue
+            # Skip the library itself
+            [ "$repo" != "$LIBRARY_REPO" ] || continue
+
+            # Check if this service depends on the library
+            PYPROJECT=$(gh api "repos/$repo/contents/pyproject.toml" \
+              --jq '.content' 2>/dev/null | base64 -d 2>/dev/null || echo "")
+
+            if echo "$PYPROJECT" | grep -q "$LIBRARY_NAME"; then
+              SERVICES=$(echo "$SERVICES" | jq -c ". + [{\"service\": \"$svc\", \"repo\": \"$repo\"}]")
+              echo "  Found: $svc ($repo)"
+            fi
+          done
+
+          COUNT=$(echo "$SERVICES" | jq length)
+          echo "matrix=$SERVICES" >> $GITHUB_OUTPUT
+          echo "count=$COUNT" >> $GITHUB_OUTPUT
+          echo "Discovered $COUNT services depending on $LIBRARY_NAME"
+
+  test-service:
+    needs: discover-services
+    if: fromJson(needs.discover-services.outputs.count) > 0
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJson(needs.discover-services.outputs.matrix) }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout service
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ matrix.repo }}
+          token: ${{ secrets.cross_repo_token }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Install Python and sync dependencies
+        env:
+          UV_GIT_TOKEN: ${{ secrets.cross_repo_token }}
+        run: |
+          uv python install
+          uv sync --group dev
+
+      - name: Force-install library under test
+        env:
+          UV_GIT_TOKEN: ${{ secrets.cross_repo_token }}
+        run: |
+          uv pip install \
+            "${{ inputs.library_name }} @ git+https://github.com/${{ inputs.library_repo }}.git@${{ inputs.library_tag }}" \
+            --force-reinstall --no-deps
+
+      - name: Run checks
+        run: make check
+
+      - name: Run tests
+        run: make test
+
+  report-result:
+    needs: [discover-services, test-service]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Determine result
+        id: result
+        run: |
+          TEST_RESULT="${{ needs.test-service.result }}"
+          COUNT="${{ needs.discover-services.outputs.count }}"
+
+          # Pass if: all tests passed, or no services to test
+          if [ "$TEST_RESULT" = "success" ] || [ "$TEST_RESULT" = "skipped" -a "$COUNT" = "0" ]; then
+            echo "outcome=pass" >> $GITHUB_OUTPUT
+            echo "Integration tests PASSED"
+          else
+            echo "outcome=fail" >> $GITHUB_OUTPUT
+            echo "Integration tests FAILED (test result: $TEST_RESULT)"
+          fi
+
+      - name: Dispatch result callback
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ secrets.cross_repo_token }}
+          repository: ${{ inputs.callback_repo }}
+          event-type: ${{ inputs.callback_event_type }}
+          client-payload: |-
+            {
+              "result": "${{ steps.result.outputs.outcome }}",
+              "library_name": "${{ inputs.library_name }}",
+              "library_tag": "${{ inputs.library_tag }}",
+              "details_url": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}",
+              "services_tested": ${{ needs.discover-services.outputs.matrix }}
+            }

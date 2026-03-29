@@ -1,0 +1,59 @@
+name: template-request-integration-tests
+
+on:
+  workflow_call:
+    inputs:
+      tag:
+        description: "Release tag (e.g. v0.5.0)"
+        required: true
+        type: string
+      target_repo:
+        description: "Repo to dispatch integration tests to (e.g. whengas/whengas-iac)"
+        required: true
+        type: string
+      library_name:
+        description: "Pip package name being tested (e.g. pyapi-service-kit)"
+        required: true
+        type: string
+      library_repo:
+        description: "Repo containing the library (e.g. whengas/pyapi-service-kit)"
+        required: true
+        type: string
+      callback_repo:
+        description: "Repo to dispatch results back to (e.g. whengas/pyapi-service-kit)"
+        required: true
+        type: string
+      callback_event_type:
+        description: "Event type for the callback dispatch"
+        required: false
+        type: string
+        default: "dispatch-integration-result"
+    secrets:
+      cross_repo_token:
+        required: true
+        description: "PAT or GitHub App token with repo scope for cross-repo dispatch"
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch integration tests to target repo
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ secrets.cross_repo_token }}
+          repository: ${{ inputs.target_repo }}
+          event-type: dispatch-run-integration-tests
+          client-payload: |-
+            {
+              "library_name": "${{ inputs.library_name }}",
+              "library_repo": "${{ inputs.library_repo }}",
+              "library_tag": "${{ inputs.tag }}",
+              "callback_repo": "${{ inputs.callback_repo }}",
+              "callback_event_type": "${{ inputs.callback_event_type }}"
+            }
+
+      - name: Log dispatch
+        run: |
+          echo "Dispatched integration tests to ${{ inputs.target_repo }}"
+          echo "  library: ${{ inputs.library_name }}@${{ inputs.tag }}"
+          echo "  callback: ${{ inputs.callback_repo }} (${{ inputs.callback_event_type }})"
