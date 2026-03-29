@@ -30,6 +30,9 @@ on:
         required: true
       registry_token:
         required: true
+      git_token:
+        required: false
+        description: "Token for cloning private git dependencies during Docker build"
 
 env:
   IMAGE_NAME: ${{ inputs.image_name }}
@@ -122,6 +125,10 @@ jobs:
             exit 1
           fi
 
+      - name: Write git token secret file
+        if: ${{ secrets.git_token != '' }}
+        run: echo "${{ secrets.git_token }}" > /tmp/git_token
+
       - name: Build and push Docker image
         id: build-and-push
         uses: docker/build-push-action@v7
@@ -137,6 +144,8 @@ jobs:
           build-args: |
             BUILD_OS=${{ matrix.os }}
             BUILD_ARCH=${{ matrix.architecture }}
+          secrets: |
+            git_token=/tmp/git_token
 
       - name: Export digest
         run: |
