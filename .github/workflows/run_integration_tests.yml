@@ -37,26 +37,21 @@ on:
         description: "GitHub App private key for cross-repo token generation"
 
 jobs:
-  generate-token:
-    runs-on: ubuntu-latest
-    outputs:
-      token: ${{ steps.app-token.outputs.token }}
-    steps:
-      - uses: actions/create-github-app-token@v2
-        id: app-token
-        with:
-          app-id: ${{ secrets.app_id }}
-          private-key: ${{ secrets.app_private_key }}
-          owner: ${{ github.repository_owner }}
-
   discover-services:
-    needs: generate-token
     runs-on: ubuntu-latest
     outputs:
       matrix: ${{ steps.discover.outputs.matrix }}
       count: ${{ steps.discover.outputs.count }}
     steps:
       - uses: actions/checkout@v4
+
+      - name: Generate token
+        uses: actions/create-github-app-token@v2
+        id: app-token
+        with:
+          app-id: ${{ secrets.app_id }}
+          private-key: ${{ secrets.app_private_key }}
+          owner: ${{ github.repository_owner }}
 
       - name: Install yq
         run: |
@@ -66,7 +61,7 @@ jobs:
       - name: Discover dependent Python services
         id: discover
         env:
-          GH_TOKEN: ${{ needs.generate-token.outputs.token }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
           LIBRARY_NAME: ${{ inputs.library_name }}
           LIBRARY_REPO: ${{ inputs.library_repo }}
         run: |
@@ -82,13 +77,17 @@ jobs:
             # Skip the library itself
             [ "$repo" != "$LIBRARY_REPO" ] || continue
 
+            echo "  Checking $svc ($repo)..."
+
             # Check if this service depends on the library
             PYPROJECT=$(gh api "repos/$repo/contents/pyproject.toml" \
-              --jq '.content' 2>/dev/null | base64 -d 2>/dev/null || echo "")
+              --jq '.content' 2>&1 | base64 -d 2>/dev/null || echo "")
 
             if echo "$PYPROJECT" | grep -q "$LIBRARY_NAME"; then
               SERVICES=$(echo "$SERVICES" | jq -c ". + [{\"service\": \"$svc\", \"repo\": \"$repo\"}]")
-              echo "  Found: $svc ($repo)"
+              echo "    -> MATCH"
+            else
+              echo "    -> no match (content length: ${#PYPROJECT})"
             fi
           done
 
@@ -98,7 +97,7 @@ jobs:
           echo "Discovered $COUNT services depending on $LIBRARY_NAME"
 
   test-service:
-    needs: [generate-token, discover-services]
+    needs: discover-services
     if: fromJson(needs.discover-services.outputs.count) > 0
     strategy:
       fail-fast: false
@@ -106,25 +105,33 @@ jobs:
         include: ${{ fromJson(needs.discover-services.outputs.matrix) }}
     runs-on: ubuntu-latest
     steps:
+      - name: Generate token
+        uses: actions/create-github-app-token@v2
+        id: app-token
+        with:
+          app-id: ${{ secrets.app_id }}
+          private-key: ${{ secrets.app_private_key }}
+          owner: ${{ github.repository_owner }}
+
       - name: Checkout service
         uses: actions/checkout@v4
         with:
           repository: ${{ matrix.repo }}
-          token: ${{ needs.generate-token.outputs.token }}
+          token: ${{ steps.app-token.outputs.token }}
 
       - name: Install uv
         uses: astral-sh/setup-uv@v5
 
       - name: Install Python and sync dependencies
         env:
-          UV_GIT_TOKEN: ${{ needs.generate-token.outputs.token }}
+          UV_GIT_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
           uv python install
           uv sync --group dev
 
       - name: Force-install library under test
         env:
-          UV_GIT_TOKEN: ${{ needs.generate-token.outputs.token }}
+          UV_GIT_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
           uv pip install \
             "${{ inputs.library_name }} @ git+https://github.com/${{ inputs.library_repo }}.git@${{ inputs.library_tag }}" \
@@ -137,7 +144,7 @@ jobs:
         run: make test
 
   report-result:
-    needs: [generate-token, discover-services, test-service]
+    needs: [discover-services, test-service]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -147,9 +154,12 @@ jobs:
           TEST_RESULT="${{ needs.test-service.result }}"
           COUNT="${{ needs.discover-services.outputs.count }}"
 
-          if [ "$TEST_RESULT" = "success" ] || [ "$TEST_RESULT" = "skipped" -a "$COUNT" = "0" ]; then
+          if [ "$TEST_RESULT" = "success" ]; then
             echo "outcome=pass" >> $GITHUB_OUTPUT
-            echo "Integration tests PASSED"
+            echo "Integration tests PASSED ($COUNT services tested)"
+          elif [ "$TEST_RESULT" = "skipped" ] && [ "$COUNT" = "0" ]; then
+            echo "outcome=pass" >> $GITHUB_OUTPUT
+            echo "Integration tests PASSED (no dependent services found)"
           else
             echo "outcome=fail" >> $GITHUB_OUTPUT
             echo "Integration tests FAILED (test result: $TEST_RESULT)"
