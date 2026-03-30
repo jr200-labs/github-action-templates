@@ -134,23 +134,13 @@ jobs:
       - name: Generate token for private git deps
         id: git-auth
         uses: actions/create-github-app-token@v2
-        continue-on-error: true
         with:
           app-id: ${{ secrets.app_id }}
           private-key: ${{ secrets.app_private_key }}
           owner: ${{ github.repository_owner }}
 
       - name: Write netrc for private git deps
-        run: |
-          TOKEN="${{ steps.git-auth.outputs.token }}"
-          if [ -z "$TOKEN" ]; then
-            TOKEN="${{ secrets.git_token }}"
-          fi
-          if [ -n "$TOKEN" ]; then
-            printf 'machine github.com\nlogin x-access-token\npassword %s\n' "$TOKEN" > /tmp/.netrc
-          else
-            touch /tmp/.netrc
-          fi
+        run: printf 'machine github.com\nlogin x-access-token\npassword %s\n' "${{ steps.git-auth.outputs.token }}" > /tmp/.netrc
 
       - name: Build and push Docker image
         id: build-and-push
