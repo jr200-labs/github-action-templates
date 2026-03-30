@@ -32,7 +32,13 @@ on:
         required: true
       git_token:
         required: false
-        description: "Token for cloning private git dependencies during Docker build"
+        description: "Token for cloning private git dependencies during Docker build (deprecated: use app_id + app_private_key instead)"
+      app_id:
+        required: false
+        description: "GitHub App ID for generating a token to clone private git deps"
+      app_private_key:
+        required: false
+        description: "GitHub App private key for generating a token to clone private git deps"
 
 env:
   IMAGE_NAME: ${{ inputs.image_name }}
@@ -125,8 +131,26 @@ jobs:
             exit 1
           fi
 
+      - name: Generate token for private git deps
+        id: git-auth
+        uses: actions/create-github-app-token@v2
+        continue-on-error: true
+        with:
+          app-id: ${{ secrets.app_id }}
+          private-key: ${{ secrets.app_private_key }}
+          owner: ${{ github.repository_owner }}
+
       - name: Write netrc for private git deps
-        run: printf 'machine github.com\nlogin x-access-token\npassword %s\n' "${{ secrets.git_token }}" > /tmp/.netrc
+        run: |
+          TOKEN="${{ steps.git-auth.outputs.token }}"
+          if [ -z "$TOKEN" ]; then
+            TOKEN="${{ secrets.git_token }}"
+          fi
+          if [ -n "$TOKEN" ]; then
+            printf 'machine github.com\nlogin x-access-token\npassword %s\n' "$TOKEN" > /tmp/.netrc
+          else
+            touch /tmp/.netrc
+          fi
 
       - name: Build and push Docker image
         id: build-and-push
