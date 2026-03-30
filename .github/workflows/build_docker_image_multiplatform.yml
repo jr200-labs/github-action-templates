@@ -125,8 +125,8 @@ jobs:
             exit 1
           fi
 
-      - name: Write git token secret file
-        run: printf '%s' "${{ secrets.git_token }}" > /tmp/GITHUB_TOKEN
+      - name: Write netrc for private git deps
+        run: printf 'machine github.com\nlogin x-access-token\npassword %s\n' "${{ secrets.git_token }}" > /tmp/.netrc
 
       - name: Build and push Docker image
         id: build-and-push
@@ -144,7 +144,7 @@ jobs:
             BUILD_OS=${{ matrix.os }}
             BUILD_ARCH=${{ matrix.architecture }}
           secrets: |
-            GITHUB_TOKEN=/tmp/GITHUB_TOKEN
+            netrc=/tmp/.netrc
 
       - name: Export digest
         run: |
