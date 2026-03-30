@@ -126,7 +126,7 @@ jobs:
           fi
 
       - name: Write git token secret file
-        run: echo "${{ secrets.git_token }}" > /tmp/git_token
+        run: echo "${{ secrets.git_token }}" > /tmp/GITHUB_TOKEN
 
       - name: Build and push Docker image
         id: build-and-push
@@ -144,7 +144,7 @@ jobs:
             BUILD_OS=${{ matrix.os }}
             BUILD_ARCH=${{ matrix.architecture }}
           secrets: |
-            git_token=/tmp/git_token
+            GITHUB_TOKEN=/tmp/GITHUB_TOKEN
 
       - name: Export digest
         run: |
