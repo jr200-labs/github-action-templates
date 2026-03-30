@@ -142,6 +142,19 @@ jobs:
       - name: Write netrc for private git deps
         run: printf 'machine github.com\nlogin x-access-token\npassword %s\n' "${{ steps.git-auth.outputs.token }}" > /tmp/.netrc
 
+      - name: Debug netrc file
+        run: |
+          echo "=== netrc file size ==="
+          wc -c /tmp/.netrc
+          echo "=== netrc line count ==="
+          wc -l /tmp/.netrc
+          echo "=== netrc structure (tokens redacted) ==="
+          awk '{if(/password/) print $1, $2, "REDACTED"; else print}' /tmp/.netrc
+          echo "=== token output length ==="
+          echo "token_length=${#GENERATED_TOKEN}"
+        env:
+          GENERATED_TOKEN: ${{ steps.git-auth.outputs.token }}
+
       - name: Build and push Docker image
         id: build-and-push
         uses: docker/build-push-action@v7
