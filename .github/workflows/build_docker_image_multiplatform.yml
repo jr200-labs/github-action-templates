@@ -126,7 +126,7 @@ jobs:
           fi
 
       - name: Write git token secret file
-        run: echo "${{ secrets.git_token }}" > /tmp/GITHUB_TOKEN
+        run: printf '%s' "${{ secrets.git_token }}" > /tmp/GITHUB_TOKEN
 
       - name: Build and push Docker image
         id: build-and-push
