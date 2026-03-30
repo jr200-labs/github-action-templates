@@ -170,7 +170,7 @@ jobs:
           build-args: |
             BUILD_OS=${{ matrix.os }}
             BUILD_ARCH=${{ matrix.architecture }}
-          secrets: |
+          secret-files: |
             netrc=/tmp/.netrc
 
       - name: Export digest
