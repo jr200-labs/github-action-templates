@@ -18,11 +18,11 @@ on:
         required: false
         type: string
         default: ""
-      all-extras:
-        description: "Install all optional dependency groups (for projects with optional deps needed by mypy)"
+      uv-sync-args:
+        description: "Additional args for uv sync (e.g. '--extra nats --extra s3' or '--all-extras')"
         required: false
-        type: boolean
-        default: false
+        type: string
+        default: ""
   
 jobs:
   build-wheel:
@@ -46,7 +46,7 @@ jobs:
       - name: Install Python and dependencies
         run: |
           uv python install
-          uv sync --group dev ${{ inputs.all-extras && '--all-extras' || '' }}
+          uv sync --group dev ${{ inputs.uv-sync-args }}
 
       - name: Run formatting checks
         run: |
