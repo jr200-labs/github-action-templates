@@ -35,13 +35,13 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           ref: ${{ inputs.checkout-ref }}
 
       - run: mkdir _gh_artifacts
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v5
         if: inputs.artifact_name != ''
         with:
           run-id: ${{ inputs.artifact_run_id }}

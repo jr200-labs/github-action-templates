@@ -43,10 +43,10 @@ jobs:
       matrix: ${{ steps.discover.outputs.matrix }}
       count: ${{ steps.discover.outputs.count }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Generate token
-        uses: actions/create-github-app-token@v2
+        uses: actions/create-github-app-token@v3
         id: app-token
         with:
           app-id: ${{ secrets.app_id }}
@@ -106,7 +106,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Generate token
-        uses: actions/create-github-app-token@v2
+        uses: actions/create-github-app-token@v3
         id: app-token
         with:
           app-id: ${{ secrets.app_id }}
@@ -118,7 +118,7 @@ jobs:
           git config --global url."https://x-access-token:${{ steps.app-token.outputs.token }}@github.com/".insteadOf "https://github.com/"
 
       - name: Checkout service
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           repository: ${{ matrix.repo }}
           token: ${{ steps.app-token.outputs.token }}
@@ -129,7 +129,7 @@ jobs:
           sudo apt-get install -y --no-install-recommends libmariadb-dev build-essential
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@v6
 
       - name: Install Python and sync dependencies
         env:
@@ -175,7 +175,7 @@ jobs:
           fi
 
       - name: Generate callback token
-        uses: actions/create-github-app-token@v2
+        uses: actions/create-github-app-token@v3
         id: callback-token
         with:
           app-id: ${{ secrets.app_id }}
@@ -183,7 +183,7 @@ jobs:
           owner: ${{ github.repository_owner }}
 
       - name: Dispatch result callback
-        uses: peter-evans/repository-dispatch@v3
+        uses: peter-evans/repository-dispatch@v4
         with:
           token: ${{ steps.callback-token.outputs.token }}
           repository: ${{ inputs.callback_repo }}

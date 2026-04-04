@@ -31,7 +31,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           ref: ${{ inputs.checkout-ref }}
 
@@ -71,7 +71,7 @@ jobs:
           WHEEL_NAME=`ls -l $artifacts_glob | awk '{print $9}'`
           echo "wheel_name=$WHEEL_NAME" >> $GITHUB_OUTPUT
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         if: inputs.artifact_glob != ''
         id: upload-wheel-github
         with:

@@ -147,7 +147,7 @@ jobs:
       - name: Generate token for private git deps
         if: steps.check-git-auth.outputs.available == 'true'
         id: git-auth
-        uses: actions/create-github-app-token@v2
+        uses: actions/create-github-app-token@v3
         with:
           app-id: ${{ secrets.app_id }}
           private-key: ${{ secrets.app_private_key }}
