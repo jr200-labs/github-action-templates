@@ -18,6 +18,11 @@ on:
         required: false
         type: boolean
         default: true
+      apt-packages:
+        description: "Space-separated list of apt packages to install before uv sync (e.g. 'libmariadb-dev')"
+        required: false
+        type: string
+        default: ""
     secrets:
       app_id:
         required: false
@@ -66,6 +71,10 @@ jobs:
       - name: Write netrc for private git deps
         if: steps.git-auth.outputs.token != ''
         run: printf 'machine github.com\nlogin x-access-token\npassword %s\n' "${{ steps.git-auth.outputs.token }}" > ~/.netrc
+
+      - name: Install system dependencies
+        if: inputs.apt-packages != ''
+        run: sudo apt-get update && sudo apt-get install -y ${{ inputs.apt-packages }}
 
       - name: Install Python and dependencies
         run: |
