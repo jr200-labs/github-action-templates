@@ -25,6 +25,7 @@ import { dirname, resolve } from 'node:path'
 const HERE = dirname(fileURLToPath(import.meta.url))
 const WARN_THRESHOLD = Number(process.env.WARN_THRESHOLD ?? 10)
 const FAIL_THRESHOLD = Number(process.env.FAIL_THRESHOLD ?? 50)
+const FAIL_ON_REGRESSION = (process.env.FAIL_ON_REGRESSION ?? 'false') === 'true'
 
 const [, , currentArg, baselineArg] = process.argv
 if (!currentArg) {
@@ -114,11 +115,14 @@ console.log()
 console.log(summary)
 
 if (process.env.GITHUB_ACTIONS === 'true') {
+  // In report-only mode, downgrade ::error to ::warning so regressions still
+  // surface as annotations but don't turn the PR check red.
+  const failDirective = FAIL_ON_REGRESSION ? 'error' : 'warning'
   for (const r of rows) {
     if (r.missing || r.regression == null) continue
     if (Math.abs(r.regression) <= r.noise) continue
     if (r.regression > FAIL_THRESHOLD) {
-      console.log(`::error title=Benchmark regression::${r.key}: slowed ${r.regression.toFixed(1)}% (baseline ${fmt(r.base.hz)} → current ${fmt(r.cur.hz)} hz)`)
+      console.log(`::${failDirective} title=Benchmark regression::${r.key}: slowed ${r.regression.toFixed(1)}% (baseline ${fmt(r.base.hz)} → current ${fmt(r.cur.hz)} hz)`)
     } else if (r.regression > WARN_THRESHOLD) {
       console.log(`::warning title=Benchmark regression::${r.key}: slowed ${r.regression.toFixed(1)}% (baseline ${fmt(r.base.hz)} → current ${fmt(r.cur.hz)} hz)`)
     }
@@ -126,8 +130,13 @@ if (process.env.GITHUB_ACTIONS === 'true') {
   const summaryFile = process.env.GITHUB_STEP_SUMMARY
   if (summaryFile) {
     const { appendFileSync } = await import('node:fs')
-    appendFileSync(summaryFile, `## Benchmarks\n\n${lines.join('\n')}\n\n_${summary}_\n`)
+    const mode = FAIL_ON_REGRESSION ? '' : ' _(report-only)_'
+    appendFileSync(summaryFile, `## Benchmarks${mode}\n\n${lines.join('\n')}\n\n_${summary}_\n`)
   }
 }
 
-process.exit(fails > 0 ? 1 : 0)
+if (fails > 0 && !FAIL_ON_REGRESSION) {
+  console.log(`(report-only mode: ${fails} regression(s) would have failed the job)`)
+}
+
+process.exit(fails > 0 && FAIL_ON_REGRESSION ? 1 : 0)

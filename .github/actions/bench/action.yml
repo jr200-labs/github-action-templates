@@ -44,6 +44,14 @@ inputs:
     description: 'Name for the bootstrap baseline artifact.'
     required: false
     default: 'bench-baseline'
+  fail-on-regression:
+    description: >
+      If true, fail the job when regressions exceed fail-threshold. Default
+      is false: regressions are reported as annotations and a job summary
+      only, since most CI runners are too noisy for strict gating. Set to
+      'true' when running on a dedicated/pinned benchmark runner.
+    required: false
+    default: 'false'
 
 outputs:
   status:
@@ -100,6 +108,7 @@ runs:
       env:
         WARN_THRESHOLD: ${{ inputs.warn-threshold }}
         FAIL_THRESHOLD: ${{ inputs.fail-threshold }}
+        FAIL_ON_REGRESSION: ${{ inputs.fail-on-regression }}
       run: node ${{ github.action_path }}/compareBench.mjs "${{ inputs.current-path }}" "${{ inputs.baseline-path }}"
 
     - name: upload current run
