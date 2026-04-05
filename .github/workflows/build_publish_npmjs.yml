@@ -45,7 +45,10 @@ jobs:
         name: Install pnpm
 
       - name: Use clean pnpm-workspace config for CI (avoid locally stored packages used in dev)
-        run: test -f pnpm-workspace.yaml && mv pnpm-workspace.yaml pnpm-workspace.local.yaml
+        run: |
+          if [ -f pnpm-workspace.yaml ]; then
+            mv pnpm-workspace.yaml pnpm-workspace.local.yaml
+          fi
 
       - run: pnpm install --no-frozen-lockfile
       - run: pnpm run lint
@@ -58,7 +61,10 @@ jobs:
       - run: pnpm run build
 
       - name: Restore pnpm-workspace config
-        run: test -f pnpm-workspace.local.yaml && mv pnpm-workspace.local.yaml pnpm-workspace.yaml
+        run: |
+          if [ -f pnpm-workspace.local.yaml ]; then
+            mv pnpm-workspace.local.yaml pnpm-workspace.yaml
+          fi
 
       - name: Configure npm for pnpm
         run: |
