@@ -32,7 +32,6 @@ on:
 jobs:
   benchmark:
     runs-on: ubuntu-latest
-    if: hashFiles('bench/**/*.bench.ts') != ''
     steps:
       - name: Checkout
         uses: actions/checkout@v5
