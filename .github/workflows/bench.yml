@@ -40,8 +40,10 @@ jobs:
 
       - name: Install pnpm
         uses: pnpm/action-setup@v4
-        with:
-          version: ${{ inputs.pnpm-version }}
+        # Version is read from package.json "packageManager" field.
+        # The pnpm-version input is kept for backward compat with repos
+        # that don't declare packageManager, but passing both causes v4+
+        # to error with "Multiple versions of pnpm specified".
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
