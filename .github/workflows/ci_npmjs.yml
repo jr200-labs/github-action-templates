@@ -1,0 +1,74 @@
+name: template-ci-npmjs
+
+on:
+  workflow_call:
+    inputs:
+      checkout-ref:
+        description: "checkout ref"
+        required: false
+        type: string
+        default: ""
+      node-version:
+        description: "node version"
+        required: false
+        type: string
+        default: "22"
+      pnpm-version:
+        description: "pnpm version"
+        required: false
+        type: string
+        default: "10"
+      run-integration:
+        description: "Whether to run the integration test job (pnpm test:integration)"
+        required: false
+        type: boolean
+        default: true
+
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.checkout-ref }}
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ inputs.pnpm-version }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node-version }}
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - run: pnpm test
+      - run: pnpm build
+
+  integration:
+    if: inputs.run-integration
+    runs-on: ubuntu-latest
+    needs: unit
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.checkout-ref }}
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ inputs.pnpm-version }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node-version }}
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test:integration

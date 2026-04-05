@@ -1,0 +1,58 @@
+name: template-bench
+
+on:
+  workflow_call:
+    inputs:
+      checkout-ref:
+        description: 'checkout ref'
+        required: false
+        type: string
+        default: ''
+      node-version:
+        description: 'node version'
+        required: false
+        type: string
+        default: '22'
+      pnpm-version:
+        description: 'pnpm version'
+        required: false
+        type: string
+        default: '10'
+      warn-threshold:
+        description: 'warn if hz regression exceeds this percentage'
+        required: false
+        type: string
+        default: '10'
+      fail-threshold:
+        description: 'fail if hz regression exceeds this percentage'
+        required: false
+        type: string
+        default: '50'
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    if: hashFiles('bench/**/*.bench.ts') != ''
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.checkout-ref }}
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ inputs.pnpm-version }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node-version }}
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - uses: jr200/github-action-templates/.github/actions/bench@main
+        with:
+          warn-threshold: ${{ inputs.warn-threshold }}
+          fail-threshold: ${{ inputs.fail-threshold }}

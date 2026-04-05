@@ -1,0 +1,122 @@
+name: 'Benchmark regression check'
+description: >
+  Run vitest benchmarks (best-of-N) with optional CPU pinning, then compare
+  against a committed baseline JSON. Emits GitHub Actions annotations and
+  fails the job if regressions exceed the configured threshold.
+
+inputs:
+  vitest-config:
+    description: 'Path to the vitest bench config file.'
+    required: false
+    default: 'vitest.bench.config.ts'
+  baseline-path:
+    description: 'Path to the committed baseline JSON.'
+    required: false
+    default: 'bench/baseline.json'
+  current-path:
+    description: 'Path to write the current run output to.'
+    required: false
+    default: 'bench/current.json'
+  runs:
+    description: 'Best-of-N: run the bench suite this many times.'
+    required: false
+    default: '3'
+  warn-threshold:
+    description: 'Warn if hz regression exceeds this percentage.'
+    required: false
+    default: '10'
+  fail-threshold:
+    description: 'Fail the job if hz regression exceeds this percentage.'
+    required: false
+    default: '50'
+  pin-cpu:
+    description: 'Use taskset + nice (Linux). Falls back silently on macOS/Windows.'
+    required: false
+    default: 'true'
+  bootstrap-if-missing:
+    description: >
+      If the baseline does not exist, run benchmarks and upload the normalized
+      result as an artifact instead of failing. Consumers can download it and
+      commit as bench/baseline.json.
+    required: false
+    default: 'true'
+  bootstrap-artifact-name:
+    description: 'Name for the bootstrap baseline artifact.'
+    required: false
+    default: 'bench-baseline'
+
+outputs:
+  status:
+    description: 'ok | warn | fail | bootstrapped'
+    value: ${{ steps.result.outputs.status }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: detect baseline
+      id: baseline
+      shell: bash
+      run: |
+        if [ -f "${{ inputs.baseline-path }}" ]; then
+          echo "exists=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "exists=false" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: run benchmarks (best-of-N)
+      shell: bash
+      env:
+        VITEST_CONFIG: ${{ inputs.vitest-config }}
+        CURRENT_PATH: ${{ inputs.current-path }}
+        RUNS: ${{ inputs.runs }}
+        PIN_CPU: ${{ inputs.pin-cpu }}
+      run: |
+        CMD="node ${{ github.action_path }}/runBest.mjs ${RUNS} ${CURRENT_PATH} ${VITEST_CONFIG}"
+        if [ "${PIN_CPU}" = "true" ] && command -v taskset >/dev/null 2>&1; then
+          nice -n -10 taskset -c 0,1 $CMD || $CMD
+        else
+          $CMD
+        fi
+
+    - name: bootstrap (no baseline)
+      if: steps.baseline.outputs.exists == 'false' && inputs.bootstrap-if-missing == 'true'
+      shell: bash
+      run: |
+        mkdir -p "$(dirname ${{ inputs.baseline-path }})"
+        node ${{ github.action_path }}/normalizeBench.mjs "${{ inputs.current-path }}" "${{ inputs.baseline-path }}.new"
+        echo "::notice title=No baseline committed::Download the '${{ inputs.bootstrap-artifact-name }}' artifact and commit it as ${{ inputs.baseline-path }} to enable regression checks."
+
+    - name: upload bootstrap baseline
+      if: steps.baseline.outputs.exists == 'false' && inputs.bootstrap-if-missing == 'true'
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ inputs.bootstrap-artifact-name }}
+        path: ${{ inputs.baseline-path }}.new
+        retention-days: 30
+
+    - name: compare against baseline
+      if: steps.baseline.outputs.exists == 'true'
+      shell: bash
+      env:
+        WARN_THRESHOLD: ${{ inputs.warn-threshold }}
+        FAIL_THRESHOLD: ${{ inputs.fail-threshold }}
+      run: node ${{ github.action_path }}/compareBench.mjs "${{ inputs.current-path }}" "${{ inputs.baseline-path }}"
+
+    - name: upload current run
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: bench-current
+        path: ${{ inputs.current-path }}
+        retention-days: 14
+
+    - name: record result
+      id: result
+      if: always()
+      shell: bash
+      run: |
+        if [ "${{ steps.baseline.outputs.exists }}" = "false" ]; then
+          echo "status=bootstrapped" >> "$GITHUB_OUTPUT"
+        else
+          echo "status=ok" >> "$GITHUB_OUTPUT"
+        fi
