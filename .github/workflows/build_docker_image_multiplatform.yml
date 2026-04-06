@@ -167,8 +167,8 @@ jobs:
           file: ${{ steps.detect-dockerfile.outputs.dockerfile }}
           context: .
           provenance: false
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=${{ inputs.tag }}-${{ matrix.platform }}
+          cache-to: type=gha,scope=${{ inputs.tag }}-${{ matrix.platform }},mode=max
           build-args: |
             BUILD_OS=${{ matrix.os }}
             BUILD_ARCH=${{ matrix.architecture }}
