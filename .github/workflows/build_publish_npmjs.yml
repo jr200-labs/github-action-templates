@@ -70,6 +70,56 @@ jobs:
         run: |
           echo "//registry.npmjs.org/:_authToken=${{ secrets.npmjs_api_token }}" > ~/.npmrc
 
+      - name: Pre-publish diagnostics
+        run: |
+          set +e
+
+          echo "--- npm auth check ---"
+          NPM_USER=$(npm whoami 2>&1)
+          if [ $? -ne 0 ]; then
+            echo "::error::npm whoami failed: $NPM_USER"
+            echo "The NPMJS_API_TOKEN may be invalid, expired, or missing."
+            exit 1
+          fi
+          echo "Authenticated as: $NPM_USER"
+
+          PACKAGE_NAME=$(node -p "require('./package.json').name")
+          echo "Package: $PACKAGE_NAME"
+
+          SCOPE=$(echo "$PACKAGE_NAME" | grep -oP '^@\K[^/]+' || true)
+          if [ -n "$SCOPE" ]; then
+            echo ""
+            echo "--- npm org membership check (@$SCOPE) ---"
+            ORG_MEMBERS=$(npm org ls "$SCOPE" 2>&1)
+            if [ $? -ne 0 ]; then
+              echo "::warning::Could not list org members for @$SCOPE: $ORG_MEMBERS"
+              echo "The token user ($NPM_USER) may not have access to the @$SCOPE org on npmjs.com."
+            elif echo "$ORG_MEMBERS" | grep -q "\"$NPM_USER\""; then
+              ROLE=$(echo "$ORG_MEMBERS" | node -p "JSON.parse(require('fs').readFileSync('/dev/stdin','utf8'))['$NPM_USER']" 2>/dev/null || echo "unknown")
+              echo "User '$NPM_USER' is a member of @$SCOPE (role: $ROLE)"
+            else
+              echo "::error::User '$NPM_USER' is NOT a member of the @$SCOPE npm org."
+              echo "Add them at: https://www.npmjs.com/settings/$SCOPE/members"
+              exit 1
+            fi
+          fi
+
+          echo ""
+          echo "--- package existence check ---"
+          npm view "$PACKAGE_NAME" version 2>/dev/null
+          if [ $? -eq 0 ]; then
+            LATEST=$(npm view "$PACKAGE_NAME" version 2>/dev/null)
+            echo "Package exists on registry (latest: $LATEST)"
+          else
+            echo "Package does not yet exist on registry (first publish)"
+          fi
+
+          echo ""
+          echo "--- environment info ---"
+          echo "node: $(node --version)"
+          echo "npm:  $(npm --version)"
+          echo "pnpm: $(pnpm --version)"
+
       - name: build publish command
         id: build-command
         run: |
