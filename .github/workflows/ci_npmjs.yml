@@ -44,9 +44,30 @@ jobs:
           cache: pnpm
 
       - run: pnpm install --frozen-lockfile
-      - run: pnpm lint
-      - run: pnpm test
-      - run: pnpm build
+
+      - name: Lint
+        run: |
+          if node -e "const p=require('./package.json'); process.exit(p.scripts?.lint ? 0 : 1)" 2>/dev/null; then
+            pnpm lint
+          else
+            echo "No lint script found, skipping"
+          fi
+
+      - name: Test
+        run: |
+          if node -e "const p=require('./package.json'); process.exit(p.scripts?.test ? 0 : 1)" 2>/dev/null; then
+            pnpm test
+          else
+            echo "No test script found, skipping"
+          fi
+
+      - name: Build
+        run: |
+          if node -e "const p=require('./package.json'); process.exit(p.scripts?.build ? 0 : 1)" 2>/dev/null; then
+            pnpm build
+          else
+            echo "No build script found, skipping"
+          fi
 
   integration:
     if: inputs.run-integration
@@ -69,4 +90,11 @@ jobs:
           cache: pnpm
 
       - run: pnpm install --frozen-lockfile
-      - run: pnpm test:integration
+
+      - name: Integration tests
+        run: |
+          if node -e "const p=require('./package.json'); process.exit(p.scripts?.['test:integration'] ? 0 : 1)" 2>/dev/null; then
+            pnpm test:integration
+          else
+            echo "No test:integration script found, skipping"
+          fi
