@@ -18,7 +18,6 @@ on:
 permissions:
   contents: write
   pages: write
-  id-token: write
 
 # Allow only one concurrent deployment
 concurrency:
