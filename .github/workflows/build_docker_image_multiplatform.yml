@@ -10,7 +10,7 @@ on:
         default: "refs/heads/master"
       registry_name:
         description: docker-registry-name
-        required: true
+        required: false
         type: string
         default: ghcr.io
       image_name:

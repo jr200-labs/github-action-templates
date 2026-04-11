@@ -10,7 +10,7 @@ on:
         default: "refs/heads/master"
       chart_dir:
         description: "chart folder"
-        required: true
+        required: false
         type: string
         default: charts
       chart_repo:

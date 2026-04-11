@@ -23,11 +23,11 @@ on:
         default: info
         options: [info, debug, trace]
       dry-run:
-        description: Renovate dry-run mode (leave empty for normal)
+        description: Renovate dry-run mode (normal = real run, others = dry-run levels)
         required: false
         type: choice
-        default: ''
-        options: ['', full, extract, lookup]
+        default: normal
+        options: [normal, full, extract, lookup]
 
 jobs:
   renovate:
@@ -43,4 +43,7 @@ jobs:
       issues: write
     with:
       log-level: ${{ inputs.log-level || 'info' }}
-      dry-run: ${{ inputs.dry-run || '' }}
+      # Translate the 'normal' sentinel back to empty so the reusable workflow
+      # runs Renovate without RENOVATE_DRY_RUN. Actionlint forbids empty
+      # strings in choice options, so we can't use '' directly above.
+      dry-run: ${{ inputs.dry-run == 'normal' && '' || inputs.dry-run }}
