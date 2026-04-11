@@ -1,0 +1,83 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "description": "Shared Renovate preset for jr200 / jr200-labs / whengas. Extend from a repo's renovate.json with: { \"extends\": [\"github>jr200/github-action-templates\"] }",
+  "extends": [
+    "config:recommended",
+    ":dependencyDashboard",
+    ":semanticCommits",
+    ":enableVulnerabilityAlertsWithLabel(security)"
+  ],
+  "labels": ["dependencies", "renovate"],
+  "prHourlyLimit": 0,
+  "prConcurrentLimit": 10,
+  "rangeStrategy": "bump",
+  "rebaseWhen": "behind-base-branch",
+  "lockFileMaintenance": {
+    "enabled": true,
+    "schedule": ["before 6am on monday"]
+  },
+  "vulnerabilityAlerts": {
+    "labels": ["dependencies", "renovate", "security"]
+  },
+  "packageRules": [
+    {
+      "description": "Group every non-major bump into a single PR per repo. Schedule deliberately omitted so the wave lands immediately; grouping prevents PR-spam without needing a time window. No automerge — humans review every PR.",
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "all non-major dependencies",
+      "groupSlug": "all-minor-patch"
+    },
+    {
+      "description": "Major upgrades always require explicit human review",
+      "matchUpdateTypes": ["major"],
+      "automerge": false,
+      "labels": ["dependencies", "renovate", "major-upgrade"]
+    },
+    {
+      "description": "Group all GitHub Action version bumps together",
+      "matchManagers": ["github-actions"],
+      "groupName": "github-actions",
+      "groupSlug": "github-actions"
+    },
+    {
+      "description": "Group all Docker base image bumps together",
+      "matchManagers": ["dockerfile"],
+      "groupName": "docker base images",
+      "groupSlug": "docker-base"
+    },
+    {
+      "description": "Don't bump the Python runtime constraint — that's a deliberate stack decision and not something Renovate should touch. Also sidesteps the 'pep440: failed to calculate newValue' warning Renovate hits when trying to bump '>=3.12,<3.14' style ranges.",
+      "matchManagers": ["pep621"],
+      "matchPackageNames": ["python"],
+      "enabled": false
+    },
+    {
+      "description": "Disable Renovate's built-in helm-values manager. We use a custom regex manager (above) that maps ghcr.io image refs to the github-tags datasource instead, which avoids the per-package access list ghcr.io enforces for private packages. Letting both managers detect the same files would create duplicate, conflicting bump attempts (the helm-values one fails with 'Failed to look up docker package ... no-result' on every run).",
+      "matchManagers": ["helm-values"],
+      "enabled": false
+    }
+  ],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "Bump private git-pinned Python deps in pep621 pyproject.toml — e.g. 'pyapi-service-kit[nats,db,otel] @ git+https://github.com/whengas/pyapi-service-kit.git@v0.7.3'",
+      "managerFilePatterns": ["/(^|/)pyproject\\.toml$/"],
+      "matchStrings": [
+        "(?<depName>[a-zA-Z0-9_\\-]+)(?:\\[[^\\]]+\\])?\\s*@\\s*git\\+https://github\\.com/(?<packageName>[^/]+/[a-zA-Z0-9_\\-\\.]+?)(?:\\.git)?@(?<currentValue>v[0-9]+\\.[0-9]+\\.[0-9]+)"
+      ],
+      "datasourceTemplate": "github-tags",
+      "versioningTemplate": "semver"
+    },
+    {
+      "customType": "regex",
+      "description": "Bump container image tags in whengas-iac Helm values.yaml files — e.g. 'tag: v0.1.27' under 'repository: ghcr.io/whengas/whengas-api'. Uses the github-tags datasource (not docker), because all our ghcr.io images are pushed from corresponding github repos with matching git tags, and the App token has cross-repo contents:read but not always packages:read on each individual private package. The capture extracts the org/repo path from the ghcr.io reference and queries github tags directly, which sidesteps the per-package access list ghcr.io enforces for private packages.",
+      "managerFilePatterns": [
+        "/services/.*/env/.*/.*values\\.yaml$/"
+      ],
+      "matchStrings": [
+        "repository:\\s*ghcr\\.io/(?<depName>[^/\\s]+/[^\\s]+)\\s*\\n\\s*tag:\\s*(?<currentValue>v?[0-9]+\\.[0-9]+\\.[0-9]+)"
+      ],
+      "datasourceTemplate": "github-tags",
+      "versioningTemplate": "semver"
+    }
+  ]
+}

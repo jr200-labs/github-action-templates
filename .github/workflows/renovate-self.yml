@@ -1,0 +1,46 @@
+name: renovate
+
+# Self-hosted Renovate against this repo only.
+#
+# This is the consumer wrapper that runs the template-renovate reusable
+# workflow (defined in this same repo at .github/workflows/renovate.yml)
+# against github-action-templates itself. Other repos in the jr200 /
+# jr200-labs / whengas orgs use an identical 1-line consumer file.
+#
+# Lives at renovate-self.yml (not renovate.yml) so it doesn't collide
+# with the template file's filename.
+
+on:
+  schedule:
+    # Every 4 hours, offset by 17 minutes to avoid the GitHub cron rush.
+    - cron: '17 */4 * * *'
+  workflow_dispatch:
+    inputs:
+      log-level:
+        description: Renovate log level
+        required: false
+        type: choice
+        default: info
+        options: [info, debug, trace]
+      dry-run:
+        description: Renovate dry-run mode (leave empty for normal)
+        required: false
+        type: choice
+        default: ''
+        options: ['', full, extract, lookup]
+
+jobs:
+  renovate:
+    uses: ./.github/workflows/renovate.yml
+    # secrets: inherit passes the org-level INTEGRATION_APP_PRIVATE_KEY
+    # through to the reusable workflow so it can mint a real App token
+    # and unblock cross-repo / ghcr.io lookups. Without this the template
+    # falls back to GITHUB_TOKEN.
+    secrets: inherit
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+    with:
+      log-level: ${{ inputs.log-level || 'info' }}
+      dry-run: ${{ inputs.dry-run || '' }}
