@@ -8,7 +8,7 @@
     ":enableVulnerabilityAlertsWithLabel(security)"
   ],
   "labels": ["dependencies", "renovate"],
-  "prHourlyLimit": 0,
+  "prHourlyLimit": "not-a-number-should-fail-validation",
   "prConcurrentLimit": 10,
   "rangeStrategy": "bump",
   "rebaseWhen": "behind-base-branch",
