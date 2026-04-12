@@ -61,6 +61,21 @@ on:
         required: false
         type: string
         default: ''
+      app-id:
+        description: >
+          GitHub App ID for minting installation tokens. Pass this from
+          the caller's `with:` block as `app-id: ${{ vars.INTEGRATION_APP_ID }}`
+          so the expression is evaluated in the CALLER's context. This
+          sidesteps a GitHub limitation where org-level variables with
+          visibility=all don't resolve inside cross-org reusable workflows
+          (they only resolve if the calling repo has a per-repo override).
+          If omitted, falls back to `vars.INTEGRATION_APP_ID` evaluated
+          inside the reusable workflow — which works for same-org callers
+          and callers with per-repo variable overrides, but NOT for
+          cross-org callers relying purely on org-level inheritance.
+        required: false
+        type: string
+        default: ''
     secrets:
       # The App private key is declared as an explicit named secret input
       # because GitHub Actions has a quirk: variables inherited via
@@ -85,14 +100,17 @@ jobs:
 
       - name: Mint App installation token
         id: app-token
-        # Gate only on the (non-sensitive) INTEGRATION_APP_ID variable.
-        # `secrets.*` is not allowed in `if:` expressions in GitHub Actions.
-        # The matching INTEGRATION_APP_PRIVATE_KEY secret is managed
-        # alongside the variable as a pair (see jr200-labs JR2-18).
-        if: ${{ vars.INTEGRATION_APP_ID != '' }}
+        # Prefer the caller-supplied `inputs.app-id` over the reusable
+        # workflow's own `vars.INTEGRATION_APP_ID`. The caller resolves
+        # the expression in its own context, where org-level variables
+        # always work. The fallback to `vars.*` keeps backward compat
+        # for callers that haven't been updated to pass the input yet.
+        # `secrets.*` is not allowed in `if:` expressions in GitHub
+        # Actions, so we gate on the app-id (non-sensitive) only.
+        if: ${{ inputs.app-id != '' || vars.INTEGRATION_APP_ID != '' }}
         uses: actions/create-github-app-token@v2
         with:
-          app-id: ${{ vars.INTEGRATION_APP_ID }}
+          app-id: ${{ inputs.app-id || vars.INTEGRATION_APP_ID }}
           private-key: ${{ secrets.INTEGRATION_APP_PRIVATE_KEY }}
           owner: ${{ github.repository_owner }}
 
