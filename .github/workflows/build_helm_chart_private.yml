@@ -64,7 +64,7 @@ jobs:
           | tar zxf - -C /usr/local/bin
 
       - name: Install yq - portable yaml processor
-        uses: mikefarah/yq@v4.35.1
+        uses: mikefarah/yq@v4.52.5
 
       - name: Install Helm
         uses: azure/setup-helm@v4
