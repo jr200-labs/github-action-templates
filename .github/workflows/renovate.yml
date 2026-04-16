@@ -103,14 +103,15 @@ jobs:
 
       - name: Mint App installation token
         id: app-token
-        # Prefer the caller-supplied `inputs.app-id` over the reusable
-        # workflow's own `vars.INTEGRATION_APP_ID`. The caller resolves
-        # the expression in its own context, where org-level variables
-        # always work. The fallback to `vars.*` keeps backward compat
-        # for callers that haven't been updated to pass the input yet.
-        # `secrets.*` is not allowed in `if:` expressions in GitHub
-        # Actions, so we gate on the app-id (non-sensitive) only.
-        if: ${{ inputs.app-id != '' || vars.INTEGRATION_APP_ID != '' }}
+        # Use GitHub App auth for private repos only. Public repos on
+        # GitHub Free orgs can't receive org-level secrets, so the
+        # private key would be empty and the JWT decode fails.
+        # Private repos on Teams plan get org secrets fine.
+        if: >-
+          ${{
+            github.event.repository.visibility == 'private'
+            && (inputs.app-id != '' || vars.INTEGRATION_APP_ID != '')
+          }}
         uses: actions/create-github-app-token@v2
         with:
           app-id: ${{ inputs.app-id || vars.INTEGRATION_APP_ID }}
