@@ -28,6 +28,11 @@ on:
         description: "Event type for the callback dispatch"
         required: true
         type: string
+      runner:
+        description: 'Runner label (e.g. ubuntu-latest or self-hosted)'
+        required: false
+        type: string
+        default: 'ubuntu-latest'
     secrets:
       app_id:
         required: true
@@ -38,7 +43,7 @@ on:
 
 jobs:
   discover-services:
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.runner }}
     outputs:
       matrix: ${{ steps.discover.outputs.matrix }}
       count: ${{ steps.discover.outputs.count }}
@@ -103,7 +108,7 @@ jobs:
       fail-fast: false
       matrix:
         include: ${{ fromJson(needs.discover-services.outputs.matrix) }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.runner }}
     steps:
       - name: Generate token
         uses: actions/create-github-app-token@v3
@@ -155,7 +160,7 @@ jobs:
   report-result:
     needs: [discover-services, test-service]
     if: always()
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.runner }}
     steps:
       - name: Determine result
         id: result

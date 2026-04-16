@@ -25,6 +25,11 @@ on:
         description: platform-filter-json
         required: true
         type: string
+      runner:
+        description: 'Runner label for non-build jobs (e.g. ubuntu-latest or self-hosted). Build jobs use platform-specific runners from the matrix.'
+        required: false
+        type: string
+        default: 'ubuntu-latest'
     secrets:
       registry_username:
         required: true
@@ -52,7 +57,7 @@ env:
 
 jobs:
   setup-matrix:
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.runner }}
     outputs:
       matrix: ${{ steps.create-matrix.outputs.matrix }}
     steps:
@@ -191,7 +196,7 @@ jobs:
 
   merge:
     name: Merge platform specific Docker image into multi platform image
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.runner }}
     needs:
       - build
 

@@ -23,15 +23,20 @@ on:
         required: false
         type: string
         default: ""
-  
+      runner:
+        description: 'Runner label (e.g. ubuntu-latest or self-hosted)'
+        required: false
+        type: string
+        default: 'ubuntu-latest'
+
 jobs:
   build-wheel:
     strategy:
       fail-fast: false
       matrix:
         os:
-          - ubuntu-latest
-    
+          - ${{ inputs.runner }}
+
     runs-on: ${{ matrix.os }}
 
     steps:

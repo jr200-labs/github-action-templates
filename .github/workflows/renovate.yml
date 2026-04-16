@@ -74,6 +74,11 @@ on:
         required: false
         type: string
         default: ''
+      runner:
+        description: 'Runner label (e.g. ubuntu-latest or self-hosted)'
+        required: false
+        type: string
+        default: 'ubuntu-latest'
     secrets:
       # The App private key is declared as an explicit named secret input
       # because GitHub Actions has a quirk: variables inherited via
@@ -87,7 +92,7 @@ on:
 
 jobs:
   renovate:
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.runner }}
     permissions:
       contents: write
       pull-requests: write

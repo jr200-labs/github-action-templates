@@ -28,6 +28,11 @@ on:
         required: false
         type: string
         default: "dispatch-integration-result"
+      runner:
+        description: 'Runner label (e.g. ubuntu-latest or self-hosted)'
+        required: false
+        type: string
+        default: 'ubuntu-latest'
     secrets:
       app_id:
         required: true
@@ -38,7 +43,7 @@ on:
 
 jobs:
   dispatch:
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.runner }}
     steps:
       - name: Generate cross-repo token
         uses: actions/create-github-app-token@v3
