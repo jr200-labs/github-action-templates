@@ -31,7 +31,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
         with:
           ref: ${{ inputs.checkout-ref }}
 
@@ -42,7 +42,7 @@ jobs:
           echo "PYTHON_VERSION=$PYTHON_VERSION"
 
       - name: Setup Python version ${{ env.PYTHON_VERSION }}
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
@@ -71,7 +71,7 @@ jobs:
           WHEEL_NAME=`ls -l $artifacts_glob | awk '{print $9}'`
           echo "wheel_name=$WHEEL_NAME" >> $GITHUB_OUTPUT
 
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v7
         if: inputs.artifact_glob != ''
         id: upload-wheel-github
         with:

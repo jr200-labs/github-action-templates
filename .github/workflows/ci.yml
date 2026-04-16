@@ -36,12 +36,12 @@ jobs:
     # against one schema and running against another.
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
-          node-version: '22.22.2'
+          node-version: '24.15.0'
 
       - name: Validate Renovate config
         run: |
@@ -62,7 +62,7 @@ jobs:
     # be removed so any future regression is caught.
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
 
       - name: Install actionlint
         id: get_actionlint

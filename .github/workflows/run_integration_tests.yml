@@ -43,7 +43,7 @@ jobs:
       matrix: ${{ steps.discover.outputs.matrix }}
       count: ${{ steps.discover.outputs.count }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
 
       - name: Generate token
         uses: actions/create-github-app-token@v3
@@ -118,7 +118,7 @@ jobs:
           git config --global url."https://x-access-token:${{ steps.app-token.outputs.token }}@github.com/".insteadOf "https://github.com/"
 
       - name: Checkout service
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
         with:
           repository: ${{ matrix.repo }}
           token: ${{ steps.app-token.outputs.token }}
@@ -129,7 +129,7 @@ jobs:
           sudo apt-get install -y --no-install-recommends libmariadb-dev build-essential
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v6
+        uses: astral-sh/setup-uv@v8
 
       - name: Install Python and sync dependencies
         env:
