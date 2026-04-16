@@ -22,6 +22,11 @@ on:
         required: false
         type: string
         default: main
+      runner:
+        description: 'Runner label (e.g. ubuntu-latest or self-hosted)'
+        required: false
+        type: string
+        default: 'ubuntu-latest'
     secrets:
       # create a github fine-grained personal access token
       # - for repo: helm-charts
@@ -35,7 +40,7 @@ jobs:
   release:
     permissions:
       contents: write
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.runner }}
     steps:
       - name: Checkout
         uses: actions/checkout@v5

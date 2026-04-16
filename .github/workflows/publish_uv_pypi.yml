@@ -18,13 +18,18 @@ on:
         required: false
         type: string
         default: -vvv
+      runner:
+        description: 'Runner label (e.g. ubuntu-latest or self-hosted)'
+        required: false
+        type: string
+        default: 'ubuntu-latest'
     secrets:
       pypi_api_token:
         required: true
 
 jobs:
   main:
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.runner }}
     steps:
       - name: Checkout
         uses: actions/checkout@v5

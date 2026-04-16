@@ -11,13 +11,18 @@ on:
         description: toJson(github.event)
         required: true
         type: string
+      runner:
+        description: 'Runner label (e.g. ubuntu-latest or self-hosted)'
+        required: false
+        type: string
+        default: 'ubuntu-latest'
     outputs:
       context:
         value: ${{ jobs.configure.outputs.context }}
 
 jobs:
   configure:
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.runner }}
     outputs:
       context: ${{ steps.set-context.outputs.context }}
     steps:

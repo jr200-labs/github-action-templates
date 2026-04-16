@@ -15,6 +15,11 @@ on:
         default: dummy    
   
 # Sets permissions of the GITHUB_TOKEN to allow deployment to GitHub Pages
+      runner:
+        description: 'Runner label (e.g. ubuntu-latest or self-hosted)'
+        required: false
+        type: string
+        default: 'ubuntu-latest'
 permissions:
   contents: write
   pages: write
@@ -28,7 +33,7 @@ concurrency:
 jobs:
   # Build job
   build_and_deploy:
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.runner }}
     steps:
       - name: Checkout
         uses: actions/checkout@v5
