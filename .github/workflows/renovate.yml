@@ -126,6 +126,10 @@ jobs:
         uses: renovatebot/github-action@v46.1.9
         with:
           token: ${{ steps.app-token.outputs.token || secrets.GITHUB_TOKEN }}
+          # Use host networking so the Renovate container shares the
+          # pod's network stack. Without this, dind's bridge network
+          # can't resolve DNS and api.github.com times out (ETIMEDOUT).
+          docker-network: host
         env:
           LOG_LEVEL: ${{ inputs.log-level }}
           # Restrict Renovate to the current repo only.
