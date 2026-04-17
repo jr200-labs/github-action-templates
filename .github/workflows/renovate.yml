@@ -41,7 +41,7 @@ name: template-renovate
 #       workflow_dispatch:
 #     jobs:
 #       renovate:
-#         uses: jr200-labs/github-action-templates/.github/workflows/renovate.yml@main
+#         uses: jr200-labs/github-action-templates/.github/workflows/renovate.yml@master
 #         secrets: inherit
 #
 # `secrets: inherit` is what wires the org-level INTEGRATION_APP_*

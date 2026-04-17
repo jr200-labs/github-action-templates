@@ -58,7 +58,7 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      - uses: jr200-labs/github-action-templates/.github/actions/bench@main
+      - uses: jr200-labs/github-action-templates/.github/actions/bench@master
         with:
           warn-threshold: ${{ inputs.warn-threshold }}
           fail-threshold: ${{ inputs.fail-threshold }}
