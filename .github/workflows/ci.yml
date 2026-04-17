@@ -9,7 +9,7 @@ name: ci
 #   * `default.json` is the Renovate preset extended by every consumer's
 #     `renovate.json` via `github>jr200-labs/github-action-templates`
 #   * The `*.yml` workflows are reusable workflows referenced via
-#     `uses: jr200-labs/github-action-templates/.github/workflows/<x>.yml@main`
+#     `uses: jr200-labs/github-action-templates/.github/workflows/<x>.yml@master`
 #
 # A broken commit here breaks every consumer on their next run, with no
 # rollback path other than another forward commit. This CI gate exists so
