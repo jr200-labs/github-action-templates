@@ -128,6 +128,10 @@ jobs:
           token: ${{ steps.app-token.outputs.token || secrets.GITHUB_TOKEN }}
         env:
           LOG_LEVEL: ${{ inputs.log-level }}
+          # Install Renovate as a node package instead of docker run.
+          # Self-hosted ARC runners use dind whose inner containers
+          # can't resolve DNS to api.github.com (ETIMEDOUT).
+          RENOVATE_BINARY_SOURCE: install
           # Restrict Renovate to the current repo only.
           RENOVATE_REPOSITORIES: ${{ github.repository }}
           # The per-repo renovate.json already exists (it extends the shared
