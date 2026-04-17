@@ -1,6 +1,6 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "description": "Shared Renovate preset for jr200 / jr200-labs / whengas. Extend from a repo's renovate.json with: { \"extends\": [\"github>jr200/github-action-templates\"] }",
+  "description": "Shared Renovate preset for jr200 / jr200-labs / whengas. Extend from a repo's renovate.json with: { \"extends\": [\"github>jr200-labs/github-action-templates\"] }",
   "extends": [
     "config:recommended",
     ":dependencyDashboard",
