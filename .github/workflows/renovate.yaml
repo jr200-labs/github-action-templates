@@ -112,7 +112,7 @@ jobs:
             github.event.repository.visibility == 'private'
             && (inputs.app-id != '' || vars.INTEGRATION_APP_ID != '')
           }}
-        uses: actions/create-github-app-token@v2
+        uses: actions/create-github-app-token@v3
         with:
           app-id: ${{ inputs.app-id || vars.INTEGRATION_APP_ID }}
           private-key: ${{ secrets.INTEGRATION_APP_PRIVATE_KEY }}
