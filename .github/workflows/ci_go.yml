@@ -1,0 +1,46 @@
+name: template-ci-go
+
+on:
+  workflow_call:
+    inputs:
+      checkout-ref:
+        description: "checkout ref"
+        required: false
+        type: string
+        default: ""
+      go-version-file:
+        description: "Path to go.mod (for Go version detection)"
+        required: false
+        type: string
+        default: "go.mod"
+      run-tests:
+        description: "Whether to run go test"
+        required: false
+        type: boolean
+        default: true
+      runner:
+        description: 'Runner label (e.g. ubuntu-latest or self-hosted)'
+        required: false
+        type: string
+        default: 'ubuntu-latest'
+
+jobs:
+  test:
+    runs-on: ${{ inputs.runner }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.checkout-ref }}
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: ${{ inputs.go-version-file }}
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        if: inputs.run-tests
+        run: go test ./...
