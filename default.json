@@ -13,9 +13,11 @@
   "rangeStrategy": "bump",
   "rebaseWhen": "behind-base-branch",
   "lockFileMaintenance": {
-    "enabled": true,
-    "schedule": ["before 6am on monday"]
+    "enabled": false
   },
+  "postUpdateOptions": ["pnpmDedupe"],
+  "allowScripts": true,
+  "ignoreScripts": false,
   "vulnerabilityAlerts": {
     "labels": ["dependencies", "renovate", "security"]
   },
