@@ -61,9 +61,9 @@ on:
         required: false
         type: string
         default: ''
-      app-id:
+      client-id:
         description: >
-          GitHub App ID for minting installation tokens. Callers should
+          GitHub App Client ID for minting installation tokens. Callers should
           pass vars.INTEGRATION_APP_ID in their with: block so the
           expression is evaluated in the caller's context, sidestepping
           a GitHub limitation where org-level variables don't resolve
@@ -110,11 +110,11 @@ jobs:
         if: >-
           ${{
             github.event.repository.visibility == 'private'
-            && (inputs.app-id != '' || vars.INTEGRATION_APP_ID != '')
+            && (inputs.client-id != '' || vars.INTEGRATION_APP_ID != '')
           }}
         uses: actions/create-github-app-token@v2
         with:
-          app-id: ${{ inputs.app-id || vars.INTEGRATION_APP_ID }}
+          client-id: ${{ inputs.client-id || vars.INTEGRATION_APP_ID }}
           private-key: ${{ secrets.INTEGRATION_APP_PRIVATE_KEY }}
           owner: ${{ github.repository_owner }}
 
