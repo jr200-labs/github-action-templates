@@ -31,7 +31,7 @@ on:
 
 jobs:
   renovate:
-    uses: ./.github/workflows/renovate.yml
+    uses: ./.github/workflows/renovate.yaml
     # secrets: inherit passes the org-level INTEGRATION_APP_PRIVATE_KEY
     # through to the reusable workflow so it can mint a real App token
     # and unblock cross-repo / ghcr.io lookups. Without this the template
