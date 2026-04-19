@@ -53,6 +53,12 @@
       "enabled": false
     },
     {
+      "description": "Disable pep621 manager for pyapi-service-kit — it's a private git-pinned dep handled by our custom regex manager. The pep621 manager can't resolve git+https refs (unsupported/unversioned value) and collides with the regex manager, causing 'Ignoring upgrade collision' and no PR being created.",
+      "matchManagers": ["pep621"],
+      "matchPackageNames": ["pyapi-service-kit"],
+      "enabled": false
+    },
+    {
       "description": "Disable Renovate's built-in helm-values manager. We use a custom regex manager (above) that maps ghcr.io image refs to the github-tags datasource instead, which avoids the per-package access list ghcr.io enforces for private packages. Letting both managers detect the same files would create duplicate, conflicting bump attempts (the helm-values one fails with 'Failed to look up docker package ... no-result' on every run).",
       "matchManagers": ["helm-values"],
       "enabled": false
