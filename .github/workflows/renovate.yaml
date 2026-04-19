@@ -98,14 +98,8 @@ jobs:
       pull-requests: write
       issues: write
     steps:
-      - name: Debug env (pre-checkout)
-        run: env | grep -i 'GIT_SSH\|SSH' || echo 'No GIT_SSH* vars set'
-
       - name: Checkout
         uses: actions/checkout@v5
-
-      - name: Debug env (post-checkout)
-        run: env | grep -i 'GIT_SSH\|SSH' || echo 'No GIT_SSH* vars set'
 
       - name: Mint App installation token
         id: app-token
