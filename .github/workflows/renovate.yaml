@@ -131,7 +131,7 @@ jobs:
         # it from the process tree before Renovate starts.
         run: |
           npm install --global renovate@43
-          env -u GIT_SSH_COMMAND renovate
+          env -u GIT_SSH_COMMAND "$(npm config get prefix)/bin/renovate"
         env:
           RENOVATE_TOKEN: ${{ steps.app-token.outputs.token || secrets.GITHUB_TOKEN }}
           LOG_LEVEL: ${{ inputs.log-level }}
