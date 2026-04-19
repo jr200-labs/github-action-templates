@@ -125,23 +125,16 @@ jobs:
           owner: ${{ github.repository_owner }}
 
       - name: Self-hosted Renovate
-        # renovatebot/github-action only publishes specific patch tags, no
-        # floating majors. Pin to a known-good release; Renovate itself can
-        # be updated independently of this action via the `renovate-version`
-        # input below if needed.
-        uses: renovatebot/github-action@v46.1.9
-        with:
-          token: ${{ steps.app-token.outputs.token || secrets.GITHUB_TOKEN }}
-          # Use host networking so the Renovate container shares the
-          # runner pod's network. Dind's default bridge network has
-          # routing issues that cause ETIMEDOUT on api.github.com.
-          docker-network: host
+        # Run Renovate directly via npx instead of renovatebot/github-action
+        # to control the process environment. simple-git v3.36+ blocks
+        # GIT_SSH_COMMAND which the ARC runner sets. Using `env -u` strips
+        # it from the process tree before Renovate starts.
+        run: |
+          npm install --global renovate@43
+          env -u GIT_SSH_COMMAND renovate
         env:
+          RENOVATE_TOKEN: ${{ steps.app-token.outputs.token || secrets.GITHUB_TOKEN }}
           LOG_LEVEL: ${{ inputs.log-level }}
-          # Install Renovate as a node package instead of docker run.
-          # Self-hosted ARC runners use dind whose inner containers
-          # can't resolve DNS to api.github.com (ETIMEDOUT).
-          RENOVATE_BINARY_SOURCE: install
           # Restrict Renovate to the current repo only.
           RENOVATE_REPOSITORIES: ${{ github.repository }}
           # The per-repo renovate.json already exists (it extends the shared
