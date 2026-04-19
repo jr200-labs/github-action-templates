@@ -136,6 +136,10 @@ jobs:
           # Self-hosted ARC runners use dind whose inner containers
           # can't resolve DNS to api.github.com (ETIMEDOUT).
           RENOVATE_BINARY_SOURCE: install
+          # actions/checkout sets GIT_SSH_COMMAND which simple-git v3.36+
+          # blocks by default. Unset it — Renovate uses HTTPS auth via
+          # the token, not SSH.
+          GIT_SSH_COMMAND: ''
           # Restrict Renovate to the current repo only.
           RENOVATE_REPOSITORIES: ${{ github.repository }}
           # The per-repo renovate.json already exists (it extends the shared
