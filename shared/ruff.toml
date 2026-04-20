@@ -1,0 +1,23 @@
+# Canonical ruff config for all whengas + jr200-labs Python repos.
+# Per-repo pyproject.toml should extend this:
+#   [tool.ruff]
+#   extend = ".shared/ruff.toml"
+
+line-length = 88
+target-version = "py312"
+
+[lint]
+extend-select = [
+    "B001",   # bare except (bugbear)
+    "B",      # flake8-bugbear
+    "E722",   # bare except (pycodestyle)
+    "F401",   # unused imports
+    "F841",   # unused variables
+    "G",      # flake8-logging-format
+]
+
+[lint.per-file-ignores]
+"tests/**" = ["F401"]
+
+[format]
+quote-style = "double"
