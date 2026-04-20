@@ -8,8 +8,7 @@ target-version = "py312"
 
 [lint]
 extend-select = [
-    "B001",   # bare except (bugbear)
-    "B",      # flake8-bugbear
+    "B",      # flake8-bugbear (includes bare-except detection)
     "E722",   # bare except (pycodestyle)
     "F401",   # unused imports
     "F841",   # unused variables
