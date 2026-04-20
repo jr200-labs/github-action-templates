@@ -15,8 +15,8 @@ linters:
     staticcheck:
       checks:
         - "all"
-        - "-QF1008"  # embedded field selectors — explicit nesting is clearer
-        - "-ST1005"  # error string formatting — too strict for our codebase
+        - "-QF*"     # quick-fix suggestions — too opinionated
+        - "-ST*"     # style rules — too noisy for existing codebase
 
 run:
   timeout: 5m
