@@ -11,6 +11,12 @@ linters:
     - errcheck
     - ineffassign
     - unused
+  settings:
+    staticcheck:
+      checks:
+        - "all"
+        - "-QF1008"  # embedded field selectors — explicit nesting is clearer
+        - "-ST1005"  # error string formatting — too strict for our codebase
 
 run:
   timeout: 5m
