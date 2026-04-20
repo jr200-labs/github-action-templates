@@ -53,6 +53,11 @@
       "enabled": false
     },
     {
+      "description": "Don't bump @luma.gl/webgl independently — it must match @luma.gl/core which is patched at 9.2.6 for SSR null safety. Bumping webgl without core causes Turbopack build failures (missing Fence export). See WG-74.",
+      "matchPackageNames": ["@luma.gl/webgl"],
+      "enabled": false
+    },
+    {
       "description": "Disable pep621 manager for pyapi-service-kit — it's a private git-pinned dep handled by our custom regex manager. The pep621 manager can't resolve git+https refs (unsupported/unversioned value) and collides with the regex manager, causing 'Ignoring upgrade collision' and no PR being created.",
       "matchManagers": ["pep621"],
       "matchPackageNames": ["pyapi-service-kit"],
