@@ -55,13 +55,13 @@ jobs:
       - name: Check if private git deps auth is configured
         id: check-git-auth
         run: |
-          if [ -n "$APP_ID" ] && [ -n "$APP_KEY" ]; then
+          if [ -n "$CLIENT_ID" ] && [ -n "$APP_KEY" ]; then
             echo "available=true" >> $GITHUB_OUTPUT
           else
             echo "available=false" >> $GITHUB_OUTPUT
           fi
         env:
-          APP_ID: ${{ secrets.client_id }}
+          CLIENT_ID: ${{ secrets.client_id }}
           APP_KEY: ${{ secrets.app_private_key }}
 
       - name: Generate token for private git deps
