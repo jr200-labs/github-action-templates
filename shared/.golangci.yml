@@ -11,6 +11,7 @@ linters:
     - errcheck
     - ineffassign
     - unused
+    - nilerr     # don't swallow errors (return nil when err != nil)
   settings:
     staticcheck:
       checks:

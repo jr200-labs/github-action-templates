@@ -13,6 +13,7 @@ extend-select = [
     "F401",   # unused imports
     "F841",   # unused variables
     "G",      # flake8-logging-format
+    "S110",   # try-except-pass — don't swallow exceptions silently
 ]
 
 [lint.per-file-ignores]
