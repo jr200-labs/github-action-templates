@@ -2,8 +2,7 @@
 # Per-repo can override by placing a local .golangci.yml that extends this.
 # Download to .shared/.golangci.yml via sync-shared-lint.sh
 
-run:
-  timeout: 5m
+version: "2"
 
 linters:
   enable:
@@ -14,5 +13,9 @@ linters:
     - unused
     - gosimple
 
-issues:
-  exclude-use-default: false
+run:
+  timeout: 5m
+
+formatters:
+  enable:
+    - gofmt
