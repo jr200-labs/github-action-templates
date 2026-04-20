@@ -29,9 +29,9 @@ on:
         type: string
         default: 'ubuntu-latest'
     secrets:
-      app_id:
+      client_id:
         required: false
-        description: "GitHub App ID for generating a token to clone private git deps"
+        description: "GitHub App Client ID for generating a token to clone private git deps"
       app_private_key:
         required: false
         description: "GitHub App private key for generating a token to clone private git deps"
@@ -61,7 +61,7 @@ jobs:
             echo "available=false" >> $GITHUB_OUTPUT
           fi
         env:
-          APP_ID: ${{ secrets.app_id }}
+          APP_ID: ${{ secrets.client_id }}
           APP_KEY: ${{ secrets.app_private_key }}
 
       - name: Generate token for private git deps
@@ -69,7 +69,7 @@ jobs:
         id: git-auth
         uses: actions/create-github-app-token@v3
         with:
-          app-id: ${{ secrets.app_id }}
+          client-id: ${{ secrets.client_id }}
           private-key: ${{ secrets.app_private_key }}
           owner: ${{ github.repository_owner }}
 
