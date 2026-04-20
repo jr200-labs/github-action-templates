@@ -4,10 +4,10 @@ on:
   workflow_call:
     inputs:
       checkout-ref:
-        description: "checkout ref"
+        description: "checkout ref (leave empty to use the event's natural ref)"
         required: false
         type: string
-        default: "refs/heads/master"
+        default: ""
       uv-sync-args:
         description: "Additional args for uv sync (e.g. '--extra nats --extra s3' or '--all-extras')"
         required: false
