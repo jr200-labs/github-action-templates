@@ -1,0 +1,18 @@
+# Canonical golangci-lint config for all whengas + jr200-labs Go repos.
+# Per-repo can override by placing a local .golangci.yml that extends this.
+# Download to .shared/.golangci.yml via sync-shared-lint.sh
+
+run:
+  timeout: 5m
+
+linters:
+  enable:
+    - govet
+    - staticcheck
+    - errcheck
+    - ineffassign
+    - unused
+    - gosimple
+
+issues:
+  exclude-use-default: false

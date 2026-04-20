@@ -97,10 +97,16 @@ jobs:
           fi
           echo "✓ Version matches: v${TAG}"
 
+      - name: Sync shared lint config
+        run: |
+          mkdir -p .shared
+          curl -sfL "https://raw.githubusercontent.com/jr200-labs/github-action-templates/master/shared/ruff.toml" \
+            -o .shared/ruff.toml
+
       - name: Lint
         run: |
-          uv run ruff check --output-format=github .
-          uv run ruff format --check .
+          uv run ruff check --config .shared/ruff.toml --output-format=github .
+          uv run ruff format --config .shared/ruff.toml --check .
 
       - name: Type-check
         run: uv run mypy .

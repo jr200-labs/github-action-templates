@@ -61,6 +61,12 @@ jobs:
           fi
           echo "✓ Version matches: v${TAG}"
 
+      - name: Sync shared lint config
+        run: |
+          mkdir -p .shared
+          curl -sfL "https://raw.githubusercontent.com/jr200-labs/github-action-templates/master/shared/eslint.config.mjs" \
+            -o .shared/eslint.config.mjs
+
       - name: Lint
         run: |
           if node -e "const p=require('./package.json'); process.exit(p.scripts?.lint ? 0 : 1)" 2>/dev/null; then

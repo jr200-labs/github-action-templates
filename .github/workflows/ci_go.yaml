@@ -38,8 +38,16 @@ jobs:
         with:
           go-version-file: ${{ inputs.go-version-file }}
 
-      - name: Vet
-        run: go vet ./...
+      - name: Sync shared lint config
+        run: |
+          mkdir -p .shared
+          curl -sfL "https://raw.githubusercontent.com/jr200-labs/github-action-templates/master/shared/.golangci.yml" \
+            -o .shared/.golangci.yml
+
+      - name: Lint
+        uses: golangci/golangci-lint-action@v7
+        with:
+          args: --config .shared/.golangci.yml
 
       - name: Test
         if: inputs.run-tests
