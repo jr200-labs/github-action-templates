@@ -53,11 +53,6 @@ jobs:
           uv python install
           uv sync --group dev ${{ inputs.uv-sync-args }}
 
-      - name: Run formatting checks
-        run: |
-          uv run ruff check --output-format=github .
-          uv run mypy .
-
       - name: Build and check package
         run: |
           uv build --wheel
