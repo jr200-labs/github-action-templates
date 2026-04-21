@@ -23,6 +23,11 @@ on:
         required: false
         type: boolean
         default: true
+      run-size-limit:
+        description: "Run size-limit bundle-size check and post PR comment with diff (requires .size-limit.json and a 'size' script)"
+        required: false
+        type: boolean
+        default: false
       runner:
         description: 'Runner label (e.g. ubuntu-latest or self-hosted)'
         required: false
@@ -128,3 +133,33 @@ jobs:
           else
             echo "No test:integration script found, skipping"
           fi
+
+  size-limit:
+    if: inputs.run-size-limit && github.event_name == 'pull_request'
+    runs-on: ${{ inputs.runner }}
+    needs: unit
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.checkout-ref }}
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        # Version read from package.json "packageManager" field.
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node-version }}
+          cache: pnpm
+
+      - name: Size-limit (compare vs base branch, comment on PR)
+        uses: andresz1/size-limit-action@v1
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          package_manager: pnpm
+          script: pnpm run size
