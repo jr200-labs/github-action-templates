@@ -7,6 +7,14 @@ name: template-release-please
 # Caller repos supply the release-please config + manifest files, and
 # plug in whatever downstream action they want (e.g. dispatch a docker
 # build) using the outputs exposed here.
+#
+# IMPORTANT: caller MUST declare these top-level permissions — otherwise
+# the run may fail with `startup_failure` and no logs on some repos
+# (see GOTCHAS.md #12):
+#
+#   permissions:
+#     contents: write
+#     pull-requests: write
 
 on:
   workflow_call:

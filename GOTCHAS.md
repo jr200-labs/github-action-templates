@@ -198,6 +198,41 @@ still works. Will need updating eventually.
 
 ---
 
+## 12. Caller top-level `permissions:` can silently break reusable workflows
+
+When a caller workflow sets top-level `permissions:` that doesn't include
+every scope the reusable workflow's jobs need, the whole run can fail with
+`startup_failure` — **before any job logs are emitted**. The UI shows
+0 jobs, duration ~1s, and the API returns no annotations.
+
+Observed when first adopting `release_please.yaml` on a private repo:
+the caller had `permissions: contents: read` at top level; the
+reusable's release job declares `contents: write, pull-requests: write`.
+Startup failed immediately.
+
+Confusingly, the identical pattern works on some repos — suggesting the
+cascade depends on org-level/repo-level workflow permission defaults
+(`default_workflow_permissions`, `can_approve_pull_request_reviews`)
+that differ silently between repos.
+
+**Workaround:** Always declare the full set of scopes the reusable needs
+at the caller's top-level `permissions:` block. For release-please:
+
+```yaml
+permissions:
+  contents: write
+  pull-requests: write
+```
+
+Also add `workflow_dispatch:` to the trigger list so you can retrigger
+manually for diagnosis without needing a push to master.
+
+**How to detect:** Watch the first post-merge workflow run. If it shows
+`startup_failure` with 1s duration and no job logs, suspect permissions
+before touching YAML syntax.
+
+---
+
 ## Quick Reference: GitHub App Permissions
 
 Both Apps (`whengas-ci-integration` and `jr200-labs-cicd-bot`) have:
