@@ -34,9 +34,9 @@ on:
         type: string
         default: 'ubuntu-latest'
     secrets:
-      app_id:
+      client_id:
         required: true
-        description: "GitHub App ID for cross-repo token generation"
+        description: "GitHub App Client ID for cross-repo token generation"
       app_private_key:
         required: true
         description: "GitHub App private key for cross-repo token generation"
@@ -46,10 +46,10 @@ jobs:
     runs-on: ${{ inputs.runner }}
     steps:
       - name: Generate cross-repo token
-        uses: actions/create-github-app-token@v3
+        uses: actions/create-github-app-token@v3.1.1
         id: app-token
         with:
-          app-id: ${{ secrets.app_id }}
+          client-id: ${{ secrets.client_id }}
           private-key: ${{ secrets.app_private_key }}
           owner: ${{ github.repository_owner }}
 

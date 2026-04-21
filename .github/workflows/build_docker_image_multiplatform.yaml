@@ -37,10 +37,10 @@ on:
         required: true
       git_token:
         required: false
-        description: "Token for cloning private git dependencies during Docker build (deprecated: use app_id + app_private_key instead)"
-      app_id:
+        description: "Token for cloning private git dependencies during Docker build (deprecated: use client_id + app_private_key instead)"
+      client_id:
         required: false
-        description: "GitHub App ID for generating a token to clone private git deps"
+        description: "GitHub App Client ID for generating a token to clone private git deps"
       app_private_key:
         required: false
         description: "GitHub App private key for generating a token to clone private git deps"
@@ -139,22 +139,22 @@ jobs:
       - name: Check if private git deps auth is configured
         id: check-git-auth
         run: |
-          if [ -n "$APP_ID" ] && [ -n "$APP_KEY" ]; then
+          if [ -n "$CLIENT_ID" ] && [ -n "$APP_KEY" ]; then
             echo "available=true" >> $GITHUB_OUTPUT
           else
             echo "available=false" >> $GITHUB_OUTPUT
-            echo "::notice::Skipping private git deps auth (app_id/app_private_key not configured)"
+            echo "::notice::Skipping private git deps auth (client_id/app_private_key not configured)"
           fi
         env:
-          APP_ID: ${{ secrets.app_id }}
+          CLIENT_ID: ${{ secrets.client_id }}
           APP_KEY: ${{ secrets.app_private_key }}
 
       - name: Generate token for private git deps
         if: steps.check-git-auth.outputs.available == 'true'
         id: git-auth
-        uses: actions/create-github-app-token@v3
+        uses: actions/create-github-app-token@v3.1.1
         with:
-          app-id: ${{ secrets.app_id }}
+          client-id: ${{ secrets.client_id }}
           private-key: ${{ secrets.app_private_key }}
           owner: ${{ github.repository_owner }}
 
