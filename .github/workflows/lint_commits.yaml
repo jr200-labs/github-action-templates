@@ -42,7 +42,17 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Commitlint
+      # wagoid action trips EISDIR if configFile is passed as empty string
+      # (cosmiconfig then treats the workspace dir as a file). Split into two
+      # steps so we only pass configFile when the caller actually set it.
+      - name: Commitlint (auto-detect config)
+        if: inputs.config-file == ''
+        uses: wagoid/commitlint-github-action@v6
+        with:
+          failOnWarnings: ${{ inputs.fail-on-warnings }}
+
+      - name: Commitlint (explicit config)
+        if: inputs.config-file != ''
         uses: wagoid/commitlint-github-action@v6
         with:
           failOnWarnings: ${{ inputs.fail-on-warnings }}
