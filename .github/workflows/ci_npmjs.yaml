@@ -38,7 +38,36 @@ env:
   # Disable Next.js anonymous telemetry on CI. No-op for non-Next consumers.
   NEXT_TELEMETRY_DISABLED: "1"
 
+# Cancel superseded runs on the same PR. Master/tag pushes are not
+# cancelled (force-pushes to main branches are rare and usually intentional).
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
+  changes:
+    # Detects whether bundle inputs changed. Used to gate the expensive
+    # size-limit job, which otherwise runs a full build twice (base + PR)
+    # on every PR regardless of whether the change could affect bundle size.
+    if: inputs.run-size-limit && github.event_name == 'pull_request'
+    runs-on: ${{ inputs.runner }}
+    permissions:
+      pull-requests: read
+    outputs:
+      bundle: ${{ steps.filter.outputs.bundle }}
+    steps:
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            bundle:
+              - 'src/**'
+              - 'public/**'
+              - 'package.json'
+              - 'pnpm-lock.yaml'
+              - 'next.config.*'
+              - '.size-limit.json'
+
   unit:
     runs-on: ${{ inputs.runner }}
     steps:
@@ -156,9 +185,9 @@ jobs:
           fi
 
   size-limit:
-    if: inputs.run-size-limit && github.event_name == 'pull_request'
+    if: inputs.run-size-limit && github.event_name == 'pull_request' && needs.changes.outputs.bundle == 'true'
     runs-on: ${{ inputs.runner }}
-    needs: unit
+    needs: [unit, changes]
     permissions:
       contents: read
       pull-requests: write
