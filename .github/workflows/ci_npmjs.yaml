@@ -67,6 +67,14 @@ jobs:
           curl -sfL "https://raw.githubusercontent.com/jr200-labs/github-action-templates/master/shared/eslint.config.mjs" \
             -o .shared/eslint.config.mjs
 
+      - name: Syncpack lint
+        run: |
+          if [ -f .syncpackrc.yaml ] || [ -f .syncpackrc.yml ]; then
+            pnpm syncpack lint
+          else
+            echo "No syncpack config found, skipping"
+          fi
+
       - name: Lint
         run: |
           if node -e "const p=require('./package.json'); process.exit(p.scripts?.lint ? 0 : 1)" 2>/dev/null; then
