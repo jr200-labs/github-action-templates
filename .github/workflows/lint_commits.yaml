@@ -1,0 +1,49 @@
+name: template-lint-commits
+
+# Reusable workflow that validates all commits in a pull request against
+# the Conventional Commits spec via wagoid/commitlint-github-action.
+#
+# Caller repos are expected to commit a `commitlint.config.mjs` file at
+# the repo root, typically:
+#
+#   export default { extends: ['@commitlint/config-conventional'] }
+#
+# The action picks it up automatically. An inline fallback config is
+# provided for repos that don't ship one yet.
+
+on:
+  workflow_call:
+    inputs:
+      runner:
+        description: 'Runner label (e.g. ubuntu-latest or self-hosted)'
+        required: false
+        type: string
+        default: 'ubuntu-latest'
+      fail-on-warnings:
+        description: 'Treat commitlint warnings as failures'
+        required: false
+        type: boolean
+        default: false
+      config-file:
+        description: 'Path to commitlint config file (optional; auto-detected otherwise)'
+        required: false
+        type: string
+        default: ''
+
+jobs:
+  commitlint:
+    runs-on: ${{ inputs.runner }}
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Commitlint
+        uses: wagoid/commitlint-github-action@v6
+        with:
+          failOnWarnings: ${{ inputs.fail-on-warnings }}
+          configFile: ${{ inputs.config-file }}
