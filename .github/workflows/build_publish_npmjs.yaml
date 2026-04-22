@@ -56,6 +56,13 @@ jobs:
           fi
 
       - run: pnpm install --no-frozen-lockfile
+
+      - name: Sync shared lint config
+        run: |
+          mkdir -p .shared
+          curl -sfL "https://raw.githubusercontent.com/jr200-labs/github-action-templates/master/shared/eslint.config.mjs" \
+            -o .shared/eslint.config.mjs
+
       - run: pnpm run lint
       - run: pnpm run prettier --write
 
