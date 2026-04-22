@@ -35,6 +35,12 @@
       "labels": ["dependencies", "renovate", "major-upgrade"]
     },
     {
+      "description": "Widen (don't bump) peer-dependency ranges on @opentelemetry/* so consumers stay free to upgrade without lib churn. The @opentelemetry/api package is a pluggable singleton contract — if a library pins a narrow peer range and a consumer has a different copy resolved alongside, provider.register() touches one copy while trace.getTracer() reads the other, resulting in silent no-op spans. Widening keeps the existing range satisfied while also admitting the new version.",
+      "matchDepTypes": ["peerDependencies"],
+      "matchPackageNames": ["@opentelemetry/**"],
+      "rangeStrategy": "widen"
+    },
+    {
       "description": "Group all GitHub Action version bumps together",
       "matchManagers": ["github-actions"],
       "groupName": "github-actions",
