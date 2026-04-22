@@ -1,0 +1,16 @@
+{
+  "$schema": "./MANIFEST.schema.json",
+  "_comment": "Declares files synced from this repo's shared/ dir into consumer repos. See sync.sh. Two destination modes: cache (→ .shared/, gitignored, re-fetched in CI) and committed (→ repo root, committed to git, drift-checked).",
+  "common": {
+    "committed": ["release-please-config.json"]
+  },
+  "python": {
+    "cache": ["ruff.toml"]
+  },
+  "node": {
+    "cache": ["eslint.config.mjs"]
+  },
+  "go": {
+    "cache": [".golangci.yml"]
+  }
+}
