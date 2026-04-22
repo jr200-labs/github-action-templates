@@ -10,19 +10,34 @@
 # Two destination modes per file (declared in MANIFEST.json):
 #   - cache     → written to .shared/<file> (gitignored; re-fetched in CI)
 #   - committed → written to <file> at repo root (must be committed; drift-checked)
+#
+# Offline tolerance:
+#   - SYNC_OFFLINE=1       → skip entirely, exit 0 (explicit opt-out)
+#   - network failures     → warn to stderr, skip that file, exit 0 (never block commit)
+#   - missing jq/curl      → warn + exit 0 (local dev without deps still commits)
 
-set -euo pipefail
+set -uo pipefail
 
 REPO="jr200-labs/github-action-templates"
 BRANCH="master"
 SHARED_DIR=".shared"
 BASE_URL="https://raw.githubusercontent.com/${REPO}/${BRANCH}/shared"
 
-die() { echo "error: $*" >&2; exit 1; }
+warn() { echo "sync: $*" >&2; }
 
-require() {
-    command -v "$1" >/dev/null 2>&1 || die "missing required command: $1"
-}
+if [ "${SYNC_OFFLINE:-0}" = "1" ]; then
+    warn "SYNC_OFFLINE=1 — skipping shared config sync"
+    exit 0
+fi
+
+if ! command -v curl >/dev/null 2>&1; then
+    warn "curl not found — skipping shared config sync"
+    exit 0
+fi
+if ! command -v jq >/dev/null 2>&1; then
+    warn "jq not found — skipping shared config sync"
+    exit 0
+fi
 
 detect_language() {
     if [ -f "pyproject.toml" ] || [ -f "setup.py" ]; then
@@ -32,7 +47,7 @@ detect_language() {
     elif [ -f "package.json" ]; then
         echo "node"
     else
-        die "cannot detect project language — pass python, go, or node as argument"
+        echo ""
     fi
 }
 
@@ -40,8 +55,14 @@ download_to() {
     local remote_path="$1"
     local local_path="$2"
     mkdir -p "$(dirname "$local_path")"
-    curl -sfL "${BASE_URL}/${remote_path}" -o "$local_path"
-    echo "synced: ${remote_path} -> ${local_path}"
+    if curl -sfL --max-time 10 "${BASE_URL}/${remote_path}" -o "${local_path}.tmp"; then
+        mv "${local_path}.tmp" "$local_path"
+        echo "synced: ${remote_path} -> ${local_path}"
+    else
+        rm -f "${local_path}.tmp"
+        warn "offline or fetch failed — skipped ${remote_path}"
+        return 1
+    fi
 }
 
 ensure_gitignore() {
@@ -53,13 +74,17 @@ ensure_gitignore() {
     fi
 }
 
-require curl
-require jq
-
 LANG="${1:-$(detect_language)}"
+if [ -z "$LANG" ]; then
+    warn "cannot detect project language — pass python, go, or node as argument; skipping"
+    exit 0
+fi
 
-# Fetch manifest
-MANIFEST_JSON=$(curl -sfL "${BASE_URL}/MANIFEST.json") || die "failed to fetch MANIFEST.json"
+# Fetch manifest — if network down, skip the whole sync cleanly.
+MANIFEST_JSON=$(curl -sfL --max-time 10 "${BASE_URL}/MANIFEST.json" 2>/dev/null) || {
+    warn "cannot fetch MANIFEST.json (offline?) — skipping sync"
+    exit 0
+}
 
 get_files() {
     # $1 = section (common | <lang>), $2 = mode (cache | committed)
@@ -70,7 +95,7 @@ get_files() {
 for section in common "$LANG"; do
     while IFS= read -r f; do
         [ -z "$f" ] && continue
-        download_to "$f" "$f"
+        download_to "$f" "$f" || true
     done < <(get_files "$section" "committed")
 done
 
@@ -78,13 +103,13 @@ done
 for section in common "$LANG"; do
     while IFS= read -r f; do
         [ -z "$f" ] && continue
-        download_to "$f" "${SHARED_DIR}/$f"
+        download_to "$f" "${SHARED_DIR}/$f" || true
     done < <(get_files "$section" "cache")
 done
 
-# Always refresh self for future syncs
-download_to "sync.sh" "${SHARED_DIR}/sync.sh"
-chmod +x "${SHARED_DIR}/sync.sh"
+# Refresh self for future syncs (best-effort)
+download_to "sync.sh" "${SHARED_DIR}/sync.sh" || true
+[ -f "${SHARED_DIR}/sync.sh" ] && chmod +x "${SHARED_DIR}/sync.sh"
 
 ensure_gitignore
 
