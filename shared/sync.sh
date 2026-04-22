@@ -3,9 +3,12 @@
 # Driven by shared/MANIFEST.json — see that file for the file lists.
 #
 # Usage:
-#   ./sync.sh [python|go|node]
+#   ./sync.sh [python|go|node]        # single-language override
+#   ./sync.sh "python node"           # explicit multi-language override
+#   ./sync.sh                         # auto-detect ALL present languages
 #
-# If no language is specified, detects from project files.
+# Auto-detect iterates every marker file (pyproject.toml, go.mod,
+# package.json) and syncs each language's configs — polyglot-safe.
 #
 # Two destination modes per file (declared in MANIFEST.json):
 #   - cache     → written to .shared/<file> (gitignored; re-fetched in CI)
@@ -39,16 +42,14 @@ if ! command -v jq >/dev/null 2>&1; then
     exit 0
 fi
 
-detect_language() {
-    if [ -f "pyproject.toml" ] || [ -f "setup.py" ]; then
-        echo "python"
-    elif [ -f "go.mod" ]; then
-        echo "go"
-    elif [ -f "package.json" ]; then
-        echo "node"
-    else
-        echo ""
-    fi
+detect_languages() {
+    # Emit every language whose marker file is present. Polyglot repos
+    # (e.g. Go backend + Node frontend at root) need all their configs.
+    local langs=()
+    [ -f "pyproject.toml" ] || [ -f "setup.py" ] && langs+=("python")
+    [ -f "go.mod" ] && langs+=("go")
+    [ -f "package.json" ] && langs+=("node")
+    echo "${langs[*]}"
 }
 
 download_to() {
@@ -74,9 +75,9 @@ ensure_gitignore() {
     fi
 }
 
-LANG="${1:-$(detect_language)}"
-if [ -z "$LANG" ]; then
-    warn "cannot detect project language — pass python, go, or node as argument; skipping"
+LANGS="${1:-$(detect_languages)}"
+if [ -z "$LANGS" ]; then
+    warn "cannot detect project language(s) — pass python, go, or node as argument; skipping"
     exit 0
 fi
 
@@ -92,7 +93,7 @@ get_files() {
 }
 
 # Sync committed files (common + language-specific) → repo root
-for section in common "$LANG"; do
+for section in common $LANGS; do
     while IFS= read -r f; do
         [ -z "$f" ] && continue
         download_to "$f" "$f" || true
@@ -100,7 +101,7 @@ for section in common "$LANG"; do
 done
 
 # Sync cache files (common + language-specific) → .shared/
-for section in common "$LANG"; do
+for section in common $LANGS; do
     while IFS= read -r f; do
         [ -z "$f" ] && continue
         download_to "$f" "${SHARED_DIR}/$f" || true
