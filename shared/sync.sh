@@ -3,9 +3,15 @@
 # Driven by shared/MANIFEST.json — see that file for the file lists.
 #
 # Usage:
-#   ./sync.sh [python|go|node]
+#   ./sync.sh [python|go|node]        # single-language override
+#   ./sync.sh "python node"           # explicit multi-language override
+#   ./sync.sh all                     # sync every language in MANIFEST
+#   ./sync.sh                         # auto-detect from present marker files
 #
-# If no language is specified, detects from project files.
+# Auto-detect iterates every marker file (pyproject.toml, go.mod,
+# package.json) and syncs each language's configs — polyglot-safe.
+# Use `all` when you want every language regardless of markers (e.g. a
+# tooling repo that doesn't check in any marker file).
 #
 # Two destination modes per file (declared in MANIFEST.json):
 #   - cache     → written to .shared/<file> (gitignored; re-fetched in CI)
@@ -39,16 +45,14 @@ if ! command -v jq >/dev/null 2>&1; then
     exit 0
 fi
 
-detect_language() {
-    if [ -f "pyproject.toml" ] || [ -f "setup.py" ]; then
-        echo "python"
-    elif [ -f "go.mod" ]; then
-        echo "go"
-    elif [ -f "package.json" ]; then
-        echo "node"
-    else
-        echo ""
-    fi
+detect_languages() {
+    # Emit every language whose marker file is present. Polyglot repos
+    # (e.g. Go backend + Node frontend at root) need all their configs.
+    local langs=()
+    [ -f "pyproject.toml" ] || [ -f "setup.py" ] && langs+=("python")
+    [ -f "go.mod" ] && langs+=("go")
+    [ -f "package.json" ] && langs+=("node")
+    echo "${langs[*]}"
 }
 
 download_to() {
@@ -74,17 +78,22 @@ ensure_gitignore() {
     fi
 }
 
-LANG="${1:-$(detect_language)}"
-if [ -z "$LANG" ]; then
-    warn "cannot detect project language — pass python, go, or node as argument; skipping"
-    exit 0
-fi
-
 # Fetch manifest — if network down, skip the whole sync cleanly.
 MANIFEST_JSON=$(curl -sfL --max-time 10 "${BASE_URL}/MANIFEST.json" 2>/dev/null) || {
     warn "cannot fetch MANIFEST.json (offline?) — skipping sync"
     exit 0
 }
+
+LANGS="${1:-$(detect_languages)}"
+if [ "$LANGS" = "all" ]; then
+    # Expand to every language section declared in the manifest (excluding
+    # 'common' and any non-language top-level keys like $schema / _comment).
+    LANGS=$(echo "$MANIFEST_JSON" | jq -r 'keys[] | select(. != "common" and (startswith("$") or startswith("_") | not))' | tr '\n' ' ')
+fi
+if [ -z "$LANGS" ]; then
+    warn "cannot detect project language(s) — pass python, go, or node as argument; skipping"
+    exit 0
+fi
 
 get_files() {
     # $1 = section (common | <lang>), $2 = mode (cache | committed)
@@ -92,7 +101,7 @@ get_files() {
 }
 
 # Sync committed files (common + language-specific) → repo root
-for section in common "$LANG"; do
+for section in common $LANGS; do
     while IFS= read -r f; do
         [ -z "$f" ] && continue
         download_to "$f" "$f" || true
@@ -100,7 +109,7 @@ for section in common "$LANG"; do
 done
 
 # Sync cache files (common + language-specific) → .shared/
-for section in common "$LANG"; do
+for section in common $LANGS; do
     while IFS= read -r f; do
         [ -z "$f" ] && continue
         download_to "$f" "${SHARED_DIR}/$f" || true

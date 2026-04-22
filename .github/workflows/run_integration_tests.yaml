@@ -151,6 +151,21 @@ jobs:
             "${{ inputs.library_name }} @ git+https://github.com/${{ inputs.library_repo }}.git@${{ inputs.library_tag }}" \
             --force-reinstall --no-deps
 
+      # Populate .shared/ from github-action-templates so make check can resolve
+      # `extend = ".shared/ruff.toml"` etc. Pre-commit hooks don't run in CI, so
+      # without this the checked-out service fails ruff/mypy with ENOENT.
+      # No language arg — sync.sh auto-detects from the checked-out service's
+      # pyproject.toml / go.mod / package.json, so this keeps working if the
+      # discover filter widens beyond Python later.
+      - name: Sync shared configs
+        run: |
+          mkdir -p .shared
+          curl -sfL --max-time 10 \
+            "https://raw.githubusercontent.com/jr200-labs/github-action-templates/master/shared/sync.sh" \
+            -o .shared/sync.sh
+          chmod +x .shared/sync.sh
+          .shared/sync.sh
+
       - name: Run checks
         run: make check
 
