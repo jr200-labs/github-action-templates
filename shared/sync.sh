@@ -5,10 +5,13 @@
 # Usage:
 #   ./sync.sh [python|go|node]        # single-language override
 #   ./sync.sh "python node"           # explicit multi-language override
-#   ./sync.sh                         # auto-detect ALL present languages
+#   ./sync.sh all                     # sync every language in MANIFEST
+#   ./sync.sh                         # auto-detect from present marker files
 #
 # Auto-detect iterates every marker file (pyproject.toml, go.mod,
 # package.json) and syncs each language's configs — polyglot-safe.
+# Use `all` when you want every language regardless of markers (e.g. a
+# tooling repo that doesn't check in any marker file).
 #
 # Two destination modes per file (declared in MANIFEST.json):
 #   - cache     → written to .shared/<file> (gitignored; re-fetched in CI)
@@ -75,17 +78,22 @@ ensure_gitignore() {
     fi
 }
 
-LANGS="${1:-$(detect_languages)}"
-if [ -z "$LANGS" ]; then
-    warn "cannot detect project language(s) — pass python, go, or node as argument; skipping"
-    exit 0
-fi
-
 # Fetch manifest — if network down, skip the whole sync cleanly.
 MANIFEST_JSON=$(curl -sfL --max-time 10 "${BASE_URL}/MANIFEST.json" 2>/dev/null) || {
     warn "cannot fetch MANIFEST.json (offline?) — skipping sync"
     exit 0
 }
+
+LANGS="${1:-$(detect_languages)}"
+if [ "$LANGS" = "all" ]; then
+    # Expand to every language section declared in the manifest (excluding
+    # 'common' and any non-language top-level keys like $schema / _comment).
+    LANGS=$(echo "$MANIFEST_JSON" | jq -r 'keys[] | select(. != "common" and (startswith("$") or startswith("_") | not))' | tr '\n' ' ')
+fi
+if [ -z "$LANGS" ]; then
+    warn "cannot detect project language(s) — pass python, go, or node as argument; skipping"
+    exit 0
+fi
 
 get_files() {
     # $1 = section (common | <lang>), $2 = mode (cache | committed)
