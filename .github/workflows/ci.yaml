@@ -22,6 +22,12 @@ on:
     branches: [master]
   push:
     branches: [master]
+  schedule:
+    # Weekly. The pin-lint job below enforces that no packageRule pin
+    # has a review-by date in the past — without a cron, a pin whose
+    # date expires between PRs would stay invisible until the next
+    # touch. Running weekly catches expiry within a week of lapsing.
+    - cron: '23 7 * * 1'
   workflow_dispatch:
 
 permissions:
@@ -76,3 +82,17 @@ jobs:
             -color \
             -shellcheck= \
             -ignore 'peaceiris/actions-gh-pages@v3'
+
+  validate-renovate-pins:
+    # Enforces the no-forever-pin policy on default.json packageRules.
+    # Every version-scoped disable (matchPackageNames + enabled: false)
+    # must carry a `review-by: YYYY-MM-DD` token in its description,
+    # and that date must be neither in the past nor more than 31 days
+    # out. The weekly cron on this workflow is what makes expired pins
+    # loud — without it a lapsed review-by could sit unnoticed until
+    # the next PR touched default.json.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Lint Renovate pins
+        run: ./scripts/lint-renovate-pins.sh
