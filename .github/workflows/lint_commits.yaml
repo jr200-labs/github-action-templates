@@ -32,7 +32,7 @@ on:
 
 jobs:
   commitlint:
-    runs-on: ${{ inputs.runner }}
+    runs-on: ${{ inputs.runner || fromJSON(vars.RUNNER_PROFILES)[vars.RUNNER_PROFILE].default }}
     permissions:
       contents: read
       pull-requests: read

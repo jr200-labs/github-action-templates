@@ -43,7 +43,7 @@ on:
 
 jobs:
   discover-services:
-    runs-on: ${{ inputs.runner }}
+    runs-on: ${{ inputs.runner || fromJSON(vars.RUNNER_PROFILES)[vars.RUNNER_PROFILE].default }}
     outputs:
       matrix: ${{ steps.discover.outputs.matrix }}
       count: ${{ steps.discover.outputs.count }}
@@ -108,7 +108,7 @@ jobs:
       fail-fast: false
       matrix:
         include: ${{ fromJson(needs.discover-services.outputs.matrix) }}
-    runs-on: ${{ inputs.runner }}
+    runs-on: ${{ inputs.runner || fromJSON(vars.RUNNER_PROFILES)[vars.RUNNER_PROFILE].default }}
     steps:
       - name: Generate token
         uses: actions/create-github-app-token@v3.1.1
@@ -175,7 +175,7 @@ jobs:
   report-result:
     needs: [discover-services, test-service]
     if: always()
-    runs-on: ${{ inputs.runner }}
+    runs-on: ${{ inputs.runner || fromJSON(vars.RUNNER_PROFILES)[vars.RUNNER_PROFILE].default }}
     steps:
       - name: Determine result
         id: result

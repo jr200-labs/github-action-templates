@@ -22,7 +22,7 @@ on:
 
 jobs:
   configure:
-    runs-on: ${{ inputs.runner }}
+    runs-on: ${{ inputs.runner || fromJSON(vars.RUNNER_PROFILES)[vars.RUNNER_PROFILE].default }}
     outputs:
       context: ${{ steps.set-context.outputs.context }}
     steps:

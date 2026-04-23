@@ -75,7 +75,7 @@ on:
 
 jobs:
   release-please:
-    runs-on: ${{ inputs.runner }}
+    runs-on: ${{ inputs.runner || fromJSON(vars.RUNNER_PROFILES)[vars.RUNNER_PROFILE].default }}
     permissions:
       contents: write
       pull-requests: write
