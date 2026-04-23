@@ -230,6 +230,19 @@ manually for diagnosis without needing a push to master.
 `startup_failure` with 1s duration and no job logs, suspect permissions
 before touching YAML syntax.
 
+**Refactor gotcha:** When converting an inline job to a reusable
+workflow call, promote job-level `permissions:` to the caller's
+top-level block. Job-level grants supersede top-level for inline jobs
+but do NOT cascade into a reusable workflow — only the caller's
+top-level `permissions:` propagates. A refactor that swaps
+`jobs.foo.runs-on + jobs.foo.permissions` for `jobs.foo.uses:` while
+leaving top-level `permissions: contents: read` will silently regress
+to `startup_failure` on every run. Observed in the wild: an inline
+release-please job with `contents: write, pull-requests: write` at
+job level worked fine; refactoring to
+`uses: .../release_please.yaml@master` without moving the permissions
+block up broke three releases before anyone noticed.
+
 ---
 
 ## Quick Reference: GitHub App Permissions
