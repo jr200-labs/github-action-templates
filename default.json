@@ -53,18 +53,24 @@
       "groupSlug": "docker-base"
     },
     {
-      "description": "Don't bump the Python runtime constraint — that's a deliberate stack decision and not something Renovate should touch. Also sidesteps the 'pep440: failed to calculate newValue' warning Renovate hits when trying to bump '>=3.12,<3.14' style ranges.",
+      "description": "Don't bump the Python runtime constraint — that's a deliberate stack decision and not something Renovate should touch. Also sidesteps the 'pep440: failed to calculate newValue' warning Renovate hits when trying to bump '>=3.12,<3.14' style ranges. review-by: 2026-05-23",
       "matchManagers": ["pep621"],
       "matchPackageNames": ["python"],
       "enabled": false
     },
     {
-      "description": "Don't bump @luma.gl/** or @deck.gl/** — @luma.gl/core is pinned at 9.2.6 with an SSR null-safety patch (patches/@luma.gl__core@9.2.6.patch). Bumping deck.gl to 9.3+ peer-requires @luma.gl/core ~9.3.2, which drops the patch via pnpm hoisting. Bumping @luma.gl/webgl alone causes Turbopack build failures (missing Fence export — only in core@9.3.0+). Keep the whole stack on 9.2.x until the patch is upstreamed or Next/Turbopack no longer trips on it.",
+      "description": "Don't bump @duckdb/duckdb-wasm** on the pre-release `-devN.0` channel. Dev45 (2026-04-13) rewrote the HTTPWasmClient fetch path (commit 0c09da6) and broke module instantiation at load time with 'Body is disturbed or locked' — the Response body is consumed twice. Last known-good is 1.33.1-dev42.0. Recheck once duckdb-wasm cuts stable 1.33.1 (or later) with the HTTP refactor fixed. review-by: 2026-05-23",
+      "matchPackageNames": ["@duckdb/duckdb-wasm", "@duckdb/duckdb-wasm-shell"],
+      "matchCurrentVersion": "/-dev[0-9]+/",
+      "enabled": false
+    },
+    {
+      "description": "Don't bump @luma.gl/** or @deck.gl/** — @luma.gl/core is pinned at 9.2.6 with an SSR null-safety patch (patches/@luma.gl__core@9.2.6.patch). Bumping deck.gl to 9.3+ peer-requires @luma.gl/core ~9.3.2, which drops the patch via pnpm hoisting. Bumping @luma.gl/webgl alone causes Turbopack build failures (missing Fence export — only in core@9.3.0+). Keep the whole stack on 9.2.x until the patch is upstreamed or Next/Turbopack no longer trips on it. review-by: 2026-05-23",
       "matchPackageNames": ["@luma.gl/**", "@deck.gl/**"],
       "enabled": false
     },
     {
-      "description": "Disable pep621 manager for pyapi-service-kit — it's a private git-pinned dep handled by our custom regex manager. The pep621 manager can't resolve git+https refs (unsupported/unversioned value) and collides with the regex manager, causing 'Ignoring upgrade collision' and no PR being created.",
+      "description": "Disable pep621 manager for pyapi-service-kit — it's a private git-pinned dep handled by our custom regex manager. The pep621 manager can't resolve git+https refs (unsupported/unversioned value) and collides with the regex manager, causing 'Ignoring upgrade collision' and no PR being created. review-by: 2026-05-23",
       "matchManagers": ["pep621"],
       "matchPackageNames": ["pyapi-service-kit"],
       "enabled": false
