@@ -6,7 +6,7 @@ name: template-drift-check-merge-settings
 # Report-only — never auto-patches. A human flips each setting via the
 # repo UI (or a one-off `gh api PATCH`).
 #
-# Consumer usage (per-repo `.github/workflows/drift-check.yaml`):
+# Consumer usage — public-org caller (.github/workflows/drift-check.yaml):
 #
 #     name: drift-check
 #     on:
@@ -20,14 +20,28 @@ name: template-drift-check-merge-settings
 #           issues: write
 #           contents: read
 #         with:
-#           orgs: "<space-separated org list>"
+#           orgs: ${{ github.repository_owner }}
 #
-# Auth: uses the caller's GITHUB_TOKEN for both the GraphQL scan and the
-# issue create/update. This means each org scans itself from a repo
-# inside that org — GITHUB_TOKEN is scoped to the caller repo's
-# installation and can only see repos the caller's installation can see.
-# Cross-org scanning from a single workflow is deliberately not
-# supported here; configure one consumer per org instead.
+# Consumer usage — private-org caller (needs App token for repo reads):
+#
+#     jobs:
+#       drift-check:
+#         uses: jr200-labs/github-action-templates/.github/workflows/drift_check_merge_settings.yaml@master
+#         permissions:
+#           issues: write
+#           contents: read
+#         with:
+#           orgs: ${{ github.repository_owner }}
+#           client-id: ${{ vars.INTEGRATION_CLIENT_ID }}
+#         secrets:
+#           INTEGRATION_APP_PRIVATE_KEY: ${{ secrets.INTEGRATION_APP_PRIVATE_KEY }}
+#
+# Auth: GITHUB_TOKEN (installation-scoped to the caller) is enough for
+# public orgs, because GraphQL anonymous-ish reads work for public repos.
+# Private orgs need an App-minted installation token scoped to that org;
+# pass `client-id` + `INTEGRATION_APP_PRIVATE_KEY` and the workflow
+# mints one transparently. Each org still scans itself — one consumer
+# per org.
 
 on:
   workflow_call:
@@ -36,6 +50,24 @@ on:
         description: Space-separated list of orgs to scan
         required: true
         type: string
+      client-id:
+        description: >
+          GitHub App Client ID for minting an installation token. Pass
+          `vars.INTEGRATION_CLIENT_ID` from the caller so the expression
+          is evaluated in the caller's context (org-level vars don't
+          resolve inside cross-org reusable workflows). Optional — if
+          omitted, the workflow uses GITHUB_TOKEN, which only sees the
+          caller repo plus public repos in the target orgs.
+        required: false
+        type: string
+        default: ''
+    secrets:
+      # Named explicitly (not `secrets: inherit`) because GitHub Actions
+      # doesn't propagate org-level SECRETS across orgs via inherit, only
+      # VARS. The caller must name-pass this secret.
+      INTEGRATION_APP_PRIVATE_KEY:
+        description: Org-level GitHub App private key for cross-repo read
+        required: false
 
 jobs:
   drift-check:
@@ -48,10 +80,23 @@ jobs:
           ref: master
           path: github-action-templates
 
+      - name: Mint App installation token
+        id: app-token
+        # Only mint if both halves of the App credentials are present.
+        # Falls through to GITHUB_TOKEN otherwise — fine for public orgs.
+        if: inputs.client-id != '' && env.APP_KEY_SET == 'true'
+        env:
+          APP_KEY_SET: ${{ secrets.INTEGRATION_APP_PRIVATE_KEY != '' }}
+        uses: actions/create-github-app-token@v3.1.1
+        with:
+          client-id: ${{ inputs.client-id }}
+          private-key: ${{ secrets.INTEGRATION_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+
       - name: Scan orgs
         id: scan
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token || secrets.GITHUB_TOKEN }}
           ORGS: ${{ inputs.orgs }}
         run: |
           set +e
@@ -81,6 +126,8 @@ jobs:
       - name: Open or update drift issue
         if: steps.scan.outputs.exit == '1'
         env:
+          # Issue creation lives on the CALLER repo, which GITHUB_TOKEN
+          # can always write to. The app token isn't needed here.
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           DRIFT: ${{ steps.scan.outputs.drift }}
           ORGS: ${{ inputs.orgs }}
