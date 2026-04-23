@@ -8,7 +8,7 @@ name: template-renovate
 # auto-discovered.
 #
 # Authentication. Renovate runs against three datasources that need real
-# auth: cross-repo private git tags (e.g. pyapi-service-kit @ git+https...),
+# auth: cross-repo private git tags (e.g. a private package @ git+https...),
 # the ghcr.io container registry, and the calling repo itself for
 # branch/PR/issue creation. The org-level GitHub App secrets cover all of
 # this when present:
@@ -16,21 +16,19 @@ name: template-renovate
 #   * vars.INTEGRATION_APP_ID (= the App's numeric ID)
 #   * secrets.INTEGRATION_APP_PRIVATE_KEY (= the App's .pem contents)
 #
-# Both whengas and jr200-labs orgs publish these as org-level
-# secrets/variables with visibility ALL, populated by the
-# whengas-ci-integration and jr200-labs-cicd-bot Apps respectively
-# (see jr200-labs JR2-18 for the architecture).
+# Consumer orgs publish these as org-level secrets/variables with
+# visibility ALL, populated by a per-org integration App (see JRL-18 for
+# the architecture).
 #
-# When the App secrets are present (the normal case for repos under
-# whengas / jr200-labs), this workflow mints a short-lived installation
-# token via actions/create-github-app-token and feeds it to Renovate as
-# RENOVATE_TOKEN. When they are not present (e.g. a personal-account repo
-# like jr200/* before the github-action-templates transfer), it falls back
-# to the runner's GITHUB_TOKEN — Renovate still works for public
-# datasources (PyPI, npm, github-actions on public repos) but cross-repo
-# private lookups will fail with "no-result" and the resulting PRs will
-# not trigger downstream CI workflows on the same repo. The PR creation
-# itself still works.
+# When the App secrets are present (the normal case for configured
+# consumer orgs), this workflow mints a short-lived installation token
+# via actions/create-github-app-token and feeds it to Renovate as
+# RENOVATE_TOKEN. When they are not present (e.g. a personal-account
+# repo), it falls back to the runner's GITHUB_TOKEN — Renovate still
+# works for public datasources (PyPI, npm, github-actions on public
+# repos) but cross-repo private lookups will fail with "no-result" and
+# the resulting PRs will not trigger downstream CI workflows on the same
+# repo. The PR creation itself still works.
 #
 # Consumer usage (per-repo `.github/workflows/renovate.yml`):
 #
@@ -70,7 +68,7 @@ on:
           inside cross-org reusable workflows. If omitted, falls back
           to vars.INTEGRATION_CLIENT_ID evaluated inside the reusable
           workflow (works for same-org callers and callers with per-repo
-          variable overrides). See WG-42 for details.
+          variable overrides). See GOTCHAS.md for details.
         required: false
         type: string
         default: ''
@@ -83,11 +81,10 @@ on:
       # The App private key is declared as an explicit named secret input
       # because GitHub Actions has a quirk: variables inherited via
       # `secrets: inherit` work across orgs, but SECRETS inherited the same
-      # way only work within the same org. Since github-action-templates
-      # lives in jr200-labs and most callers live in whengas, we have to
-      # name the secret explicitly so the caller can pass it through.
+      # way only work within the same org. Cross-org callers need the
+      # secret named explicitly so it can be passed through.
       INTEGRATION_APP_PRIVATE_KEY:
-        description: Org-level GitHub App private key (whengas-ci-integration / jr200-labs-cicd-bot)
+        description: Org-level GitHub App private key (per-org integration App)
         required: false
 
 jobs:

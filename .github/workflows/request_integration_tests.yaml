@@ -8,19 +8,19 @@ on:
         required: true
         type: string
       target_repo:
-        description: "Repo to dispatch integration tests to (e.g. whengas/whengas-iac)"
+        description: "Repo to dispatch integration tests to (e.g. <org>/<consumer-repo>)"
         required: true
         type: string
       library_name:
-        description: "Pip package name being tested (e.g. pyapi-service-kit)"
+        description: "Pip package name being tested (e.g. <library-name>)"
         required: true
         type: string
       library_repo:
-        description: "Repo containing the library (e.g. whengas/pyapi-service-kit)"
+        description: "Repo containing the library (e.g. <org>/<library-repo>)"
         required: true
         type: string
       callback_repo:
-        description: "Repo to dispatch results back to (e.g. whengas/pyapi-service-kit)"
+        description: "Repo to dispatch results back to (e.g. <org>/<library-repo>)"
         required: true
         type: string
       callback_event_type:

@@ -1,17 +1,17 @@
 # Cross-Org Reusable Workflow & GitHub App Gotchas
 
 This repo (`jr200-labs/github-action-templates`) hosts reusable workflows
-called by ~18 repos across three GitHub orgs: `whengas`, `jr200-labs`, and
-`jr200`. Every gotcha below was discovered the hard way during the initial
-setup (April 2026). GitHub's docs either don't cover these or bury them.
+called by consumer repos across multiple GitHub orgs. Every gotcha below
+was discovered the hard way during the initial setup (April 2026).
+GitHub's docs either don't cover these or bury them.
 
 ---
 
 ## 1. Org-level secrets don't cross org boundaries via `secrets: inherit`
 
 `secrets: inherit` on a reusable workflow call **does not pass org-level
-secrets across org boundaries**. A `whengas` repo calling a `jr200-labs`
-reusable workflow will NOT inherit `whengas`'s org secrets.
+secrets across org boundaries**. A repo in one org calling a reusable
+workflow in another org will NOT inherit the caller org's secrets.
 
 Confusingly, `vars.*` (variables) DO cross orgs via the same mechanism —
 only secrets are blocked.
@@ -20,7 +20,7 @@ only secrets are blocked.
 workflow's `workflow_call.secrets` block. The caller passes it explicitly:
 
 ```yaml
-# Consumer wrapper (in whengas org)
+# Consumer wrapper (in a different org than the reusable workflow)
 secrets:
   INTEGRATION_APP_PRIVATE_KEY: ${{ secrets.INTEGRATION_APP_PRIVATE_KEY }}
 ```
@@ -42,22 +42,21 @@ workflow runtime for **private** repositories on the **GitHub Free plan**.
 The API misleadingly reports `visibility: all` regardless of plan.
 
 **Root cause:** GitHub Free only propagates org secrets/variables to
-public repos. All `whengas` repos are private → org inheritance is
-blocked. The `jr200-labs` org (also Free) doesn't have this problem
-because its repos are public.
+public repos. Orgs where all repos are private see org inheritance
+blocked; orgs on Free with public repos don't hit this.
 
 **Workaround:** Add per-repo duplicates of the variable + secret on
 every private repo that needs them:
 
 ```bash
-gh variable set INTEGRATION_APP_ID --repo whengas/<repo> --body "3216955"
-gh secret set INTEGRATION_APP_PRIVATE_KEY --repo whengas/<repo> < key.pem
+gh variable set INTEGRATION_APP_ID --repo <org>/<repo> --body "<app-id>"
+gh secret set INTEGRATION_APP_PRIVATE_KEY --repo <org>/<repo> < key.pem
 ```
 
 **Long-term fix:** Upgrade to GitHub Team ($4/user/month). Then delete
 all per-repo duplicates — the org-level settings take effect immediately.
 
-**Tracked in:** WG-42 (investigation), WG-44 (review upgrade decision).
+**Tracked in:** consumer-org issue tracker (per-org investigation + upgrade decision).
 
 ---
 
@@ -126,7 +125,7 @@ Without the `workflows:write` permission on the GitHub App, pushes that
 modify `.github/workflows/*.yml` are rejected — even for innocent
 changes like bumping `actions/checkout` version.
 
-Both `whengas-ci-integration` and `jr200-labs-cicd-bot` Apps have this
+The per-org integration Apps used for this workflow all have this
 permission.
 
 ---
@@ -166,8 +165,8 @@ zod validation error.
 ## 10. Rolling back image tags is fragile — Renovate undoes it
 
 If you roll back a deployment by pinning an older image tag in
-`whengas-iac/values.yaml`, Renovate sees the newer (broken) tag as
-"latest" and bumps it back on the next run.
+a consumer repo's IaC `values.yaml`, Renovate sees the newer (broken)
+tag as "latest" and bumps it back on the next run.
 
 **Correct approach:**
 1. Publish a NEW version with the fix (so the broken version is no
@@ -175,9 +174,9 @@ If you roll back a deployment by pinning an older image tag in
 2. Mark the broken version's GitHub Release as pre-release
    (`gh release edit <tag> --prerelease`) — Renovate skips pre-releases
 
-**Safety net:** `whengas-iac/.githooks/pre-commit` automatically marks
-skipped versions as pre-release when it detects a tag downgrade in
-values.yaml. See WG-46.
+**Safety net:** Consumer IaC repos can wire a `.githooks/pre-commit`
+that automatically marks skipped versions as pre-release when it detects
+a tag downgrade in values.yaml.
 
 ---
 
@@ -235,7 +234,7 @@ before touching YAML syntax.
 
 ## Quick Reference: GitHub App Permissions
 
-Both Apps (`whengas-ci-integration` and `jr200-labs-cicd-bot`) have:
+The per-org integration Apps all have:
 
 | Permission | Why |
 |---|---|

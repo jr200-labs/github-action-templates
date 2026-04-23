@@ -2,9 +2,9 @@ name: ci
 
 # Self-CI for github-action-templates.
 #
-# This repo is the shared source-of-truth for ~18 consumer repos across
-# whengas / jr200-labs / jr200 — every push to main effectively ships to
-# production immediately, since:
+# This repo is the shared source-of-truth for consumer repos across
+# multiple orgs — every push to main effectively ships to production
+# immediately, since:
 #
 #   * `default.json` is the Renovate preset extended by every consumer's
 #     `renovate.json` via `github>jr200-labs/github-action-templates`
@@ -15,7 +15,7 @@ name: ci
 # rollback path other than another forward commit. This CI gate exists so
 # that broken changes are caught at PR time instead of in production.
 #
-# Tracked in jr200-labs JRL-20.
+# Tracked in JRL-20.
 
 on:
   pull_request:

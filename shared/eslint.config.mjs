@@ -1,4 +1,4 @@
-// Canonical ESLint config for all whengas + jr200-labs TypeScript repos.
+// Canonical ESLint config for all consumer TypeScript repos.
 // Per-repo eslint.config.mjs should import and spread this:
 //   import sharedConfig from "./.shared/eslint.config.mjs";
 //   export default [...sharedConfig, { /* repo-specific overrides */ }];
