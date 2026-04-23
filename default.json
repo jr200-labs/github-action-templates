@@ -1,6 +1,6 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "description": "Shared Renovate preset for jr200 / jr200-labs / whengas. Extend from a repo's renovate.json with: { \"extends\": [\"github>jr200-labs/github-action-templates\"] }",
+  "description": "Shared Renovate preset for consumer orgs. Extend from a repo's renovate.json with: { \"extends\": [\"github>jr200-labs/github-action-templates\"] }",
   "extends": [
     "config:recommended",
     ":dependencyDashboard",
@@ -59,7 +59,7 @@
       "enabled": false
     },
     {
-      "description": "Don't bump @luma.gl/webgl independently — it must match @luma.gl/core which is patched at 9.2.6 for SSR null safety. Bumping webgl without core causes Turbopack build failures (missing Fence export). See WG-74.",
+      "description": "Don't bump @luma.gl/webgl independently — it must match @luma.gl/core which is patched at 9.2.6 for SSR null safety. Bumping webgl without core causes Turbopack build failures (missing Fence export).",
       "matchPackageNames": ["@luma.gl/webgl"],
       "enabled": false
     },
@@ -78,7 +78,7 @@
   "customManagers": [
     {
       "customType": "regex",
-      "description": "Bump private git-pinned Python deps in pep621 pyproject.toml — e.g. 'pyapi-service-kit[nats,db,otel] @ git+https://github.com/whengas/pyapi-service-kit.git@v0.7.3'",
+      "description": "Bump private git-pinned Python deps in pep621 pyproject.toml — e.g. '<pkg>[extras] @ git+https://github.com/<org>/<pkg>.git@v0.7.3'",
       "managerFilePatterns": ["/(^|/)pyproject\\.toml$/"],
       "matchStrings": [
         "(?<depName>[a-zA-Z0-9_\\-]+)(?:\\[[^\\]]+\\])?\\s*@\\s*git\\+https://github\\.com/(?<packageName>[^/]+/[a-zA-Z0-9_\\-\\.]+?)(?:\\.git)?@(?<currentValue>v[0-9]+\\.[0-9]+\\.[0-9]+)"
@@ -88,7 +88,7 @@
     },
     {
       "customType": "regex",
-      "description": "Bump container image tags in whengas-iac Helm values.yaml files — e.g. 'tag: v0.1.27' under 'repository: ghcr.io/whengas/whengas-api'. Uses the github-tags datasource (not docker), because all our ghcr.io images are pushed from corresponding github repos with matching git tags, and the App token has cross-repo contents:read but not always packages:read on each individual private package. The capture extracts the org/repo path from the ghcr.io reference and queries github tags directly, which sidesteps the per-package access list ghcr.io enforces for private packages.",
+      "description": "Bump container image tags in IaC Helm values.yaml files — e.g. 'tag: v0.1.27' under 'repository: ghcr.io/<org>/<service>'. Uses the github-tags datasource (not docker), because ghcr.io images are pushed from corresponding github repos with matching git tags, and the App token has cross-repo contents:read but not always packages:read on each individual private package. The capture extracts the org/repo path from the ghcr.io reference and queries github tags directly, which sidesteps the per-package access list ghcr.io enforces for private packages.",
       "managerFilePatterns": [
         "/services/.*/env/.*/.*values\\.yaml$/"
       ],

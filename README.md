@@ -1,7 +1,6 @@
 # github-action-templates
 
-Reusable GitHub Actions workflows used by ~18 repos across the `whengas`,
-`jr200-labs`, and `jr200` orgs.
+Reusable GitHub Actions workflows shared across consumer orgs.
 
 ## Important
 

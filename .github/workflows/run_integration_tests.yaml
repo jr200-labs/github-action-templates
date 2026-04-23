@@ -4,11 +4,11 @@ on:
   workflow_call:
     inputs:
       library_name:
-        description: "Pip package name to test (e.g. pyapi-service-kit)"
+        description: "Pip package name to test (e.g. <library-name>)"
         required: true
         type: string
       library_repo:
-        description: "GitHub repo containing the library (e.g. whengas/pyapi-service-kit)"
+        description: "GitHub repo containing the library (e.g. <org>/<library-repo>)"
         required: true
         type: string
       library_tag:

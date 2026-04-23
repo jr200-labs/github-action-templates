@@ -4,8 +4,8 @@ name: renovate
 #
 # This is the consumer wrapper that runs the template-renovate reusable
 # workflow (defined in this same repo at .github/workflows/renovate.yml)
-# against github-action-templates itself. Other repos in the jr200 /
-# jr200-labs / whengas orgs use an identical 1-line consumer file.
+# against github-action-templates itself. Other consumer repos use an
+# identical 1-line consumer file.
 #
 # Lives at renovate-self.yml (not renovate.yml) so it doesn't collide
 # with the template file's filename.

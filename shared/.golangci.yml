@@ -1,4 +1,4 @@
-# Canonical golangci-lint config for all whengas + jr200-labs Go repos.
+# Canonical golangci-lint config for all consumer Go repos.
 # Per-repo can override by placing a local .golangci.yml that extends this.
 # Download to .shared/.golangci.yml via sync-shared-lint.sh
 

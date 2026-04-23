@@ -1,4 +1,4 @@
-# Canonical ruff config for all whengas + jr200-labs Python repos.
+# Canonical ruff config for all consumer Python repos.
 # Per-repo pyproject.toml should extend this:
 #   [tool.ruff]
 #   extend = ".shared/ruff.toml"
