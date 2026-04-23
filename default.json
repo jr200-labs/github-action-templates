@@ -59,8 +59,8 @@
       "enabled": false
     },
     {
-      "description": "Don't bump @luma.gl/webgl independently — it must match @luma.gl/core which is patched at 9.2.6 for SSR null safety. Bumping webgl without core causes Turbopack build failures (missing Fence export).",
-      "matchPackageNames": ["@luma.gl/webgl"],
+      "description": "Don't bump @luma.gl/** or @deck.gl/** — @luma.gl/core is pinned at 9.2.6 with an SSR null-safety patch (patches/@luma.gl__core@9.2.6.patch). Bumping deck.gl to 9.3+ peer-requires @luma.gl/core ~9.3.2, which drops the patch via pnpm hoisting. Bumping @luma.gl/webgl alone causes Turbopack build failures (missing Fence export — only in core@9.3.0+). Keep the whole stack on 9.2.x until the patch is upstreamed or Next/Turbopack no longer trips on it.",
+      "matchPackageNames": ["@luma.gl/**", "@deck.gl/**"],
       "enabled": false
     },
     {
