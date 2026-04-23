@@ -43,7 +43,7 @@ on:
 
 jobs:
   dispatch:
-    runs-on: ${{ inputs.runner }}
+    runs-on: ${{ inputs.runner || fromJSON(vars.RUNNER_PROFILES)[vars.RUNNER_PROFILE].default }}
     steps:
       - name: Generate cross-repo token
         uses: actions/create-github-app-token@v3.1.1

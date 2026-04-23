@@ -50,7 +50,7 @@ jobs:
     # size-limit job, which otherwise runs a full build twice (base + PR)
     # on every PR regardless of whether the change could affect bundle size.
     if: inputs.run-size-limit && github.event_name == 'pull_request'
-    runs-on: ${{ inputs.runner }}
+    runs-on: ${{ inputs.runner || fromJSON(vars.RUNNER_PROFILES)[vars.RUNNER_PROFILE].default }}
     permissions:
       pull-requests: read
     outputs:
@@ -69,7 +69,7 @@ jobs:
               - '.size-limit.json'
 
   unit:
-    runs-on: ${{ inputs.runner }}
+    runs-on: ${{ inputs.runner || fromJSON(vars.RUNNER_PROFILES)[vars.RUNNER_PROFILE].default }}
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -156,7 +156,7 @@ jobs:
 
   integration:
     if: inputs.run-integration
-    runs-on: ${{ inputs.runner }}
+    runs-on: ${{ inputs.runner || fromJSON(vars.RUNNER_PROFILES)[vars.RUNNER_PROFILE].default }}
     needs: unit
     steps:
       - name: Checkout
@@ -186,7 +186,7 @@ jobs:
 
   size-limit:
     if: inputs.run-size-limit && github.event_name == 'pull_request' && needs.changes.outputs.bundle == 'true'
-    runs-on: ${{ inputs.runner }}
+    runs-on: ${{ inputs.runner || fromJSON(vars.RUNNER_PROFILES)[vars.RUNNER_PROFILE].default }}
     needs: [unit, changes]
     permissions:
       contents: read

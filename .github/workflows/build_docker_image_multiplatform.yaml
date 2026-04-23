@@ -57,7 +57,7 @@ env:
 
 jobs:
   setup-matrix:
-    runs-on: ${{ inputs.runner }}
+    runs-on: ${{ inputs.runner || fromJSON(vars.RUNNER_PROFILES)[vars.RUNNER_PROFILE].default }}
     outputs:
       matrix: ${{ steps.create-matrix.outputs.matrix }}
     steps:
@@ -196,7 +196,7 @@ jobs:
 
   merge:
     name: Merge platform specific Docker image into multi platform image
-    runs-on: ${{ inputs.runner }}
+    runs-on: ${{ inputs.runner || fromJSON(vars.RUNNER_PROFILES)[vars.RUNNER_PROFILE].default }}
     needs:
       - build
 

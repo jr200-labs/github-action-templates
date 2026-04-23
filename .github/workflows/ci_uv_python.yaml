@@ -41,7 +41,7 @@ env:
 
 jobs:
   lint-and-test:
-    runs-on: ${{ inputs.runner }}
+    runs-on: ${{ inputs.runner || fromJSON(vars.RUNNER_PROFILES)[vars.RUNNER_PROFILE].default }}
 
     steps:
       - name: Checkout code
