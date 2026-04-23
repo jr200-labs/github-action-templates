@@ -115,7 +115,7 @@ jobs:
           private-key: ${{ secrets.INTEGRATION_APP_PRIVATE_KEY }}
           owner: ${{ github.repository_owner }}
 
-      - name: Self-hosted Renovate
+      - name: Self-hosted Renovate (pass 1)
         # renovatebot/github-action only publishes specific patch tags, no
         # floating majors. Pin to a known-good release; Renovate itself can
         # be updated independently of this action via the `renovate-version`
@@ -136,9 +136,28 @@ jobs:
           # Restrict Renovate to the current repo only.
           RENOVATE_REPOSITORIES: ${{ github.repository }}
           # The per-repo renovate.json already exists (it extends the shared
-          # jr200-labs/github-action-templates preset). Skip the onboarding
-          # PR flow so Renovate doesn't open a "Configure Renovate" PR.
+          # preset). Skip the onboarding PR flow so Renovate doesn't open a
+          # "Configure Renovate" PR.
           RENOVATE_ONBOARDING: 'false'
           RENOVATE_REQUIRE_CONFIG: 'required'
           # Optional dry-run for debugging without creating branches/PRs.
           RENOVATE_DRY_RUN: ${{ inputs.dry-run }}
+
+      - name: Self-hosted Renovate (pass 2 — catches repository-changed quirk)
+        # Renovate occasionally exits with `"result": "repository-changed"`
+        # after pushing a branch update but BEFORE opening the PR, deferring
+        # PR creation to the next scheduled run. A second idempotent pass
+        # right after the first closes this gap: if pass 1 already opened
+        # the PR, pass 2 is a ~30s no-op; if pass 1 deferred, pass 2 creates
+        # the PR. Skipped on dry-run so debug runs don't double-execute.
+        if: success() && inputs.dry-run == ''
+        uses: renovatebot/github-action@v46.1.9
+        with:
+          token: ${{ steps.app-token.outputs.token || secrets.GITHUB_TOKEN }}
+          docker-network: host
+        env:
+          LOG_LEVEL: ${{ inputs.log-level }}
+          RENOVATE_BINARY_SOURCE: install
+          RENOVATE_REPOSITORIES: ${{ github.repository }}
+          RENOVATE_ONBOARDING: 'false'
+          RENOVATE_REQUIRE_CONFIG: 'required'
