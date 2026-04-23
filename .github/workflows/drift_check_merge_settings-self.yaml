@@ -1,0 +1,23 @@
+name: drift-check-merge-settings
+
+# Self-caller for the drift-check-merge-settings reusable workflow.
+# Runs weekly against this org only — GITHUB_TOKEN here is installation-
+# scoped, so cross-org scans aren't possible from this repo. Other orgs
+# should add an identical 1-job consumer file pointing at the same
+# reusable workflow.
+#
+# Mirrors the pattern used by renovate-self.yaml.
+
+on:
+  schedule:
+    - cron: '13 2 * * 1'
+  workflow_dispatch:
+
+jobs:
+  drift-check:
+    uses: ./.github/workflows/drift_check_merge_settings.yaml
+    permissions:
+      issues: write
+      contents: read
+    with:
+      orgs: ${{ github.repository_owner }}

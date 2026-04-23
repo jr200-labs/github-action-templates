@@ -1,79 +1,70 @@
-name: drift-check-merge-settings
+name: template-drift-check-merge-settings
 
-# Weekly drift check that scans one or more GitHub orgs for repos
-# violating the squash/rebase-only merge policy. On drift, opens or
-# updates a single tracking issue in this repo listing the offenders.
-# Does NOT auto-patch; a human flips each setting via the repo UI (or
-# runs a one-off `gh api PATCH`). Report-only by design — the bot
-# never needs administration:write on any target repo.
+# Reusable workflow: scans one or more GitHub orgs for repos violating
+# the squash/rebase-only merge policy. On drift, opens or updates a
+# single tracking issue in the CALLER repo listing the offenders.
+# Report-only — never auto-patches. A human flips each setting via the
+# repo UI (or a one-off `gh api PATCH`).
 #
-# Configuration:
-#   The list of orgs to scan is taken from `vars.DRIFT_CHECK_ORGS`
-#   (space-separated). Defaults to this repo's own owner if the var
-#   is unset — safe for a fresh install before anyone configures it.
-#   Override per-run via workflow_dispatch input.
+# Consumer usage (per-repo `.github/workflows/drift-check.yaml`):
+#
+#     name: drift-check
+#     on:
+#       schedule:
+#         - cron: '13 2 * * 1'
+#       workflow_dispatch:
+#     jobs:
+#       drift-check:
+#         uses: jr200-labs/github-action-templates/.github/workflows/drift_check_merge_settings.yaml@master
+#         permissions:
+#           issues: write
+#           contents: read
+#         with:
+#           orgs: "<space-separated org list>"
+#
+# Auth: uses the caller's GITHUB_TOKEN for both the GraphQL scan and the
+# issue create/update. This means each org scans itself from a repo
+# inside that org — GITHUB_TOKEN is scoped to the caller repo's
+# installation and can only see repos the caller's installation can see.
+# Cross-org scanning from a single workflow is deliberately not
+# supported here; configure one consumer per org instead.
 
 on:
-  schedule:
-    # Weekly on Mondays at 02:13 UTC (offset to dodge the cron rush).
-    - cron: '13 2 * * 1'
-  workflow_dispatch:
+  workflow_call:
     inputs:
       orgs:
         description: Space-separated list of orgs to scan
-        required: false
+        required: true
         type: string
-        default: ''
-
-permissions:
-  # issues:write on THIS repo to post/update the drift report.
-  # Target-repo reads go through GITHUB_TOKEN (public repos).
-  issues: write
-  contents: read
 
 jobs:
   drift-check:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
+      - name: Checkout reusable-workflow repo (for scripts/)
         uses: actions/checkout@v5
-
-      - name: Resolve org list
-        id: orgs
-        env:
-          INPUT_ORGS: ${{ inputs.orgs }}
-          VAR_ORGS: ${{ vars.DRIFT_CHECK_ORGS }}
-          OWNER: ${{ github.repository_owner }}
-        run: |
-          # Priority: workflow_dispatch input > org-level var > own owner.
-          if [[ -n "${INPUT_ORGS}" ]]; then
-            orgs="${INPUT_ORGS}"
-          elif [[ -n "${VAR_ORGS}" ]]; then
-            orgs="${VAR_ORGS}"
-          else
-            orgs="${OWNER}"
-          fi
-          echo "orgs=${orgs}" >> "$GITHUB_OUTPUT"
-          echo "resolved orgs: ${orgs}"
+        with:
+          repository: jr200-labs/github-action-templates
+          ref: master
+          path: github-action-templates
 
       - name: Scan orgs
         id: scan
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          ORGS: ${{ steps.orgs.outputs.orgs }}
+          ORGS: ${{ inputs.orgs }}
         run: |
           set +e
           combined=""
           worst_exit=0
           for org in ${ORGS}; do
-            out=$(./scripts/check-merge-settings.sh "${org}")
+            out=$(./github-action-templates/scripts/check-merge-settings.sh "${org}")
             ec=$?
             case "${ec}" in
               0) ;;  # clean
               1) combined="${combined}${out}"$'\n' ;;
-              *) worst_exit=2 ;;
+              *) ;;  # API error — captured via worst_exit
             esac
-            # Track worst severity (2 > 1 > 0) for the final gate.
             if (( ec > worst_exit )); then
               worst_exit=${ec}
             fi
@@ -92,7 +83,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           DRIFT: ${{ steps.scan.outputs.drift }}
-          ORGS: ${{ steps.orgs.outputs.orgs }}
+          ORGS: ${{ inputs.orgs }}
         run: |
           title="Merge-settings drift detected"
 
