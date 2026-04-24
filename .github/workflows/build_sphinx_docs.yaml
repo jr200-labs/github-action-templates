@@ -19,7 +19,7 @@ on:
         description: 'Runner label (e.g. ubuntu-latest or self-hosted)'
         required: false
         type: string
-        default: 'ubuntu-latest'
+        default: ''
 permissions:
   contents: write
   pages: write
