@@ -5,12 +5,16 @@
 # Policy:
 #   allow_merge_commit = false
 #   allow_squash_merge = true
-#   allow_rebase_merge = true
+#   allow_rebase_merge = false
 #
 # Rationale: tools that derive changelogs from git history (e.g.
-# release-please) double-count commits when PRs land as merge commits
-# rather than squash or rebase. Enforcing squash/rebase-only also keeps
-# history linear and easier to bisect.
+# release-please) give one changelog entry per commit they see on the
+# base branch. Rebase-merge lands every branch commit verbatim on base,
+# so a 2-commit PR with conventional titles produces 2 changelog
+# entries from a single PR (observed on nats-otlp-exporter #12). Merge
+# commits leak the same branch commits plus a merge commit. Squash-only
+# guarantees 1 PR = 1 changelog line. Also keeps master history linear
+# with PR-granular bisect.
 #
 # Usage:
 #   check-merge-settings.sh <org>
@@ -77,7 +81,7 @@ while IFS=$'\t' read -r name merge squash rebase; do
   drift=()
   [[ "$merge"  != "false" ]] && drift+=("mergeCommit=$merge (want false)")
   [[ "$squash" != "true"  ]] && drift+=("squashMerge=$squash (want true)")
-  [[ "$rebase" != "true"  ]] && drift+=("rebaseMerge=$rebase (want true)")
+  [[ "$rebase" != "false" ]] && drift+=("rebaseMerge=$rebase (want false)")
 
   if (( ${#drift[@]} > 0 )); then
     printf '%s\t%s\n' "${org}/${name}" "$(IFS='; '; echo "${drift[*]}")"

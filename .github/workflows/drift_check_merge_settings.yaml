@@ -142,7 +142,7 @@ jobs:
           gh api -X PATCH repos/<owner>/<repo> \\
             -F allow_merge_commit=false \\
             -F allow_squash_merge=true \\
-            -F allow_rebase_merge=true
+            -F allow_rebase_merge=false
           \`\`\`
 
           Scanned orgs: \`${ORGS}\`
