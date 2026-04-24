@@ -3,13 +3,14 @@
 # Driven by shared/MANIFEST.json — see that file for the file lists.
 #
 # Usage:
-#   ./sync.sh [python|go|node]        # single-language override
+#   ./sync.sh [python|go|node|docker] # single-language override
 #   ./sync.sh "python node"           # explicit multi-language override
 #   ./sync.sh all                     # sync every language in MANIFEST
 #   ./sync.sh                         # auto-detect from present marker files
 #
 # Auto-detect iterates every marker file (pyproject.toml, go.mod,
-# package.json) and syncs each language's configs — polyglot-safe.
+# package.json, Dockerfile / docker/Dockerfile / images/*/Dockerfile)
+# and syncs each language's configs — polyglot-safe.
 # Use `all` when you want every language regardless of markers (e.g. a
 # tooling repo that doesn't check in any marker file).
 #
@@ -48,10 +49,15 @@ fi
 detect_languages() {
     # Emit every language whose marker file is present. Polyglot repos
     # (e.g. Go backend + Node frontend at root) need all their configs.
+    # docker marker: Dockerfile at repo root, docker/Dockerfile, or any
+    # images/*/Dockerfile (monorepo image-variant layout).
     local langs=()
     [ -f "pyproject.toml" ] || [ -f "setup.py" ] && langs+=("python")
     [ -f "go.mod" ] && langs+=("go")
     [ -f "package.json" ] && langs+=("node")
+    if [ -f "Dockerfile" ] || [ -f "docker/Dockerfile" ] || compgen -G "images/*/Dockerfile" > /dev/null 2>&1; then
+        langs+=("docker")
+    fi
     echo "${langs[*]}"
 }
 
@@ -91,7 +97,7 @@ if [ "$LANGS" = "all" ]; then
     LANGS=$(echo "$MANIFEST_JSON" | jq -r 'keys[] | select(. != "common" and (startswith("$") or startswith("_") | not))' | tr '\n' ' ')
 fi
 if [ -z "$LANGS" ]; then
-    warn "cannot detect project language(s) — pass python, go, or node as argument; skipping"
+    warn "cannot detect project language(s) — pass python, go, node, or docker as argument; skipping"
     exit 0
 fi
 

@@ -7,9 +7,11 @@ name: template-lint-docker
 # repo — useful for repos like actions-runner-images that host multiple
 # image variants under images/<variant>/Dockerfile.
 #
-# Caller may ship a `.hadolint.yaml` config at repo root to tune rules
-# (ignored IDs, trusted registries, etc.) — hadolint-action reads it
-# automatically.
+# Config discovery (first match wins):
+#   1. committed .hadolint.yaml / .hadolint.yml at repo root
+#   2. cached .shared/.hadolint.yaml (synced via shared/sync.sh with
+#      `docker` language marker) — auto-copied to repo root at CI time
+#   3. hadolint built-in defaults
 
 on:
   workflow_call:
@@ -44,6 +46,21 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+
+      - name: Use cached shared hadolint config if no committed one
+        # hadolint-action auto-reads .hadolint.yaml from repo root only.
+        # If consumer uses shared/sync.sh (cache mode → .shared/.hadolint.yaml)
+        # and has no committed root config, surface the cached one so
+        # hadolint picks it up. Committed root config always wins.
+        run: |
+          if [ -f ".hadolint.yaml" ] || [ -f ".hadolint.yml" ]; then
+            echo "committed .hadolint.yaml present — using as-is"
+          elif [ -f ".shared/.hadolint.yaml" ]; then
+            cp .shared/.hadolint.yaml .hadolint.yaml
+            echo "copied .shared/.hadolint.yaml → .hadolint.yaml"
+          else
+            echo "no hadolint config found — hadolint will use defaults"
+          fi
 
       - name: hadolint
         uses: hadolint/hadolint-action@v3.1.0

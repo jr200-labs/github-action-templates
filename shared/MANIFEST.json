@@ -12,5 +12,8 @@
   },
   "go": {
     "cache": [".golangci.yml"]
+  },
+  "docker": {
+    "cache": [".hadolint.yaml"]
   }
 }
