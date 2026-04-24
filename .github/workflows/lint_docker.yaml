@@ -1,0 +1,53 @@
+name: template-lint-docker
+
+# Reusable workflow that lints Dockerfiles with hadolint.
+#
+# Single-file mode (default): set `dockerfile` to the target path.
+# Monorepo mode: set `recursive: true` to lint every Dockerfile in the
+# repo — useful for repos like actions-runner-images that host multiple
+# image variants under images/<variant>/Dockerfile.
+#
+# Caller may ship a `.hadolint.yaml` config at repo root to tune rules
+# (ignored IDs, trusted registries, etc.) — hadolint-action reads it
+# automatically.
+
+on:
+  workflow_call:
+    inputs:
+      runner:
+        description: 'Runner label (e.g. ubuntu-latest or self-hosted)'
+        required: false
+        type: string
+        default: ''
+      dockerfile:
+        description: 'Path to Dockerfile (ignored when recursive: true)'
+        required: false
+        type: string
+        default: 'Dockerfile'
+      recursive:
+        description: 'Lint every Dockerfile in the repo recursively'
+        required: false
+        type: boolean
+        default: false
+      failure-threshold:
+        description: 'hadolint severity threshold: error | warning | info | style | ignore | none'
+        required: false
+        type: string
+        default: 'warning'
+
+jobs:
+  hadolint:
+    runs-on: ${{ inputs.runner || fromJSON(vars.RUNNER_PROFILES)[vars.RUNNER_PROFILE].default }}
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: hadolint
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: ${{ inputs.dockerfile }}
+          recursive: ${{ inputs.recursive }}
+          failure-threshold: ${{ inputs.failure-threshold }}
