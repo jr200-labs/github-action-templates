@@ -103,6 +103,18 @@
       ],
       "datasourceTemplate": "github-tags",
       "versioningTemplate": "semver"
+    },
+    {
+      "customType": "regex",
+      "description": "Bump inline `image: ghcr.io/<org>/<repo>:vX.Y.Z` refs in IaC Helm values.yaml files — e.g. k8s pod-spec style image refs inside `template:` blocks (ARC gha-runner-scale-set, external charts that don't split repository/tag). Same rationale as the repository:/tag: manager above: github-tags datasource sidesteps the per-package access list ghcr.io enforces for private packages. The semver bound in currentValue ensures floating tags like `:latest` or `:dind` are ignored.",
+      "managerFilePatterns": [
+        "/services/.*/env/.*/.*values\\.yaml$/"
+      ],
+      "matchStrings": [
+        "image:\\s*ghcr\\.io/(?<depName>[^/\\s]+/[^\\s:]+):(?<currentValue>v?[0-9]+\\.[0-9]+\\.[0-9]+)"
+      ],
+      "datasourceTemplate": "github-tags",
+      "versioningTemplate": "semver"
     }
   ]
 }
