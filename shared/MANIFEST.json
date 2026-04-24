@@ -1,6 +1,6 @@
 {
   "$schema": "./MANIFEST.schema.json",
-  "_comment": "Declares files synced from this repo's shared/ dir into consumer repos. See sync.sh. Two destination modes: cache (→ .shared/, gitignored, re-fetched in CI) and committed (→ repo root, committed to git, drift-checked).",
+  "_comment": "Declares files synced from this repo's shared/ dir into consumer repos. See sync.sh. Three destination modes: cache (→ .shared/, gitignored, re-fetched in CI), committed (→ repo root, tracked, drift-checked), and merged (→ repo root, tracked, drift-checked; deep-merged via yq with optional repo-local override file).",
   "common": {
     "committed": ["release-please-config.json"]
   },
@@ -8,7 +8,14 @@
     "cache": ["ruff.toml"]
   },
   "node": {
-    "cache": ["eslint.config.mjs"]
+    "cache": ["eslint.config.mjs"],
+    "merged": [
+      {
+        "source": "syncpack/.syncpackrc.base.yaml",
+        "local": ".syncpackrc.local.yaml",
+        "target": ".syncpackrc.yaml"
+      }
+    ]
   },
   "go": {
     "cache": [".golangci.yml"]

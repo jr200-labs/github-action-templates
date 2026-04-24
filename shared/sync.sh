@@ -14,14 +14,20 @@
 # Use `all` when you want every language regardless of markers (e.g. a
 # tooling repo that doesn't check in any marker file).
 #
-# Two destination modes per file (declared in MANIFEST.json):
+# Three destination modes per file (declared in MANIFEST.json):
 #   - cache     → written to .shared/<file> (gitignored; re-fetched in CI)
 #   - committed → written to <file> at repo root (must be committed; drift-checked)
+#   - merged    → fetch <source> from shared/, deep-merge with repo-local
+#                 <local> via yq, write to <target> at repo root. Entry shape:
+#                 {"source":"...","local":"...","target":"..."}. Merge order:
+#                 local first, base last (arrays append) — consumers override
+#                 template defaults via first-match-wins group ordering.
 #
 # Offline tolerance:
 #   - SYNC_OFFLINE=1       → skip entirely, exit 0 (explicit opt-out)
 #   - network failures     → warn to stderr, skip that file, exit 0 (never block commit)
 #   - missing jq/curl      → warn + exit 0 (local dev without deps still commits)
+#   - missing yq           → skip merged entries, preserve last-good target, exit 0
 
 set -uo pipefail
 
@@ -106,6 +112,48 @@ get_files() {
     echo "$MANIFEST_JSON" | jq -r --arg s "$1" --arg m "$2" '(.[$s][$m] // []) | .[]'
 }
 
+get_merged_entries() {
+    # $1 = section. Emit tab-separated source\tlocal\ttarget lines.
+    echo "$MANIFEST_JSON" | jq -r --arg s "$1" \
+        '(.[$s].merged // []) | .[] | [.source, .local, .target] | @tsv'
+}
+
+merge_entry() {
+    # $1 = source (remote path under shared/), $2 = local repo file,
+    # $3 = target repo file. yq-missing / merge-failure → warn + preserve
+    # last-good target (never fail the sync).
+    local source_path="$1" local_path="$2" target_path="$3"
+    local base_tmp="${SHARED_DIR}/syncpack-base.tmp.yaml"
+
+    mkdir -p "$(dirname "$base_tmp")"
+    if ! curl -sfL --max-time 10 "${BASE_URL}/${source_path}" -o "$base_tmp"; then
+        rm -f "$base_tmp"
+        warn "offline or fetch failed — skipped merge ${source_path} -> ${target_path} (preserved last-good)"
+        return 0
+    fi
+
+    if ! command -v yq >/dev/null 2>&1; then
+        warn "yq not found — skipped merge ${source_path} -> ${target_path} (preserved last-good)"
+        rm -f "$base_tmp"
+        return 0
+    fi
+
+    mkdir -p "$(dirname "$target_path")"
+    if [ -f "$local_path" ]; then
+        if yq ea '. as $i ireduce ({}; . *+ $i)' "$local_path" "$base_tmp" > "${target_path}.tmp" 2>/dev/null; then
+            mv "${target_path}.tmp" "$target_path"
+            echo "merged: ${source_path} + ${local_path} -> ${target_path}"
+        else
+            rm -f "${target_path}.tmp"
+            warn "yq merge failed — preserved last-good ${target_path}"
+        fi
+    else
+        cp "$base_tmp" "$target_path"
+        echo "merged (base-only, no ${local_path}): ${source_path} -> ${target_path}"
+    fi
+    rm -f "$base_tmp"
+}
+
 # Sync committed files (common + language-specific) → repo root
 for section in common $LANGS; do
     while IFS= read -r f; do
@@ -120,6 +168,15 @@ for section in common $LANGS; do
         [ -z "$f" ] && continue
         download_to "$f" "${SHARED_DIR}/$f" || true
     done < <(get_files "$section" "cache")
+done
+
+# Sync merged files (common + language-specific). Each entry is a
+# {source, local, target} triple emitted as tab-separated values.
+for section in common $LANGS; do
+    while IFS=$'\t' read -r src loc tgt; do
+        [ -z "$src" ] && continue
+        merge_entry "$src" "$loc" "$tgt" || true
+    done < <(get_merged_entries "$section")
 done
 
 # Refresh self for future syncs (best-effort)
