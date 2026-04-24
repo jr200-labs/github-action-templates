@@ -1,0 +1,42 @@
+name: template-lint-workflow-runners
+
+# Reusable workflow: fails if any .github/workflows/*.yaml in the caller
+# repo uses a hardcoded `runs-on: ubuntu-latest` (or macos-*/windows-*)
+# literal. Enforces the `fromJSON(vars.RUNNER_PROFILES)[vars.RUNNER_PROFILE]`
+# pattern so the org can flip runner pools via a single var without
+# grepping every repo for stragglers.
+#
+# Consumer usage (.github/workflows/ci.yaml):
+#
+#     jobs:
+#       lint-workflow-runners:
+#         uses: jr200-labs/github-action-templates/.github/workflows/lint_workflow_runners.yaml@master
+#
+# No inputs. No secrets. Runs the canonical lint-workflow-runners.sh
+# script from this repo against the caller's .github/workflows/ dir.
+
+on:
+  workflow_call:
+    inputs:
+      workflows-dir:
+        description: Path to workflows directory (default .github/workflows)
+        required: false
+        type: string
+        default: .github/workflows
+
+jobs:
+  lint-workflow-runners:
+    runs-on: ${{ fromJSON(vars.RUNNER_PROFILES)[vars.RUNNER_PROFILE].default }}
+    steps:
+      - name: Checkout caller repo
+        uses: actions/checkout@v5
+
+      - name: Checkout template scripts
+        uses: actions/checkout@v5
+        with:
+          repository: jr200-labs/github-action-templates
+          ref: master
+          path: _gha_templates
+
+      - name: Run lint-workflow-runners.sh
+        run: ./_gha_templates/scripts/lint-workflow-runners.sh "${{ inputs.workflows-dir }}"
