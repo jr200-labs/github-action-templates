@@ -48,7 +48,7 @@ on:
         description: 'Runner label (e.g. ubuntu-latest or self-hosted)'
         required: false
         type: string
-        default: 'ubuntu-latest'
+        default: ''
     secrets:
       app_private_key:
         description: 'GitHub App private key (defaults to secrets.INTEGRATION_APP_PRIVATE_KEY via caller)'

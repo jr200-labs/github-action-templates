@@ -29,7 +29,7 @@ on:
         description: 'Runner label for non-build jobs (e.g. ubuntu-latest or self-hosted). Build jobs use platform-specific runners from the matrix.'
         required: false
         type: string
-        default: 'ubuntu-latest'
+        default: ''
     secrets:
       registry_username:
         required: true

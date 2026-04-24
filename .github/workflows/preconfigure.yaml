@@ -15,7 +15,7 @@ on:
         description: 'Runner label (e.g. ubuntu-latest or self-hosted)'
         required: false
         type: string
-        default: 'ubuntu-latest'
+        default: ''
     outputs:
       context:
         value: ${{ jobs.configure.outputs.context }}

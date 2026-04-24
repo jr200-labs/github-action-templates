@@ -27,7 +27,7 @@ on:
         description: 'Runner label (e.g. ubuntu-latest or self-hosted)'
         required: false
         type: string
-        default: 'ubuntu-latest'
+        default: ''
     secrets:
       # create a github fine-grained personal access token
       # - for repo: helm-charts
