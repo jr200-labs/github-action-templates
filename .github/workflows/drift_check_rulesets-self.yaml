@@ -1,0 +1,93 @@
+name: drift-check-rulesets
+
+# Weekly scan of jr200-labs ruleset state against the canonical specs
+# in rulesets/. Runs scripts/apply-rulesets.sh --dry-run --org jr200-labs;
+# any 'DRY:' line means live state would change on a real apply, i.e.
+# someone (or something) drifted. Drift is reported as a single
+# tracking issue in this repo (re-opened/updated on each scan).
+#
+# Whengas equivalent lives in whengas/whengas-iac (separate App
+# installation). See WG-105 phase doc.
+
+on:
+  schedule:
+    - cron: '23 2 * * 1'   # Monday 02:23 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  drift-check:
+    runs-on: ${{ fromJSON(vars.RUNNER_PROFILES)[vars.RUNNER_PROFILE].default }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Mint App token (jr200-labs admin scope)
+        id: app-token
+        uses: actions/create-github-app-token@v3.1.1
+        with:
+          client-id: ${{ vars.INTEGRATION_CLIENT_ID }}
+          private-key: ${{ secrets.INTEGRATION_APP_PRIVATE_KEY }}
+          owner: jr200-labs
+
+      - name: Install yq
+        run: |
+          sudo curl -sSL -o /usr/local/bin/yq \
+            https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
+          sudo chmod +x /usr/local/bin/yq
+
+      - name: Run dry-run reconcile
+        id: dry
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          set -o pipefail
+          OUT=$(./scripts/apply-rulesets.sh --dry-run --org jr200-labs 2>&1)
+          echo "$OUT"
+          DRIFT=$(echo "$OUT" | grep '^DRY:' || true)
+          {
+            echo 'drift<<EOF'
+            echo "$DRIFT"
+            echo 'EOF'
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Open / update tracking issue (drift found)
+        if: steps.dry.outputs.drift != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TITLE='[drift] ruleset state diverged from canonical'
+          BODY=$(cat <<EOF
+          \`scripts/apply-rulesets.sh --dry-run --org jr200-labs\` found differences between live ruleset state and the canonical bodies in \`rulesets/\`.
+
+          Each \`DRY:\` line is an action that would run on a real reconcile.
+
+          \`\`\`
+          ${{ steps.dry.outputs.drift }}
+          \`\`\`
+
+          To resolve: review the diff, then either run \`scripts/apply-rulesets.sh --org jr200-labs\` (canonical wins) or update \`rulesets/\` to match live (intentional change).
+
+          Detected by \`.github/workflows/drift_check_rulesets-self.yaml\`. Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          EOF
+          )
+
+          existing=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --search "$TITLE in:title" --json number --jq '.[0].number // empty')
+          if [ -n "$existing" ]; then
+            gh issue edit "$existing" --repo "$GITHUB_REPOSITORY" --body "$BODY"
+            echo "updated issue #$existing"
+          else
+            gh issue create --repo "$GITHUB_REPOSITORY" --title "$TITLE" --body "$BODY" --label drift
+          fi
+
+      - name: Close tracking issue (no drift)
+        if: steps.dry.outputs.drift == ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          existing=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --search '[drift] ruleset state diverged from canonical in:title' --json number --jq '.[0].number // empty')
+          if [ -n "$existing" ]; then
+            gh issue close "$existing" --repo "$GITHUB_REPOSITORY" --comment 'Drift cleared.'
+          fi

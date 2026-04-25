@@ -19,7 +19,17 @@
 set -euo pipefail
 
 DRY_RUN=0
-[ "${1:-}" = "--dry-run" ] && DRY_RUN=1
+ORG_FILTER=""
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --dry-run)   DRY_RUN=1 ;;
+        --org)       shift; ORG_FILTER="$1" ;;
+        --org=*)     ORG_FILTER="${1#--org=}" ;;
+        -h|--help)   sed -n '1,/^set -euo/p' "$0" | sed 's/^# \?//'; exit 0 ;;
+        *)           echo "unknown arg: $1" >&2; exit 2 ;;
+    esac
+    shift
+done
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 TARGETS="$REPO_ROOT/rulesets/targets.yaml"
@@ -37,16 +47,35 @@ run() {
     fi
 }
 
+# Canonicalise a ruleset payload to a stable JSON string for comparison.
+# Strips server-only fields (id/href/timestamps/etc.) and sorts keys.
+canon_ruleset() {
+    jq -Sc '{name, target, enforcement, conditions, rules, bypass_actors}'
+}
+
+# Compare canonical body to live; emit DRY: only when they differ.
+diff_or_apply() {
+    local label="$1" detail_endpoint="$2" body_file="$3"
+    local live want
+    live=$(gh api "$detail_endpoint" 2>/dev/null | jq -Sc '{name, target, enforcement, conditions, rules, bypass_actors}')
+    want=$(canon_ruleset < "$body_file")
+    if [ "$live" = "$want" ]; then
+        echo "  $label: in sync"
+        return
+    fi
+    echo "  $label: PUT (drift detected)"
+    run gh api "$detail_endpoint" -X PUT --input "$body_file" --silent
+}
+
 # Apply one ruleset spec to one org at org scope.
 apply_org() {
     local org="$1" name="$2" body_file="$3"
     local existing
     existing=$(gh api "/orgs/$org/rulesets" --jq ".[] | select(.name==\"$name\") | .id" 2>/dev/null | head -1)
     if [ -n "$existing" ]; then
-        echo "  org/$org: PUT ruleset $name (id=$existing)"
-        run gh api "/orgs/$org/rulesets/$existing" -X PUT --input "$body_file" --silent
+        diff_or_apply "org/$org ruleset $name (id=$existing)" "/orgs/$org/rulesets/$existing" "$body_file"
     else
-        echo "  org/$org: POST ruleset $name"
+        echo "  org/$org: POST ruleset $name (missing)"
         run gh api "/orgs/$org/rulesets" -X POST --input "$body_file" --silent
     fi
 }
@@ -61,23 +90,28 @@ apply_repo() {
         local existing
         existing=$(gh api "/repos/$org/$repo/rulesets" --jq ".[] | select(.name==\"$name\") | .id" 2>/dev/null | head -1)
         if [ -n "$existing" ]; then
-            echo "  repo/$org/$repo: PUT ruleset $name (id=$existing)"
-            run gh api "/repos/$org/$repo/rulesets/$existing" -X PUT --input "$body_file" --silent
+            diff_or_apply "repo/$org/$repo ruleset $name (id=$existing)" "/repos/$org/$repo/rulesets/$existing" "$body_file"
         else
-            echo "  repo/$org/$repo: POST ruleset $name"
+            echo "  repo/$org/$repo: POST ruleset $name (missing)"
             run gh api "/repos/$org/$repo/rulesets" -X POST --input "$body_file" --silent
         fi
     done <<<"$repos"
 }
 
-# Disable auto-merge on every non-archived repo in an org.
+# Disable auto-merge on every non-archived repo in an org. Skip repos
+# already at allow_auto_merge=false so dry-run output stays meaningful.
 disable_auto_merge() {
     local org="$1"
     local repos
     repos=$(gh api "orgs/$org/repos?per_page=100&type=all" --paginate --jq '.[] | select(.archived==false) | .name')
     while IFS= read -r repo; do
         [ -z "$repo" ] && continue
-        echo "  repo/$org/$repo: allow_auto_merge=false"
+        local current
+        current=$(gh api "/repos/$org/$repo" --jq '.allow_auto_merge' 2>/dev/null)
+        if [ "$current" = "false" ]; then
+            continue
+        fi
+        echo "  repo/$org/$repo: allow_auto_merge=false (drift detected)"
         run gh api -X PATCH "/repos/$org/$repo" -F allow_auto_merge=false --silent
     done <<<"$repos"
 }
@@ -93,6 +127,7 @@ while IFS= read -r ruleset; do
     orgs=$(yq -r ".\"$ruleset\" | keys | .[]" "$TARGETS")
     while IFS= read -r org; do
         [ -z "$org" ] && continue
+        [ -n "$ORG_FILTER" ] && [ "$org" != "$ORG_FILTER" ] && continue
         scope=$(yq -r ".\"$ruleset\".\"$org\"" "$TARGETS")
         case "$scope" in
             org)  apply_org  "$org" "$ruleset" "$body" ;;
