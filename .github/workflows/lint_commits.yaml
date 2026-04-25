@@ -36,6 +36,11 @@ jobs:
     permissions:
       contents: read
       pull-requests: read
+    env:
+      # Surfaced from the caller's org/repo Actions vars so the shared
+      # commitlint config (shared/commitlint.config.mjs) can enforce the
+      # banned-words rule. Empty value disables the rule cleanly.
+      BANNED_COMMIT_WORDS: ${{ vars.BANNED_COMMIT_WORDS }}
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -48,12 +53,16 @@ jobs:
       - name: Commitlint (auto-detect config)
         if: inputs.config-file == ''
         uses: wagoid/commitlint-github-action@v6
+        env:
+          BANNED_COMMIT_WORDS: ${{ vars.BANNED_COMMIT_WORDS }}
         with:
           failOnWarnings: ${{ inputs.fail-on-warnings }}
 
       - name: Commitlint (explicit config)
         if: inputs.config-file != ''
         uses: wagoid/commitlint-github-action@v6
+        env:
+          BANNED_COMMIT_WORDS: ${{ vars.BANNED_COMMIT_WORDS }}
         with:
           failOnWarnings: ${{ inputs.fail-on-warnings }}
           configFile: ${{ inputs.config-file }}

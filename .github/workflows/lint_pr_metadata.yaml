@@ -1,0 +1,71 @@
+name: template-lint-pr-metadata
+
+# Reusable workflow that fails a PR when the branch name, title, or body
+# contains any word listed in the BANNED_COMMIT_WORDS Actions variable
+# (CSV). Word-boundary, case-insensitive match.
+#
+# Pair with template-lint-commits.yaml — that handles commit messages
+# (and PR titles via commitlint) — this covers the surfaces commitlint
+# can't see (PR body, branch name).
+
+on:
+  workflow_call:
+    inputs:
+      runner:
+        description: 'Runner label (e.g. ubuntu-latest or self-hosted)'
+        required: false
+        type: string
+        default: ''
+
+jobs:
+  banned-words:
+    runs-on: ${{ inputs.runner || fromJSON(vars.RUNNER_PROFILES)[vars.RUNNER_PROFILE].default }}
+    permissions:
+      contents: read
+      pull-requests: read
+    env:
+      BANNED_COMMIT_WORDS: ${{ vars.BANNED_COMMIT_WORDS }}
+      PR_TITLE: ${{ github.event.pull_request.title }}
+      PR_BODY: ${{ github.event.pull_request.body }}
+      PR_BRANCH: ${{ github.head_ref }}
+    steps:
+      - name: Scan PR metadata for banned words
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ -z "${BANNED_COMMIT_WORDS:-}" ]; then
+            echo "BANNED_COMMIT_WORDS is empty — nothing to enforce."
+            exit 0
+          fi
+
+          fail=0
+
+          scan() {
+            local label="$1"
+            local text="$2"
+            local hits=()
+            local IFS=','
+            for raw in $BANNED_COMMIT_WORDS; do
+              local w
+              w="$(echo "$raw" | xargs)"
+              [ -z "$w" ] && continue
+              if printf '%s' "$text" | grep -iEqw -- "$w"; then
+                hits+=("$w")
+              fi
+            done
+            if [ ${#hits[@]} -gt 0 ]; then
+              local joined
+              joined="$(IFS=','; echo "${hits[*]}")"
+              echo "::error title=Banned word in ${label}::${label} contains banned word(s): ${joined}"
+              fail=1
+            else
+              echo "${label}: ok"
+            fi
+          }
+
+          scan "branch name" "${PR_BRANCH:-}"
+          scan "PR title"    "${PR_TITLE:-}"
+          scan "PR body"     "${PR_BODY:-}"
+
+          exit "$fail"
