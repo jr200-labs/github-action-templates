@@ -113,6 +113,11 @@ jobs:
           mkdir -p .shared
           curl -sfL "https://raw.githubusercontent.com/jr200-labs/github-action-templates/master/shared/eslint.config.mjs" \
             -o .shared/eslint.config.mjs
+          # commitlint.config.mjs at the consumer root re-exports the shared
+          # config; knip and similar tools walk that file, so .shared/
+          # must contain it or they fail with ERR_MODULE_NOT_FOUND.
+          curl -sfL "https://raw.githubusercontent.com/jr200-labs/github-action-templates/master/shared/commitlint.config.mjs" \
+            -o .shared/commitlint.config.mjs
 
       - name: Syncpack lint
         run: |
