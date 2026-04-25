@@ -1,0 +1,14 @@
+# Where each canonical ruleset is applied. Driven by scripts/apply-rulesets.sh.
+#
+# Two scopes:
+#   - org:  POST /orgs/<org>/rulesets       (requires GitHub Team plan)
+#   - repo: POST /repos/<org>/<repo>/rulesets  (works on free plan; one
+#           ruleset per repo, applied to every non-archived repo in the org)
+#
+# Auto-merge: every repo listed (or discovered via repo scope) also gets
+# allow_auto_merge=false patched so PRs can't auto-merge ahead of the
+# CODEOWNERS review.
+
+trunk-protect:
+  whengas: org      # GitHub Team — org-level ruleset
+  jr200-labs: repo  # free plan — one ruleset per non-archived repo
