@@ -1,17 +1,16 @@
 name: drift-check-rulesets
 
-# Weekly scan of jr200-labs ruleset state against the canonical specs
-# in rulesets/. Runs scripts/apply-rulesets.sh --dry-run --org jr200-labs;
-# any 'DRY:' line means live state would change on a real apply, i.e.
-# someone (or something) drifted. Drift is reported as a single
-# tracking issue in this repo (re-opened/updated on each scan).
+# Weekly scan of this org's ruleset state against the canonical specs
+# in jr200-labs/github-action-templates/rulesets/. Drift = a single
+# tracking issue in the calling repo (re-opened/updated on each scan).
 #
-# Whengas equivalent lives in whengas/whengas-iac (separate App
-# installation). See WG-105 phase doc.
+# Verbatim across consumers — `owner` derives from
+# github.repository_owner so the App token + script filter scope to
+# whichever org runs this workflow.
 
 on:
   schedule:
-    - cron: '23 2 * * 1'   # Monday 02:23 UTC
+    - cron: '37 2 * * 1'
   workflow_dispatch:
 
 permissions:
@@ -22,15 +21,19 @@ jobs:
   drift-check:
     runs-on: ${{ fromJSON(vars.RUNNER_PROFILES)[vars.RUNNER_PROFILE].default }}
     steps:
-      - uses: actions/checkout@v5
+      - name: Checkout github-action-templates
+        uses: actions/checkout@v5
+        with:
+          repository: jr200-labs/github-action-templates
+          ref: master
 
-      - name: Mint App token (jr200-labs admin scope)
+      - name: Mint App token (org admin scope)
         id: app-token
         uses: actions/create-github-app-token@v3.1.1
         with:
           client-id: ${{ vars.INTEGRATION_CLIENT_ID }}
           private-key: ${{ secrets.INTEGRATION_APP_PRIVATE_KEY }}
-          owner: jr200-labs
+          owner: ${{ github.repository_owner }}
 
       - name: Install yq
         run: |
@@ -44,7 +47,7 @@ jobs:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
           set -o pipefail
-          OUT=$(./scripts/apply-rulesets.sh --dry-run --org jr200-labs 2>&1)
+          OUT=$(./scripts/apply-rulesets.sh --dry-run --org "$GITHUB_REPOSITORY_OWNER" 2>&1)
           echo "$OUT"
           DRIFT=$(echo "$OUT" | grep '^DRY:' || true)
           {
@@ -58,9 +61,9 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          TITLE='[drift] ruleset state diverged from canonical'
+          TITLE="[drift] ${GITHUB_REPOSITORY_OWNER} ruleset state diverged from canonical"
           BODY=$(cat <<EOF
-          \`scripts/apply-rulesets.sh --dry-run --org jr200-labs\` found differences between live ruleset state and the canonical bodies in \`rulesets/\`.
+          \`apply-rulesets.sh --dry-run --org $GITHUB_REPOSITORY_OWNER\` (canonical bodies in jr200-labs/github-action-templates/rulesets/) found differences vs live ruleset state.
 
           Each \`DRY:\` line is an action that would run on a real reconcile.
 
@@ -68,16 +71,15 @@ jobs:
           ${{ steps.dry.outputs.drift }}
           \`\`\`
 
-          To resolve: review the diff, then either run \`scripts/apply-rulesets.sh --org jr200-labs\` (canonical wins) or update \`rulesets/\` to match live (intentional change).
+          To resolve: either run \`scripts/apply-rulesets.sh --org $GITHUB_REPOSITORY_OWNER\` from a github-action-templates checkout (canonical wins), or update the canonical bodies in github-action-templates if the drift is intentional.
 
-          Detected by \`.github/workflows/drift_check_rulesets-self.yaml\`. Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          Detected by \`.github/workflows/drift-check-rulesets.yaml\`. Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           EOF
           )
 
           existing=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --search "$TITLE in:title" --json number --jq '.[0].number // empty')
           if [ -n "$existing" ]; then
             gh issue edit "$existing" --repo "$GITHUB_REPOSITORY" --body "$BODY"
-            echo "updated issue #$existing"
           else
             gh issue create --repo "$GITHUB_REPOSITORY" --title "$TITLE" --body "$BODY" --label drift
           fi
@@ -87,7 +89,8 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          existing=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --search '[drift] ruleset state diverged from canonical in:title' --json number --jq '.[0].number // empty')
+          TITLE="[drift] ${GITHUB_REPOSITORY_OWNER} ruleset state diverged from canonical"
+          existing=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --search "$TITLE in:title" --json number --jq '.[0].number // empty')
           if [ -n "$existing" ]; then
             gh issue close "$existing" --repo "$GITHUB_REPOSITORY" --comment 'Drift cleared.'
           fi

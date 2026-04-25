@@ -1,0 +1,6 @@
+# drift-check-rulesets group — opt in if this repo is the org-level
+# anchor that watches its own org's ruleset state (typically the
+# org's IaC repo or .github repo). One consumer per org; each runs
+# weekly against its own org via github.repository_owner.
+includes:
+  - drift-check-rulesets
