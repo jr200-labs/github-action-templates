@@ -74,6 +74,16 @@ The canonical caller workflows encode invariants that are easy to break by hand 
 - **Secret name match** — the reusable declares a secret name; the caller must pass it under exactly that name. `app_private_key` vs `INTEGRATION_APP_PRIVATE_KEY` is a one-character bug that fails the run at startup.
 - **Runner forwarding** — every reusable that runs jobs takes a `runner:` input parameterised via `vars.RUNNER_PROFILES[vars.RUNNER_PROFILE].default`. Hard-coded `ubuntu-latest` is forbidden.
 
+## Tests: unit vs integration
+
+The canonical `ci-python` / `ci-go` / `ci-node` callers run **lint + unit tests only**. Integration tests — anything that needs external infrastructure (database, message bus, S3, etc.) — stay **bespoke per repo** in a separate `integration-tests.yaml` workflow that owns its own service setup, fixtures, and secrets.
+
+Why: each repo's external deps are different, so there's no canonical infra setup that fits every consumer. Pushing infra into the canonical CI would either reintroduce per-repo substitution (rejected — see "How a consuming repo uses this" above) or impose a one-size-fits-none stack on every Python/Go/Node repo.
+
+How: canonical CI calls `pytest` (or `go test`, `vitest`) with the reusable's default flags. Each repo's test config (e.g. `pyproject.toml`'s `[tool.pytest.ini_options].addopts = "-m 'not integration'"`) excludes the integration subset from default collection. Tests carrying the marker (e.g. `@pytest.mark.integration`) only run when a bespoke workflow opts them in.
+
+Repos with infra-dependent tests that can't (yet) be split: stay on a fully bespoke `ci.yaml` and omit the language group from `.shared-config.yaml`. Drift-check warns on the bespoke file (`stale-or-bespoke: ...`) but doesn't fail. Track adoption per repo under JRL-33.
+
 ## Lint configs
 
 Separate from the workflow injection: `shared/sync.sh` syncs canonical lint configs (ruff.toml, eslint.config.mjs, .golangci.yml, etc.) into `.shared/` in consumer repos. That mechanism predates `consumers/` and is unrelated; see `shared/MANIFEST.json`.
