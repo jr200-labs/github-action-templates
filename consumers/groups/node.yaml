@@ -1,0 +1,4 @@
+# Node source group — opt in if the repo has a package.json and you
+# want it linted + tested by the canonical CI.
+includes:
+  - ci-node

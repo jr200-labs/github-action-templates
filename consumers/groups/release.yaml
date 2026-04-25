@@ -1,0 +1,7 @@
+# Release group — opt in if the repo cuts versioned releases. Pulls
+# in the release-please caller, which raises Release PRs from
+# Conventional Commits and fires `release: types: [published]` on
+# merge so the artifact-publishing workflows (docker, helm-chart, etc.)
+# run automatically.
+includes:
+  - release-please

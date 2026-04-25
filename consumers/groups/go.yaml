@@ -1,0 +1,4 @@
+# Go source group — opt in if the repo has a go.mod and you want it
+# linted + tested by the canonical CI.
+includes:
+  - ci-go

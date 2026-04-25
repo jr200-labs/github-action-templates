@@ -1,0 +1,5 @@
+# Docker artifact group — opt in if the repo publishes a docker image
+# to ghcr.io on release. Triggered by `release: types: [published]`,
+# which release-please fires when it cuts a tag.
+includes:
+  - build-docker-image
