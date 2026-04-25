@@ -1,0 +1,4 @@
+# Python source group — opt in if the repo has a pyproject.toml /
+# setup.py and you want it linted + tested by the canonical CI.
+includes:
+  - ci-python

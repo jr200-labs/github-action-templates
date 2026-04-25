@@ -1,0 +1,58 @@
+name: build-docker-image
+
+# Triggered by `release-published` repository_dispatch from
+# release-please.yaml when a tag is cut, or manually via
+# workflow_dispatch for ad-hoc dev builds. The single
+# release-published event type is used by every artifact-publishing
+# workflow so this caller can be a verbatim copy across repos.
+
+on:
+  repository_dispatch:
+    types: [release-published]
+  workflow_dispatch:
+    inputs:
+      checkout-ref:
+        description: "checkout ref"
+        required: false
+        type: string
+        default: "refs/heads/master"
+      tag:
+        description: docker-image-tag
+        required: false
+        type: string
+        default: dev
+      platforms:
+        description: platform-filter-json
+        required: false
+        type: string
+        default: |-
+          [ "linux/amd64", "linux/arm64" ]
+
+# Only the caller's TOP-LEVEL permissions cascade into reusable
+# workflows. The reusable's nested jobs need packages:write (push to
+# ghcr.io) and contents:write — without this block the call
+# startup-fails with "is requesting 'packages: write', but is only
+# allowed 'packages: read'".
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  configure:
+    uses: jr200-labs/github-action-templates/.github/workflows/preconfigure.yaml@master
+    with:
+      event_name: ${{ toJson(github.event_name) }}
+      event: ${{ toJson(github.event) }}
+
+  main:
+    needs: configure
+    uses: jr200-labs/github-action-templates/.github/workflows/build_docker_image_multiplatform.yaml@master
+    with:
+      checkout-ref: ${{ fromJson(needs.configure.outputs.context).checkout-ref }}
+      registry_name: ghcr.io
+      image_name: ${{ github.repository }}
+      tag: ${{ fromJson(needs.configure.outputs.context).tag }}
+      platforms: ${{ fromJson(needs.configure.outputs.context).platforms }}
+    secrets:
+      registry_username: ${{ github.actor }}
+      registry_token: ${{ secrets.GITHUB_TOKEN }}

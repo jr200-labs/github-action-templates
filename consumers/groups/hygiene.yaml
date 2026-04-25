@@ -1,0 +1,9 @@
+# Hygiene group — universal CI checks every consuming repo should opt
+# into. Catches malformed commits, banned PR metadata, drift between
+# the on-disk caller workflows and the canonical templates, and keeps
+# Renovate alive on the repo.
+includes:
+  - lint-pr-metadata
+  - commitlint
+  - drift-check
+  - renovate
