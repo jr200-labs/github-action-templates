@@ -47,6 +47,16 @@ jobs:
         with:
           fetch-depth: 0
 
+      # Bootstrap the cached shared commitlint config. Consumers re-export
+      # it from a top-level commitlint.config.mjs; .shared/ is gitignored
+      # so we always fetch fresh in CI. Mirrors the pattern in ci_go.yaml.
+      - name: Bootstrap shared commitlint config
+        shell: bash
+        run: |
+          mkdir -p .shared
+          curl -sfL "https://raw.githubusercontent.com/jr200-labs/github-action-templates/master/shared/commitlint.config.mjs" \
+            -o .shared/commitlint.config.mjs
+
       # wagoid action trips EISDIR if configFile is passed as empty string
       # (cosmiconfig then treats the workspace dir as a file). Split into two
       # steps so we only pass configFile when the caller actually set it.
