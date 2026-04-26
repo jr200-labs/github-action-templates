@@ -48,7 +48,10 @@ Current groups:
 | `node` | ci-node | repo has `package.json` |
 | `go` | ci-go | repo has `go.mod` |
 | `docker` | build-docker-image | repo publishes a docker image to ghcr.io |
+| `helm-chart` | build-helm-chart | repo publishes a Helm chart (needs `vars.HELM_CHART_REPO` + `secrets.CHARTS_WRITE_TOKEN`) |
+| `wheel` | publish-wheel | repo publishes a wheel to PyPI (needs `secrets.PYPI_API_TOKEN`) |
 | `release` | release-please | repo cuts versioned releases |
+| `drift-check-rulesets` | drift-check-rulesets | one consumer per org watches its own ruleset state |
 
 ## Trigger model
 

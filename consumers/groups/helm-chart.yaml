@@ -1,0 +1,9 @@
+# Helm-chart artifact group — opt in if the repo publishes a Helm
+# chart on release. Triggered by `release-published` repository
+# dispatch from the canonical release-please.yaml.
+#
+# Consuming org must define:
+#   - vars.HELM_CHART_REPO       (e.g. <user>/helm-charts-private)
+#   - secrets.CHARTS_WRITE_TOKEN (PAT with contents:write on that repo)
+includes:
+  - build-helm-chart
