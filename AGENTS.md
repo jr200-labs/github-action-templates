@@ -87,6 +87,19 @@ How: canonical CI calls `pytest` (or `go test`, `vitest`) with the reusable's de
 
 Repos with infra-dependent tests that can't (yet) be split: stay on a fully bespoke `ci.yaml` and omit the language group from `.shared-config.yaml`. Drift-check warns on the bespoke file (`stale-or-bespoke: ...`) but doesn't fail. Track adoption per repo under JRL-33.
 
+### Bespoke integration-tests checklist
+
+When you write a repo's `integration-tests.yaml`, follow these structural rules so it shares the load-bearing properties of the canonical callers even though the content is bespoke:
+
+- **Top-level `permissions:`** — minimum `contents: read`. Add `pull-requests: read` if any reusable inside needs it. Job-level perms on the caller don't cascade into reusables.
+- **`runs-on:`** — always `${{ fromJSON(vars.RUNNER_PROFILES)[vars.RUNNER_PROFILE].default }}`. Never hard-code `ubuntu-latest`.
+- **Private git deps** — mint an installation token via `actions/create-github-app-token@v3.1.1` with `client-id: ${{ vars.INTEGRATION_CLIENT_ID }}` and `private-key: ${{ secrets.INTEGRATION_APP_PRIVATE_KEY }}`, then write `~/.netrc` for `uv sync` / `go mod download` to use.
+- **Test selection** — invoke the marked subset only (`pytest -m integration`, `go test -tags integration`, `vitest --include 'tests/integration/**'`). Don't re-run unit tests; canonical CI already does.
+- **Service containers** — declared at job level via `services:` with healthchecks. Connect via `localhost:<host-port>` from the runner.
+- **Tooling install** — apt packages for client libs, binaries downloaded from GitHub releases, etc. Pin versions where it matters.
+
+Reference: `jr200-labs/polars-hist-db/.github/workflows/integration-tests.yaml` (MariaDB service container + nats-server binary). Copy + modify; don't try to abstract until 3+ consumers exist with similar shapes (we have 1 today).
+
 ## Lint configs
 
 Separate from the workflow injection: `shared/sync.sh` syncs canonical lint configs (ruff.toml, eslint.config.mjs, .golangci.yml, etc.) into `.shared/` in consumer repos. That mechanism predates `consumers/` and is unrelated; see `shared/MANIFEST.json`.
