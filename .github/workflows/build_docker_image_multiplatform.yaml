@@ -57,7 +57,12 @@ on:
 
 env:
   IMAGE_NAME: ${{ inputs.image_name }}
-  REGISTRY_IMAGE: ${{ inputs.registry_name }}/${{ github.repository }}
+  # Honor inputs.image_name when set (monorepo image-variant layouts
+  # need different package paths under the same repo, e.g.
+  # ghcr.io/whengas/agent-base + agent-coder + agent-reviewer from
+  # one whengas/agent-images repo). Falls back to github.repository
+  # so existing single-image callers without image_name keep working.
+  REGISTRY_IMAGE: ${{ inputs.registry_name }}/${{ inputs.image_name || github.repository }}
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   DEFAULT_UNIVERSE: |-
     [
