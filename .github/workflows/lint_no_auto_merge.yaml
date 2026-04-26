@@ -1,0 +1,36 @@
+name: template-lint-no-auto-merge
+
+# Reusable workflow: fails if any .github/workflows/*.yaml in the caller
+# repo invokes auto-merge or auto-approve patterns. The CODEOWNERS +
+# branch ruleset gate (WG-105) is only a real gate if no consumer
+# workflow can sidestep it. This lint catches a `gh pr merge`,
+# `gh pr review --approve`, `--auto-merge`, or third-party auto-merge
+# action before it lands.
+#
+# No inputs beyond the workflows-dir override. No secrets.
+
+on:
+  workflow_call:
+    inputs:
+      workflows-dir:
+        description: Path to workflows directory (default .github/workflows)
+        required: false
+        type: string
+        default: .github/workflows
+
+jobs:
+  lint-no-auto-merge:
+    runs-on: ${{ fromJSON(vars.RUNNER_PROFILES)[vars.RUNNER_PROFILE].default }}
+    steps:
+      - name: Checkout caller repo
+        uses: actions/checkout@v5
+
+      - name: Checkout template scripts
+        uses: actions/checkout@v5
+        with:
+          repository: jr200-labs/github-action-templates
+          ref: master
+          path: _gha_templates
+
+      - name: Run lint-no-auto-merge.sh
+        run: ./_gha_templates/scripts/lint-no-auto-merge.sh "${{ inputs.workflows-dir }}"

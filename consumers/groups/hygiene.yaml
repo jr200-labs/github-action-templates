@@ -7,3 +7,4 @@ includes:
   - commitlint
   - drift-check
   - renovate
+  - lint-no-auto-merge
