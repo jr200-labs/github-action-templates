@@ -1,0 +1,6 @@
+# Wheel artifact group — opt in if the repo publishes a Python wheel
+# to PyPI on release. Triggered by `release-published` repository
+# dispatch from the canonical release-please.yaml. Consumer must set
+# the PYPI_API_TOKEN secret.
+includes:
+  - publish-wheel

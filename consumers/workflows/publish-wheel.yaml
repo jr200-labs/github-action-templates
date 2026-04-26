@@ -1,0 +1,34 @@
+name: publish-wheel
+
+# Triggered by release-please publishing a tag. Builds the wheel and
+# uploads to PyPI via uv publish. Verbatim across consumers; each
+# consumer must set the PYPI_API_TOKEN secret.
+
+on:
+  repository_dispatch:
+    types: [release-published]
+  workflow_dispatch:
+    inputs:
+      checkout-ref:
+        description: "checkout ref"
+        required: false
+        type: string
+        default: "refs/heads/master"
+
+permissions:
+  contents: read
+
+jobs:
+  configure:
+    uses: jr200-labs/github-action-templates/.github/workflows/preconfigure.yaml@master
+    with:
+      event_name: ${{ toJson(github.event_name) }}
+      event: ${{ toJson(github.event) }}
+
+  main:
+    needs: configure
+    uses: jr200-labs/github-action-templates/.github/workflows/publish_uv_pypi.yaml@master
+    with:
+      checkout-ref: ${{ fromJson(needs.configure.outputs.context).checkout-ref }}
+    secrets:
+      pypi_api_token: ${{ secrets.PYPI_API_TOKEN }}
