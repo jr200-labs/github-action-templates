@@ -115,6 +115,21 @@
       ],
       "datasourceTemplate": "github-tags",
       "versioningTemplate": "semver"
+    },
+    {
+      "customType": "regex",
+      "description": "Bump OCI artifacts pinned via Dockerfile `ARG <FOO>_VERSION=vX.Y.Z` paired with a `ghcr.io/<org>/<repo>:${<FOO>_VERSION}` reference in a later RUN/COPY. Renovate's built-in dockerfile manager only recognises ARGs used in FROM lines, so consumption shapes like `oras pull ghcr.io/whengas/dotagents:${DOTAGENTS_VERSION}` (WG-141) are otherwise invisible. Uses github-tags datasource (not docker) for consistency with the values.yaml managers above and to sidestep the per-package GHCR access list when the package is Private. Two regexes combined via matchStringsStrategy=combination so RE2 doesn't have to span newlines — first captures the version, second the depName.",
+      "managerFilePatterns": [
+        "/(^|/)Dockerfile$/",
+        "/(^|/)Dockerfile\\..+$/"
+      ],
+      "matchStringsStrategy": "combination",
+      "matchStrings": [
+        "ARG\\s+\\S+_VERSION=(?<currentValue>v?[0-9]+\\.[0-9]+\\.[0-9]+)",
+        "ghcr\\.io/(?<depName>[^/\\s]+/[^\\s:]+):\\$\\{[A-Z_]+_VERSION\\}"
+      ],
+      "datasourceTemplate": "github-tags",
+      "versioningTemplate": "semver"
     }
   ]
 }
