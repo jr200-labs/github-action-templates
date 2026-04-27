@@ -124,7 +124,7 @@
         "/(^|/)Dockerfile\\..+$/"
       ],
       "matchStrings": [
-        "ARG\\s+\\S+_VERSION=(?<currentValue>v?[0-9]+\\.[0-9]+\\.[0-9]+)[\\s\\S]{0,2000}?ghcr\\.io/(?<depName>[^/\\s]+/[^\\s:$]+):\\$\\{[A-Z_]+_VERSION\\}"
+        "ARG\\s+\\S+_VERSION=(?<currentValue>v?[0-9]+\\.[0-9]+\\.[0-9]+)[\\s\\S]{0,2000}?ghcr\\.io/(?<depName>[^/\\s]+/[^\\s:]+):\\$\\{[A-Z_]+_VERSION\\}"
       ],
       "datasourceTemplate": "github-tags",
       "versioningTemplate": "semver"
