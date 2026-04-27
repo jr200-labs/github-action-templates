@@ -206,7 +206,8 @@ jobs:
             BUILD_ARCH=${{ matrix.architecture }}
           secret-files: |
             netrc=/tmp/.netrc
-          secrets: ${{ inputs.build-secrets }}
+          secrets: |
+            ${{ inputs.build-secrets }}
 
       - name: Export digest
         run: |
