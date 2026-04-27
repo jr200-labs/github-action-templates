@@ -40,12 +40,6 @@ on:
         required: false
         type: string
         default: '.'
-      build-secrets:
-        description: |
-          BuildKit secrets to forward to docker/build-push-action's `secrets:` field. Multiline string of `id=...,env=VAR` or `id=...,src=path` lines. Use for cross-private-repo fetches at build time (e.g. `oras pull` from GHCR with the caller's GITHUB_TOKEN). Consumed in Dockerfile via `RUN --mount=type=secret,id=<id> ...`. Defaults empty — no-op for callers that don't need it.
-        required: false
-        type: string
-        default: ''
     secrets:
       registry_username:
         required: true
@@ -60,6 +54,10 @@ on:
       app_private_key:
         required: false
         description: "GitHub App private key for generating a token to clone private git deps"
+      build_secrets:
+        required: false
+        description: |
+          BuildKit secrets to forward to docker/build-push-action's `secrets:` field. Multiline string of `id=value` (or `id=...,env=VAR` / `id=...,src=path`) lines. Use for cross-private-repo fetches at build time (e.g. `oras pull` from GHCR with the caller's GITHUB_TOKEN). Consumed in Dockerfile via `RUN --mount=type=secret,id=<id> ...`. Must be passed via the call's `secrets:` block — secret-typed values are stripped to empty when interpolated into `with:` inputs across the reusable-workflow boundary.
 
 env:
   IMAGE_NAME: ${{ inputs.image_name }}
@@ -207,7 +205,7 @@ jobs:
           secret-files: |
             netrc=/tmp/.netrc
           secrets: |
-            ${{ inputs.build-secrets }}
+            ${{ secrets.build_secrets }}
 
       - name: Export digest
         run: |
