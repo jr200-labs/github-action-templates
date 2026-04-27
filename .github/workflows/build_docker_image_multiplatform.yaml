@@ -40,6 +40,12 @@ on:
         required: false
         type: string
         default: '.'
+      build-secrets:
+        description: |
+          BuildKit secrets to forward to docker/build-push-action's `secrets:` field. Multiline string of `id=...,env=VAR` or `id=...,src=path` lines. Use for cross-private-repo fetches at build time (e.g. `oras pull` from GHCR with the caller's GITHUB_TOKEN). Consumed in Dockerfile via `RUN --mount=type=secret,id=<id> ...`. Defaults empty — no-op for callers that don't need it.
+        required: false
+        type: string
+        default: ''
     secrets:
       registry_username:
         required: true
@@ -200,6 +206,7 @@ jobs:
             BUILD_ARCH=${{ matrix.architecture }}
           secret-files: |
             netrc=/tmp/.netrc
+          secrets: ${{ inputs.build-secrets }}
 
       - name: Export digest
         run: |
