@@ -57,7 +57,7 @@ on:
       build_secrets:
         required: false
         description: |
-          BuildKit secrets to forward to docker/build-push-action's `secrets:` field. Multiline string of `id=value` (or `id=...,env=VAR` / `id=...,src=path`) lines. Use for cross-private-repo fetches at build time (e.g. `oras pull` from GHCR with the caller's GITHUB_TOKEN). Consumed in Dockerfile via `RUN --mount=type=secret,id=<id> ...`. Must be passed via the call's `secrets:` block — `${{ secrets.GITHUB_TOKEN }}` and other secret-typed values are stripped to empty when interpolated into `with:` inputs across the reusable-workflow boundary.
+          BuildKit secrets to forward to docker/build-push-action's `secrets:` field. Multiline string of `id=value` (or `id=...,env=VAR` / `id=...,src=path`) lines. Use for cross-private-repo fetches at build time (e.g. `oras pull` from GHCR with the caller's GITHUB_TOKEN). Consumed in Dockerfile via `RUN --mount=type=secret,id=<id> ...`. Must be passed via the call's `secrets:` block — secret-typed values are stripped to empty when interpolated into `with:` inputs across the reusable-workflow boundary.
 
 env:
   IMAGE_NAME: ${{ inputs.image_name }}
