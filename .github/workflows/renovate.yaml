@@ -148,6 +148,23 @@ jobs:
           # App token's `packages:read` permission covers same-org
           # Internal packages without per-package ACL grants.
           RENOVATE_HOST_RULES: '[{"hostType":"docker","matchHost":"ghcr.io","username":"x-access-token","password":"${{ steps.app-token.outputs.token || secrets.GITHUB_TOKEN }}"}]'
+          RENOVATE_REPORT_TYPE: 'file'
+          RENOVATE_REPORT_PATH: /tmp/renovate-report.json
+
+      - name: DEBUG — find the report file
+        if: always()
+        shell: bash
+        run: |
+          echo "=== runner /tmp ==="
+          ls -la /tmp/ 2>&1 | head -30
+          echo "=== runner RUNNER_TEMP ==="
+          ls -la "$RUNNER_TEMP/" 2>&1 | head
+          echo "=== dind /tmp via alpine ==="
+          docker run --rm --volume /tmp:/tmp alpine:3.20 ls -la /tmp/ 2>&1 | head -30 || true
+          echo "=== look for any renovate*.json on runner ==="
+          find / -name 'renovate*.json' 2>/dev/null | head
+          echo "=== look for renovate working dir ==="
+          find /tmp -name 'renovate-*' -maxdepth 3 2>/dev/null | head
 
       - name: Self-hosted Renovate (pass 2 — catches repository-changed quirk)
         # Renovate occasionally exits with `"result": "repository-changed"`
