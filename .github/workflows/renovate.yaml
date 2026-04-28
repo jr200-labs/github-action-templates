@@ -147,11 +147,12 @@ jobs:
           # App token's `packages:read` permission covers same-org
           # Internal packages without per-package ACL grants.
           RENOVATE_HOST_RULES: '[{"hostType":"docker","matchHost":"ghcr.io","username":"x-access-token","password":"${{ steps.app-token.outputs.token || secrets.GITHUB_TOKEN }}"}]'
-          # Capture Renovate logs to a shared volume so a post-step can
-          # scan for package-lookup failures and fail the workflow.
-          # /tmp is auto-mounted into the renovatebot container.
-          RENOVATE_LOG_FILE: /tmp/renovate-pass1.log
-          RENOVATE_LOG_FILE_LEVEL: 'warn'
+          # Renovate's structured report (per self-hosted-config docs) —
+          # JSON file with a `problems` array (same source as WARN/ERROR
+          # log messages, including package-lookup failures). The
+          # post-step parses it and fails the workflow on any problem.
+          RENOVATE_REPORT_TYPE: 'file'
+          RENOVATE_REPORT_PATH: /tmp/renovate-pass1.report.json
 
       - name: Self-hosted Renovate (pass 2 — catches repository-changed quirk)
         # Renovate occasionally exits with `"result": "repository-changed"`
@@ -172,32 +173,30 @@ jobs:
           RENOVATE_ONBOARDING: 'false'
           RENOVATE_REQUIRE_CONFIG: 'required'
           RENOVATE_HOST_RULES: '[{"hostType":"docker","matchHost":"ghcr.io","username":"x-access-token","password":"${{ steps.app-token.outputs.token || secrets.GITHUB_TOKEN }}"}]'
-          RENOVATE_LOG_FILE: /tmp/renovate-pass2.log
-          RENOVATE_LOG_FILE_LEVEL: 'warn'
+          RENOVATE_REPORT_TYPE: 'file'
+          RENOVATE_REPORT_PATH: /tmp/renovate-pass2.report.json
 
-      - name: Fail on package-lookup failures
-        # Lookup failures (typically `Failed to look up docker package
-        # ghcr.io/...: no-result`) appear as Renovate WARNs that don't
-        # fail the workflow. They mean the bump never gets opened and
-        # the consumer silently drifts. Scan the log file from both
-        # passes and exit non-zero if any are present.
+      - name: Fail on Renovate problems
+        # Renovate emits package-lookup failures (and other WARN/ERROR
+        # problems) into the structured JSON report. Any non-empty
+        # problems[] across either pass fails the workflow.
         if: always() && inputs.dry-run == ''
         shell: bash
         run: |
           set -uo pipefail
           fail=0
-          for log in /tmp/renovate-pass1.log /tmp/renovate-pass2.log; do
-            [ -f "$log" ] || continue
-            hits=$(grep -c "Failed to look up" "$log" || true)
-            if [ "${hits:-0}" -gt 0 ]; then
-              echo "::group::package-lookup failures from $log ($hits)"
-              grep "Failed to look up" "$log" | sort -u
+          for report in /tmp/renovate-pass1.report.json /tmp/renovate-pass2.report.json; do
+            [ -f "$report" ] || continue
+            problems=$(jq -r '[.problems[]?, (.repositories[]?.problems[]?)] | map(select(.level == "warn" or .level == "error"))' "$report")
+            if [ "$(echo "$problems" | jq 'length')" -gt 0 ]; then
+              echo "::group::Renovate problems from $report"
+              echo "$problems" | jq -r '.[] | "\(.level): \(.msg)"'
               echo "::endgroup::"
               fail=1
             fi
           done
           if [ "$fail" = "1" ]; then
-            echo "::error title=Renovate package-lookup failures::Renovate could not resolve one or more packages. Verify Internal visibility and per-consumer ACLs (see WG-141 platform policy)."
+            echo "::error title=Renovate problems::Renovate emitted warnings/errors (see groups above). Common cause: package visibility regression — see WG-141 platform policy."
             exit 1
           fi
-          echo "package lookups: ok"
+          echo "no Renovate problems"
