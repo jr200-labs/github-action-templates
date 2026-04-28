@@ -150,8 +150,8 @@ jobs:
           # Capture Renovate logs to a shared volume so a post-step can
           # scan for package-lookup failures and fail the workflow.
           # /tmp is auto-mounted into the renovatebot container.
-          LOG_FILE: /tmp/renovate-pass1.log
-          LOG_FILE_LEVEL: warn
+          RENOVATE_LOG_FILE: /tmp/renovate-pass1.log
+          RENOVATE_LOG_FILE_LEVEL: 'warn'
 
       - name: Self-hosted Renovate (pass 2 — catches repository-changed quirk)
         # Renovate occasionally exits with `"result": "repository-changed"`
@@ -172,8 +172,8 @@ jobs:
           RENOVATE_ONBOARDING: 'false'
           RENOVATE_REQUIRE_CONFIG: 'required'
           RENOVATE_HOST_RULES: '[{"hostType":"docker","matchHost":"ghcr.io","username":"x-access-token","password":"${{ steps.app-token.outputs.token || secrets.GITHUB_TOKEN }}"}]'
-          LOG_FILE: /tmp/renovate-pass2.log
-          LOG_FILE_LEVEL: warn
+          RENOVATE_LOG_FILE: /tmp/renovate-pass2.log
+          RENOVATE_LOG_FILE_LEVEL: 'warn'
 
       - name: Fail on package-lookup failures
         # Lookup failures (typically `Failed to look up docker package
