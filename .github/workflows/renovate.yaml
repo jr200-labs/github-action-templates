@@ -147,6 +147,11 @@ jobs:
           # App token's `packages:read` permission covers same-org
           # Internal packages without per-package ACL grants.
           RENOVATE_HOST_RULES: '[{"hostType":"docker","matchHost":"ghcr.io","username":"x-access-token","password":"${{ steps.app-token.outputs.token || secrets.GITHUB_TOKEN }}"}]'
+          # Capture Renovate logs to a shared volume so a post-step can
+          # scan for package-lookup failures and fail the workflow.
+          # /tmp is auto-mounted into the renovatebot container.
+          LOG_FILE: /tmp/renovate-pass1.log
+          LOG_FILE_LEVEL: warn
 
       - name: Self-hosted Renovate (pass 2 — catches repository-changed quirk)
         # Renovate occasionally exits with `"result": "repository-changed"`
@@ -167,3 +172,32 @@ jobs:
           RENOVATE_ONBOARDING: 'false'
           RENOVATE_REQUIRE_CONFIG: 'required'
           RENOVATE_HOST_RULES: '[{"hostType":"docker","matchHost":"ghcr.io","username":"x-access-token","password":"${{ steps.app-token.outputs.token || secrets.GITHUB_TOKEN }}"}]'
+          LOG_FILE: /tmp/renovate-pass2.log
+          LOG_FILE_LEVEL: warn
+
+      - name: Fail on package-lookup failures
+        # Lookup failures (typically `Failed to look up docker package
+        # ghcr.io/...: no-result`) appear as Renovate WARNs that don't
+        # fail the workflow. They mean the bump never gets opened and
+        # the consumer silently drifts. Scan the log file from both
+        # passes and exit non-zero if any are present.
+        if: always() && inputs.dry-run == ''
+        shell: bash
+        run: |
+          set -uo pipefail
+          fail=0
+          for log in /tmp/renovate-pass1.log /tmp/renovate-pass2.log; do
+            [ -f "$log" ] || continue
+            hits=$(grep -c "Failed to look up" "$log" || true)
+            if [ "${hits:-0}" -gt 0 ]; then
+              echo "::group::package-lookup failures from $log ($hits)"
+              grep "Failed to look up" "$log" | sort -u
+              echo "::endgroup::"
+              fail=1
+            fi
+          done
+          if [ "$fail" = "1" ]; then
+            echo "::error title=Renovate package-lookup failures::Renovate could not resolve one or more packages. Verify Internal visibility and per-consumer ACLs (see WG-141 platform policy)."
+            exit 1
+          fi
+          echo "package lookups: ok"
