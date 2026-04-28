@@ -94,31 +94,31 @@
     },
     {
       "customType": "regex",
-      "description": "Bump container image tags in IaC Helm values.yaml files — `tag: vX.Y.Z` under `repository: ghcr.io/<org>/<image>`. Uses the `docker` datasource, which queries the OCI registry's standard `/v2/<name>/tags/list` — works for any OCI artifact (container images, oras-pushed bundles, helm OCI charts) regardless of source-repo name. Requires Internal+ visibility on the package so the bot's installation token can read it; that is the platform policy for shared artifacts (see WG-141).",
+      "description": "Bump container image tags in IaC Helm values.yaml — `tag: vX.Y.Z` under `repository: ghcr.io/<org>/<image>`. Uses github-tags (not docker) because GHCR has no automation surface for cross-repo workflow tokens — the REST API can't grant per-package Manage Actions access, and visibility flips don't help bot tokens. github-tags reads via the App's broad contents:read on the source repo; works as long as the producer's release flow cuts a matching git tag (every consumer-org release-please flow does).",
       "managerFilePatterns": [
         "/services/.*/env/.*/.*values\\.yaml$/"
       ],
       "matchStrings": [
-        "repository:\\s*(?<depName>ghcr\\.io/[^/\\s]+/[^\\s]+)\\s*\\n\\s*tag:\\s*(?<currentValue>v?[0-9]+\\.[0-9]+\\.[0-9]+)"
+        "repository:\\s*ghcr\\.io/(?<depName>[^/\\s]+/[^\\s]+)\\s*\\n\\s*tag:\\s*(?<currentValue>v?[0-9]+\\.[0-9]+\\.[0-9]+)"
       ],
-      "datasourceTemplate": "docker",
+      "datasourceTemplate": "github-tags",
       "versioningTemplate": "semver"
     },
     {
       "customType": "regex",
-      "description": "Bump inline `image: ghcr.io/<org>/<image>:vX.Y.Z` refs in IaC service manifests — Helm values.yaml (k8s pod-spec inside `template:` blocks) AND raw Kustomize manifests (statefulset/deployment/daemonset/cronjob/job/pod). Same datasource rationale as the repository:/tag: manager above. The semver bound in currentValue ignores floating tags like `:latest` or `:dind`.",
+      "description": "Bump inline `image: ghcr.io/<org>/<image>:vX.Y.Z` refs in IaC service manifests — Helm values.yaml AND raw Kustomize manifests (statefulset/deployment/daemonset/cronjob/job/pod). Same datasource rationale as the repository:/tag: manager above.",
       "managerFilePatterns": [
         "/services/.*/env/.*\\.yaml$/"
       ],
       "matchStrings": [
-        "image:\\s*(?<depName>ghcr\\.io/[^/\\s]+/[^\\s:]+):(?<currentValue>v?[0-9]+\\.[0-9]+\\.[0-9]+)"
+        "image:\\s*ghcr\\.io/(?<depName>[^/\\s]+/[^\\s:]+):(?<currentValue>v?[0-9]+\\.[0-9]+\\.[0-9]+)"
       ],
-      "datasourceTemplate": "docker",
+      "datasourceTemplate": "github-tags",
       "versioningTemplate": "semver"
     },
     {
       "customType": "regex",
-      "description": "Bump OCI artifacts pinned via Dockerfile `ARG <FOO>_VERSION=vX.Y.Z` paired with a `ghcr.io/<org>/<image>:${<FOO>_VERSION}` reference in a later RUN/COPY. Renovate's built-in dockerfile manager only recognises ARGs used in FROM lines, so consumption shapes like `oras pull ghcr.io/whengas/dotagents:${DOTAGENTS_VERSION}` (WG-141) are otherwise invisible. Uses the `docker` datasource (OCI Distribution Spec /v2 client; works for container images, ORAS-pushed bundles, Helm OCI charts alike). Two regexes combined via matchStringsStrategy=combination so RE2 doesn't have to span newlines — first captures the version, second the depName.",
+      "description": "Bump OCI artifacts pinned via Dockerfile `ARG <FOO>_VERSION=vX.Y.Z` paired with `ghcr.io/<org>/<image>:${<FOO>_VERSION}` in a later RUN/COPY (e.g. `oras pull ghcr.io/<org>/<artifact>:${VERSION}` for shared config bundles). Renovate's built-in dockerfile manager only recognises ARGs used in FROM lines. Two regexes combined via matchStringsStrategy=combination so RE2 doesn't have to span newlines.",
       "managerFilePatterns": [
         "/(^|/)Dockerfile$/",
         "/(^|/)Dockerfile\\..+$/"
@@ -126,9 +126,9 @@
       "matchStringsStrategy": "combination",
       "matchStrings": [
         "ARG\\s+\\S+_VERSION=(?<currentValue>v?[0-9]+\\.[0-9]+\\.[0-9]+)",
-        "(?<depName>ghcr\\.io/[^/\\s]+/[^\\s:]+):\\$\\{[A-Z_]+_VERSION\\}"
+        "ghcr\\.io/(?<depName>[^/\\s]+/[^\\s:]+):\\$\\{[A-Z_]+_VERSION\\}"
       ],
-      "datasourceTemplate": "docker",
+      "datasourceTemplate": "github-tags",
       "versioningTemplate": "semver"
     }
   ]
