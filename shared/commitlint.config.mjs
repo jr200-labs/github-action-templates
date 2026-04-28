@@ -34,10 +34,34 @@ const bannedWordsRule = (parsed) => {
   ];
 };
 
+// Cap commit-body length: 1 paragraph of why-prose, ≤6 non-blank
+// lines. Test plans / follow-ups / sub-sections belong in the PR
+// description or the Linear ticket, not the commit.
+const MAX_BODY_LINES = 6;
+
+const bodyMaxLinesRule = (parsed) => {
+  if (!parsed.body) return [true];
+  const lines = parsed.body.split('\n').filter((l) => l.trim().length > 0);
+  if (lines.length <= MAX_BODY_LINES) return [true];
+  return [
+    false,
+    `commit body has ${lines.length} non-blank lines; cap is ${MAX_BODY_LINES}. Move long-form context to the PR description.`,
+  ];
+};
+
 export default {
   extends: ['@commitlint/config-conventional'],
-  plugins: [{ rules: { 'banned-words': bannedWordsRule } }],
+  plugins: [
+    {
+      rules: {
+        'banned-words': bannedWordsRule,
+        'body-max-lines': bodyMaxLinesRule,
+      },
+    },
+  ],
   rules: {
     'banned-words': [2, 'always'],
+    'body-max-lines': [2, 'always'],
+    'body-max-line-length': [2, 'always', 100],
   },
 };
