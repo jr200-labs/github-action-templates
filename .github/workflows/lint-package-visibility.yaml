@@ -1,0 +1,59 @@
+name: lint-package-visibility
+
+# Catches GHCR container package visibility drift across the orgs we
+# operate. WG-141 platform policy: whengas packages must be Internal
+# (so the docker datasource works org-wide without per-package ACL
+# grants); jr200-labs packages are open-source so must stay Public.
+# A regression in either direction is a real bug — Internal-flipped-to-
+# Private silently breaks Renovate, Public-flipped-to-Private locks
+# external consumers out.
+#
+# This workflow lives in jr200-labs/github-action-templates because
+# the policy is owned at the platform level, not per-repo. Daily cron
+# + manual dispatch.
+
+on:
+  schedule:
+    - cron: "0 7 * * *"  # 07:00 UTC = 16:00 Asia/Tokyo, daily
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # whengas: closed-source, Internal so docker datasource +
+          # cross-repo oras pull work without per-package ACLs.
+          # whengas-scrape-replayer + whengas-ui are not yet flipped;
+          # allowlisted while the migration finishes.
+          - org: whengas
+            expected: internal
+            allowlist: whengas-scrape-replayer,whengas-ui
+          # jr200-labs: open-source libraries; Public is the contract.
+          - org: jr200-labs
+            expected: public
+            allowlist: ""
+    runs-on: ${{ fromJSON(vars.RUNNER_PROFILES)[vars.RUNNER_PROFILE].default }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Mint App installation token (for cross-org packages: read)
+        id: app-token
+        uses: actions/create-github-app-token@v3.1.1
+        with:
+          client-id: ${{ vars.INTEGRATION_CLIENT_ID }}
+          private-key: ${{ secrets.INTEGRATION_APP_PRIVATE_KEY }}
+          owner: ${{ matrix.org }}
+
+      - name: Lint ${{ matrix.org }} package visibility
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          ./scripts/lint-package-visibility.sh \
+            "${{ matrix.org }}" \
+            "${{ matrix.expected }}" \
+            "${{ matrix.allowlist }}"
