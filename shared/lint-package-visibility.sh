@@ -4,10 +4,14 @@
 # artifacts must be Internal") before it manifests as broken Renovate
 # tracking, broken cross-repo `oras pull`, or unintended public leaks.
 #
-# Why per-org policy: whengas is closed-source → expected=internal so
-# the docker datasource works org-wide without per-package ACL grants.
-# jr200-labs is open-source → expected=public so external consumers
-# can pull without auth. A regression in either direction is a bug.
+# Whengas closed-source → expected=internal so the docker datasource
+# works org-wide without per-package ACL grants. Regression to private
+# silently breaks Renovate; regression to public leaks source.
+#
+# Lives in shared/ so consumer workflows can curl + run it in their
+# own org's GITHUB_TOKEN context (avoids cross-org App auth, which the
+# per-org App architecture explicitly doesn't support — wg-ensign only
+# knows whengas, jrl-ensign only knows jr200-labs).
 #
 # Usage:
 #   lint-package-visibility.sh <org> <expected-visibility> [allowlist-csv]
