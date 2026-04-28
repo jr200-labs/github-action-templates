@@ -88,6 +88,25 @@ jobs:
       minor: ${{ steps.release.outputs.minor }}
       patch: ${{ steps.release.outputs.patch }}
     steps:
+      - name: Checkout (for config validation)
+        uses: actions/checkout@v5
+
+      - name: Validate release-please-config.json
+        # Fail fast on common misconfigurations — release-please defaults
+        # release-type to `node` when omitted, which silently breaks
+        # Python/Go/Rust repos with `Missing required file: package.json`
+        # AFTER the conventional-commit PR has been merged. See
+        # shared/lint-release-please-config.sh for the full ruleset.
+        # Curl-into-.shared/ pattern matches ruff.toml / eslint.config.mjs
+        # in ci_uv_python.yaml / ci_npmjs.yaml.
+        shell: bash
+        run: |
+          mkdir -p .shared
+          curl -sfL "https://raw.githubusercontent.com/jr200-labs/github-action-templates/master/shared/lint-release-please-config.sh" \
+            -o .shared/lint-release-please-config.sh
+          chmod +x .shared/lint-release-please-config.sh
+          .shared/lint-release-please-config.sh "${{ inputs.config-file }}"
+
       - name: Mint app token
         id: app-token
         uses: actions/create-github-app-token@v3.1.1
