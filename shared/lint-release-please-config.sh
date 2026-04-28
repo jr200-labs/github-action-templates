@@ -10,12 +10,12 @@
 # warning when the config is added — so the failure mode only surfaces
 # when someone tries to ship.
 #
-# Rules enforced:
-#   1. Every entry under .packages MUST set release-type explicitly.
-#   2. The declared release-type MUST match the package directory's
-#      project marker file (pyproject.toml → python, package.json →
-#      node, go.mod → go, Cargo.toml → rust). Mismatch fails. No marker
-#      → skip cross-check (release-type still required from rule 1).
+# Rule enforced:
+#   Every entry under .packages MUST set release-type explicitly
+#   (or inherit from a top-level `release-type`). Marker-file
+#   cross-checks were tried and dropped — repos legitimately mix
+#   release-type=simple with a package.json (devDeps for commitlint
+#   etc), making the cross-check more false-positive than catch.
 #
 # Usage: .shared/lint-release-please-config.sh [config-file]
 #   config-file defaults to release-please-config.json
@@ -38,15 +38,6 @@ fi
 
 fail=0
 
-# Map marker file → expected release-type. Order doesn't matter; first
-# match wins per package dir.
-declare -A marker_to_type=(
-  ["pyproject.toml"]="python"
-  ["package.json"]="node"
-  ["go.mod"]="go"
-  ["Cargo.toml"]="rust"
-)
-
 # release-please honours a top-level `release-type` as the default for
 # every entry under .packages that doesn't override it. The lint must
 # match that inheritance — otherwise repos with one top-level setting
@@ -67,20 +58,6 @@ while IFS=$'\t' read -r pkg_dir release_type; do
     echo "::error file=${config}::package '${pkg_label}' missing release-type (no per-package value, no top-level default) — release-please defaults to 'node' (expects package.json), which silently breaks Python/Go/Rust repos. Set release-type explicitly."
     fail=1
     continue
-  fi
-  release_type="$effective_type"
-
-  detected=""
-  for marker in "${!marker_to_type[@]}"; do
-    if [ -f "${pkg_dir}/${marker}" ]; then
-      detected="${marker_to_type[$marker]}"
-      break
-    fi
-  done
-
-  if [ -n "$detected" ] && [ "$detected" != "$release_type" ]; then
-    echo "::error file=${config}::package '${pkg_label}' declares release-type='${release_type}' but the directory contains a project marker for '${detected}'. Fix one or the other."
-    fail=1
   fi
 done < <(jq -r '.packages | to_entries[] | "\(.key)\t\(.value["release-type"] // "")"' "$config")
 
