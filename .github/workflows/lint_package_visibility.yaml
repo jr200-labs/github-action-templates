@@ -43,6 +43,10 @@ on:
         required: false
         type: string
         default: ''
+    secrets:
+      INTEGRATION_APP_PRIVATE_KEY:
+        description: Org-level GitHub App private key for packages:read auth
+        required: false
 
 permissions:
   contents: read
@@ -53,7 +57,7 @@ jobs:
     steps:
       - name: Mint App installation token
         id: app-token
-        if: ${{ vars.INTEGRATION_CLIENT_ID != '' && secrets.INTEGRATION_APP_PRIVATE_KEY != '' }}
+        if: ${{ vars.INTEGRATION_CLIENT_ID != '' }}
         uses: actions/create-github-app-token@v3.1.1
         with:
           client-id: ${{ vars.INTEGRATION_CLIENT_ID }}
