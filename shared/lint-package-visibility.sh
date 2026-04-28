@@ -1,17 +1,13 @@
 #!/usr/bin/env bash
 # Lint GHCR container package visibility against an expected policy.
-# Catches drift from the WG-141 platform policy ("all shared OCI
-# artifacts must be Internal") before it manifests as broken Renovate
-# tracking, broken cross-repo `oras pull`, or unintended public leaks.
-#
-# Whengas closed-source → expected=internal so the docker datasource
-# works org-wide without per-package ACL grants. Regression to private
-# silently breaks Renovate; regression to public leaks source.
+# Catches drift before it manifests as broken Renovate tracking
+# (visibility=private requires per-package ACL grants for the docker
+# datasource), broken cross-repo `oras pull`, or unintended public
+# leaks of closed-source images.
 #
 # Lives in shared/ so consumer workflows can curl + run it in their
-# own org's GITHUB_TOKEN context (avoids cross-org App auth, which the
-# per-org App architecture explicitly doesn't support — wg-ensign only
-# knows whengas, jrl-ensign only knows jr200-labs).
+# own org's GITHUB_TOKEN context — same-org packages:read is granted
+# automatically, no App token plumbing required.
 #
 # Usage:
 #   lint-package-visibility.sh <org> <expected-visibility> [allowlist-csv]
