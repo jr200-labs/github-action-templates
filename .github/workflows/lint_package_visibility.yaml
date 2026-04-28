@@ -1,0 +1,107 @@
+name: template-lint-package-visibility
+
+# Reusable workflow that fails when any container package owned by the
+# org is Private (i.e. visibility ≠ Internal/Public) and isn't on the
+# org-level allowlist `ALLOW_PRIVATE_PACKAGES` (CSV of package names).
+#
+# Why: per the WG-141 platform policy, all shared OCI artifacts must be
+# Internal so any same-org workflow GITHUB_TOKEN reads them without
+# per-package "Manage Actions access" ACL maintenance. Private regresses
+# silently — bumps drop out of Renovate, builds break with auth errors.
+# This workflow detects regressions weekly + on-demand.
+#
+# GitHub does NOT expose a REST or GraphQL endpoint to change package
+# visibility; flipping is UI-only. So this workflow is detection only —
+# the remediation is a manual click in package settings.
+#
+# Auth: needs `packages:read` on the org. The App-installation token
+# from secrets.INTEGRATION_APP_PRIVATE_KEY covers it. Falls back to
+# GITHUB_TOKEN, which only sees public packages.
+#
+# Consumer usage:
+#
+#     name: lint-package-visibility
+#     on:
+#       schedule:
+#         - cron: '0 7 * * 1'   # Monday 07:00 UTC
+#       workflow_dispatch:
+#     jobs:
+#       lint:
+#         uses: jr200-labs/github-action-templates/.github/workflows/lint_package_visibility.yaml@master
+#         secrets: inherit
+
+on:
+  workflow_call:
+    inputs:
+      org:
+        description: 'Org to lint. Defaults to the calling repo''s owner.'
+        required: false
+        type: string
+        default: ''
+      runner:
+        description: 'Runner label override.'
+        required: false
+        type: string
+        default: ''
+    secrets:
+      INTEGRATION_APP_PRIVATE_KEY:
+        description: Org-level GitHub App private key for packages:read auth
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ${{ inputs.runner || fromJSON(vars.RUNNER_PROFILES)[vars.RUNNER_PROFILE].default }}
+    steps:
+      - name: Mint App installation token
+        id: app-token
+        if: ${{ vars.INTEGRATION_CLIENT_ID != '' }}
+        uses: actions/create-github-app-token@v3.1.1
+        with:
+          client-id: ${{ vars.INTEGRATION_CLIENT_ID }}
+          private-key: ${{ secrets.INTEGRATION_APP_PRIVATE_KEY }}
+          owner: ${{ inputs.org || github.repository_owner }}
+
+      - name: List + check private packages
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token || secrets.GITHUB_TOKEN }}
+          ORG: ${{ inputs.org || github.repository_owner }}
+          ALLOW_PRIVATE_PACKAGES: ${{ vars.ALLOW_PRIVATE_PACKAGES }}
+        run: |
+          set -uo pipefail
+
+          # Comma-separated allowlist → one-per-line for grep -F.
+          allow_file=$(mktemp)
+          printf '%s' "${ALLOW_PRIVATE_PACKAGES:-}" \
+            | tr ',' '\n' \
+            | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' \
+            | grep -v '^$' > "$allow_file" || true
+
+          # List private container packages owned by the org.
+          private_pkgs=$(gh api --paginate \
+            "/orgs/${ORG}/packages?package_type=container&visibility=private" \
+            --jq '.[].name' 2>/dev/null || true)
+
+          if [ -z "${private_pkgs:-}" ]; then
+            echo "No private container packages owned by ${ORG}. ok."
+            exit 0
+          fi
+
+          fail=0
+          while IFS= read -r pkg; do
+            [ -z "$pkg" ] && continue
+            if grep -Fxq "$pkg" "$allow_file"; then
+              echo "ok (allowlisted): ${pkg}"
+              continue
+            fi
+            url="https://github.com/orgs/${ORG}/packages/container/${pkg}/settings"
+            echo "::error title=Package ${pkg} is Private::Per WG-141 platform policy, ${ORG}/${pkg} must be Internal. Flip via UI: ${url} → 'Change package visibility' → Internal. To intentionally exempt, add '${pkg}' to the ALLOW_PRIVATE_PACKAGES org var."
+            fail=1
+          done <<< "$private_pkgs"
+
+          if [ "$fail" = "1" ]; then
+            exit 1
+          fi
+          echo "all private packages allowlisted. ok."
