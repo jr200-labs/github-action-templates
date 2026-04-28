@@ -34,10 +34,34 @@ const bannedWordsRule = (parsed) => {
   ];
 };
 
+// Cap commit-body length by word count. Long-form context (test
+// plans, follow-ups, deep narrative) belongs in the PR description
+// or the Linear ticket. Override via MAX_COMMIT_BODY_WORDS env var.
+const MAX_COMMIT_BODY_WORDS = parseInt(process.env.MAX_COMMIT_BODY_WORDS || '200', 10);
+
+const bodyMaxWordsRule = (parsed) => {
+  if (!parsed.body) return [true];
+  const words = parsed.body.trim().split(/\s+/).filter(Boolean).length;
+  if (words <= MAX_COMMIT_BODY_WORDS) return [true];
+  return [
+    false,
+    `commit body has ${words} words; cap is ${MAX_COMMIT_BODY_WORDS}. Move long-form context to the PR description or Linear ticket.`,
+  ];
+};
+
 export default {
   extends: ['@commitlint/config-conventional'],
-  plugins: [{ rules: { 'banned-words': bannedWordsRule } }],
+  plugins: [
+    {
+      rules: {
+        'banned-words': bannedWordsRule,
+        'body-max-words': bodyMaxWordsRule,
+      },
+    },
+  ],
   rules: {
     'banned-words': [2, 'always'],
+    'body-max-words': [2, 'always'],
+    'body-max-line-length': [2, 'always', 100],
   },
 };
