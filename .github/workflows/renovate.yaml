@@ -142,6 +142,11 @@ jobs:
           RENOVATE_REQUIRE_CONFIG: 'required'
           # Optional dry-run for debugging without creating branches/PRs.
           RENOVATE_DRY_RUN: ${{ inputs.dry-run }}
+          # Auth to ghcr.io so the docker datasource can read tags on
+          # Internal/Private OCI artifacts published from the org. The
+          # App token's `packages:read` permission covers same-org
+          # Internal packages without per-package ACL grants.
+          RENOVATE_HOST_RULES: '[{"hostType":"docker","matchHost":"ghcr.io","username":"x-access-token","password":"${{ steps.app-token.outputs.token || secrets.GITHUB_TOKEN }}"}]'
 
       - name: Self-hosted Renovate (pass 2 — catches repository-changed quirk)
         # Renovate occasionally exits with `"result": "repository-changed"`
@@ -161,3 +166,4 @@ jobs:
           RENOVATE_REPOSITORIES: ${{ github.repository }}
           RENOVATE_ONBOARDING: 'false'
           RENOVATE_REQUIRE_CONFIG: 'required'
+          RENOVATE_HOST_RULES: '[{"hostType":"docker","matchHost":"ghcr.io","username":"x-access-token","password":"${{ steps.app-token.outputs.token || secrets.GITHUB_TOKEN }}"}]'
