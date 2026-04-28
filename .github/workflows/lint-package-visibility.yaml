@@ -41,7 +41,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - name: Mint App installation token (for cross-org packages: read)
+      - name: "Mint App installation token (cross-org packages:read)"
         id: app-token
         uses: actions/create-github-app-token@v3.1.1
         with:
