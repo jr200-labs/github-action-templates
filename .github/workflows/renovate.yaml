@@ -147,12 +147,6 @@ jobs:
           # App token's `packages:read` permission covers same-org
           # Internal packages without per-package ACL grants.
           RENOVATE_HOST_RULES: '[{"hostType":"docker","matchHost":"ghcr.io","username":"x-access-token","password":"${{ steps.app-token.outputs.token || secrets.GITHUB_TOKEN }}"}]'
-          # Renovate's structured report (per self-hosted-config docs) —
-          # JSON file with a `problems` array (same source as WARN/ERROR
-          # log messages, including package-lookup failures). The
-          # post-step parses it and fails the workflow on any problem.
-          RENOVATE_REPORT_TYPE: 'file'
-          RENOVATE_REPORT_PATH: /tmp/renovate-pass1.report.json
 
       - name: Self-hosted Renovate (pass 2 — catches repository-changed quirk)
         # Renovate occasionally exits with `"result": "repository-changed"`
@@ -173,30 +167,39 @@ jobs:
           RENOVATE_ONBOARDING: 'false'
           RENOVATE_REQUIRE_CONFIG: 'required'
           RENOVATE_HOST_RULES: '[{"hostType":"docker","matchHost":"ghcr.io","username":"x-access-token","password":"${{ steps.app-token.outputs.token || secrets.GITHUB_TOKEN }}"}]'
-          RENOVATE_REPORT_TYPE: 'file'
-          RENOVATE_REPORT_PATH: /tmp/renovate-pass2.report.json
 
-      - name: Fail on Renovate problems
-        # Renovate emits package-lookup failures (and other WARN/ERROR
-        # problems) into the structured JSON report. Any non-empty
-        # problems[] across either pass fails the workflow.
+      - name: Fail on package-lookup failures
+        # Renovate emits "Failed to look up" warnings via stdout (visible
+        # in the GHA log) but neither RENOVATE_LOG_FILE nor
+        # RENOVATE_REPORT_PATH produce a file the runner can read —
+        # the renovatebot/github-action runs Renovate inside dind, and
+        # ARC dind's filesystem is isolated from the runner pod. So
+        # fetch this job's accumulated log via the GHA REST API and
+        # grep it directly. Same source as the UI log; auto-issued
+        # GITHUB_TOKEN suffices.
         if: always() && inputs.dry-run == ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+          JOB_NAME: ${{ github.job }}
         shell: bash
         run: |
           set -uo pipefail
-          fail=0
-          for report in /tmp/renovate-pass1.report.json /tmp/renovate-pass2.report.json; do
-            [ -f "$report" ] || continue
-            problems=$(jq -r '[.problems[]?, (.repositories[]?.problems[]?)] | map(select(.level == "warn" or .level == "error"))' "$report")
-            if [ "$(echo "$problems" | jq 'length')" -gt 0 ]; then
-              echo "::group::Renovate problems from $report"
-              echo "$problems" | jq -r '.[] | "\(.level): \(.msg)"'
-              echo "::endgroup::"
-              fail=1
-            fi
-          done
-          if [ "$fail" = "1" ]; then
-            echo "::error title=Renovate problems::Renovate emitted warnings/errors (see groups above). Common cause: package visibility regression — see WG-141 platform policy."
+          JOB_ID=$(gh api "/repos/$REPO/actions/runs/$RUN_ID/jobs" \
+            --jq ".jobs[] | select(.name | startswith(\"$JOB_NAME\")) | .id" \
+            | head -1)
+          if [ -z "${JOB_ID:-}" ]; then
+            echo "could not resolve job ID; skipping"
+            exit 0
+          fi
+          LOG=$(gh api "/repos/$REPO/actions/jobs/$JOB_ID/logs" 2>/dev/null || true)
+          HITS=$(printf '%s\n' "$LOG" | grep '"Failed to look up' | sort -u || true)
+          if [ -n "$HITS" ]; then
+            echo "::group::package-lookup failures"
+            printf '%s\n' "$HITS"
+            echo "::endgroup::"
+            echo "::error title=Renovate package-lookup failures::Verify Internal package visibility (WG-141 platform policy)."
             exit 1
           fi
-          echo "no Renovate problems"
+          echo "package lookups: ok"
