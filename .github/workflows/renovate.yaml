@@ -176,10 +176,28 @@ jobs:
           RENOVATE_REPORT_TYPE: 'file'
           RENOVATE_REPORT_PATH: /tmp/renovate-pass2.report.json
 
+      - name: DEBUG /tmp listing + report contents
+        if: always()
+        shell: bash
+        run: |
+          echo "=== /tmp listing ==="
+          ls -la /tmp/ || true
+          echo "=== runner /tmp ==="
+          ls -la "${RUNNER_TEMP}/" || true
+          echo "=== probe via container ==="
+          docker run --rm -t --volume /tmp:/tmp alpine:3.20 ls -la /tmp/ || true
+          for f in /tmp/renovate-pass1.report.json /tmp/renovate-pass2.report.json; do
+            echo "=== $f ==="
+            if [ -f "$f" ]; then
+              wc -c "$f"
+              head -c 500 "$f"
+              echo
+            else
+              echo "DOES NOT EXIST"
+            fi
+          done
+
       - name: Fail on Renovate problems
-        # Renovate emits package-lookup failures (and other WARN/ERROR
-        # problems) into the structured JSON report. Any non-empty
-        # problems[] across either pass fails the workflow.
         if: always() && inputs.dry-run == ''
         shell: bash
         run: |
@@ -196,7 +214,7 @@ jobs:
             fi
           done
           if [ "$fail" = "1" ]; then
-            echo "::error title=Renovate problems::Renovate emitted warnings/errors (see groups above). Common cause: package visibility regression — see WG-141 platform policy."
+            echo "::error title=Renovate problems::Renovate emitted warnings/errors."
             exit 1
           fi
           echo "no Renovate problems"
