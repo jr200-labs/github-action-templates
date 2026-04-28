@@ -94,6 +94,7 @@ jobs:
       contents: write
       pull-requests: write
       issues: write
+      actions: read
     steps:
       - name: Checkout
         uses: actions/checkout@v5
