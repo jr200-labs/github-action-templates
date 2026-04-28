@@ -210,7 +210,11 @@ jobs:
               fail=1
               continue
             fi
-            problems=$(jq -r '[.problems[]?, (.repositories[]?.problems[]?), (.repositories[]?.warnings[]?), (.repositories[]?.errors[]?)] | map(if type == "string" then . else .msg end) | map(select(. != null)) | unique | .[]' "$report")
+            problems=$(jq -r '
+              [.problems[]?, .repositories[]?.problems[]?] as $p
+              | ($p | map(.msg)) + ($p | map(.warnings // [] | .[])) + ($p | map(.errors // [] | .[]))
+              | map(select(. != null)) | unique | .[]
+            ' "$report")
             if [ -n "${problems:-}" ]; then
               echo "::group::Renovate problems ($label)"
               printf '%s\n' "$problems"
