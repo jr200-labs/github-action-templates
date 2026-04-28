@@ -25,6 +25,7 @@ jobs:
       pull-requests: read
     env:
       BANNED_COMMIT_WORDS: ${{ vars.BANNED_COMMIT_WORDS }}
+      MAX_PR_BODY_WORDS: ${{ vars.MAX_PR_BODY_WORDS }}
       PR_TITLE: ${{ github.event.pull_request.title }}
       PR_BODY: ${{ github.event.pull_request.body }}
       PR_BRANCH: ${{ github.head_ref }}
@@ -67,5 +68,16 @@ jobs:
           scan "branch name" "${PR_BRANCH:-}"
           scan "PR title"    "${PR_TITLE:-}"
           scan "PR body"     "${PR_BODY:-}"
+
+          # Cap PR body length. Long-form context belongs in the Linear
+          # ticket, not the PR. MAX_PR_BODY_WORDS overrides via org var.
+          max_words="${MAX_PR_BODY_WORDS:-500}"
+          words=$(printf '%s' "${PR_BODY:-}" | wc -w | xargs)
+          if [ "$words" -gt "$max_words" ]; then
+            echo "::error title=PR body too long::PR body has ${words} words; cap is ${max_words}. Move long-form context (test plan, follow-ups, deep narrative) to the Linear ticket."
+            fail=1
+          else
+            echo "PR body length: ok (${words}/${max_words} words)"
+          fi
 
           exit "$fail"
