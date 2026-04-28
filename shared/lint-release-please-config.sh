@@ -47,15 +47,28 @@ declare -A marker_to_type=(
   ["Cargo.toml"]="rust"
 )
 
+# release-please honours a top-level `release-type` as the default for
+# every entry under .packages that doesn't override it. The lint must
+# match that inheritance — otherwise repos with one top-level setting
+# and an empty `.` package (the canonical pattern for single-package
+# repos) get false-positives.
+top_level_type=$(jq -r '.["release-type"] // ""' "$config")
+
 while IFS=$'\t' read -r pkg_dir release_type; do
   pkg_label="$pkg_dir"
   [ "$pkg_dir" = "." ] && pkg_label="<root>"
 
-  if [ -z "$release_type" ] || [ "$release_type" = "null" ]; then
-    echo "::error file=${config}::package '${pkg_label}' missing release-type — release-please defaults to 'node' (expects package.json), which silently breaks Python/Go/Rust repos. Set release-type explicitly."
+  effective_type="$release_type"
+  if [ -z "$effective_type" ] || [ "$effective_type" = "null" ]; then
+    effective_type="$top_level_type"
+  fi
+
+  if [ -z "$effective_type" ]; then
+    echo "::error file=${config}::package '${pkg_label}' missing release-type (no per-package value, no top-level default) — release-please defaults to 'node' (expects package.json), which silently breaks Python/Go/Rust repos. Set release-type explicitly."
     fail=1
     continue
   fi
+  release_type="$effective_type"
 
   detected=""
   for marker in "${!marker_to_type[@]}"; do
