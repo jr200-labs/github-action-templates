@@ -19,3 +19,5 @@ jobs:
     uses: jr200-labs/github-action-templates/.github/workflows/lint_package_visibility.yaml@master
     with:
       allowlist: ${{ vars.PACKAGE_VISIBILITY_ALLOWLIST }}
+    secrets:
+      INTEGRATION_APP_PRIVATE_KEY: ${{ secrets.INTEGRATION_APP_PRIVATE_KEY }}

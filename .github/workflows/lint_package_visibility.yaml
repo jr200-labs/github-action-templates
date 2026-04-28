@@ -1,10 +1,15 @@
 name: template-lint-package-visibility
 
 # Reusable workflow that lints GHCR container package visibility for
-# the caller's org. Same-org packages:read is granted by the runner's
-# GITHUB_TOKEN, so no App auth plumbing required. Script lives in
-# shared/lint-package-visibility.sh; fetched at runtime to keep the
-# reusable thin (matches ci_uv_python.yaml's ruff.toml pattern).
+# the caller's org. Mints an App-installation token from the caller's
+# org-level INTEGRATION_APP_PRIVATE_KEY because the underlying REST
+# endpoint (GET /orgs/{org}/packages) rejects the runner's
+# GITHUB_TOKEN with 400 — App-installation tokens lack the OAuth
+# scope this endpoint requires.
+#
+# Script lives in shared/lint-package-visibility.sh; fetched at
+# runtime to keep the reusable thin (matches ci_uv_python.yaml's
+# ruff.toml pattern).
 #
 # Inputs let consumers override the policy without editing the
 # canonical caller (which would break drift-check):
@@ -32,18 +37,30 @@ on:
         required: false
         type: string
         default: ''
-
-permissions:
-  contents: read
-  packages: read
+    secrets:
+      # Same explicit-named-secret pattern as renovate.yaml — secrets
+      # inherited via `secrets: inherit` work cross-org for variables
+      # but not for secrets, so cross-org callers need the secret
+      # named explicitly.
+      INTEGRATION_APP_PRIVATE_KEY:
+        description: Org-level GitHub App private key for packages:read auth
+        required: true
 
 jobs:
   lint:
     runs-on: ${{ inputs.runner || fromJSON(vars.RUNNER_PROFILES)[vars.RUNNER_PROFILE].default }}
     steps:
+      - name: Mint App installation token
+        id: app-token
+        uses: actions/create-github-app-token@v3.1.1
+        with:
+          client-id: ${{ vars.INTEGRATION_CLIENT_ID }}
+          private-key: ${{ secrets.INTEGRATION_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+
       - name: Run lint script
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
           curl -sfL "https://raw.githubusercontent.com/jr200-labs/github-action-templates/master/shared/lint-package-visibility.sh" \
             -o /tmp/lint-pkg-vis.sh
