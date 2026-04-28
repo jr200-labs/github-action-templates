@@ -17,8 +17,11 @@
 #      node, go.mod → go, Cargo.toml → rust). Mismatch fails. No marker
 #      → skip cross-check (release-type still required from rule 1).
 #
-# Usage: scripts/lint-release-please-config.sh [config-file]
+# Usage: .shared/lint-release-please-config.sh [config-file]
 #   config-file defaults to release-please-config.json
+#
+# Distributed via shared/sync.sh (common.cache → .shared/) and invoked
+# by the release_please reusable workflow as a fail-fast pre-step.
 set -euo pipefail
 
 config="${1:-release-please-config.json}"
