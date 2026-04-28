@@ -115,6 +115,12 @@ jobs:
           private-key: ${{ secrets.INTEGRATION_APP_PRIVATE_KEY }}
           owner: ${{ github.repository_owner }}
 
+      - name: Prepare report dir (world-writable so renovate's `node` user can write)
+        shell: bash
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/.renovate-out"
+          chmod 0777 "$GITHUB_WORKSPACE/.renovate-out"
+
       - name: Self-hosted Renovate (pass 1)
         # renovatebot/github-action only publishes specific patch tags, no
         # floating majors. Pin to a known-good release; Renovate itself can
@@ -127,13 +133,14 @@ jobs:
           # runner pod's network. Dind's default bridge network has
           # routing issues that cause ETIMEDOUT on api.github.com.
           docker-network: host
-          # Mount the runner workspace into the container at /workspace.
-          # ARC runners share `_work` (i.e. github.workspace) with the
-          # dind sidecar via emptyDir, so writes here are visible to
-          # subsequent runner steps. The post-step reads the report
-          # from this path.
+          # Mount the world-writable report dir into the container.
+          # ARC dind shares `_work` (= github.workspace) with the runner
+          # via emptyDir, so writes here are visible to subsequent
+          # runner steps. The renovate container runs as `node` (uid
+          # 1000) which can't write directly to the runner-owned
+          # workspace; the prepared 0777 subdir sidesteps that.
           docker-volumes: |
-            ${{ github.workspace }}:/workspace
+            ${{ github.workspace }}/.renovate-out:/out
         env:
           LOG_LEVEL: ${{ inputs.log-level }}
           # Install Renovate as a node package instead of docker run.
@@ -155,10 +162,10 @@ jobs:
           # Internal packages without per-package ACL grants.
           RENOVATE_HOST_RULES: '[{"hostType":"docker","matchHost":"ghcr.io","username":"x-access-token","password":"${{ steps.app-token.outputs.token || secrets.GITHUB_TOKEN }}"}]'
           # Structured JSON report (problems[] = WARN/ERROR messages).
-          # Written into the shared workspace volume so the post-step
-          # can read it from the runner's filesystem.
+          # Written into /out which is the runner's
+          # ${GITHUB_WORKSPACE}/.renovate-out (0777, mounted above).
           RENOVATE_REPORT_TYPE: 'file'
-          RENOVATE_REPORT_PATH: /workspace/renovate-pass1.report.json
+          RENOVATE_REPORT_PATH: /out/pass1.report.json
 
       - name: Self-hosted Renovate (pass 2 — catches repository-changed quirk)
         # Renovate occasionally exits with `"result": "repository-changed"`
@@ -173,7 +180,7 @@ jobs:
           token: ${{ steps.app-token.outputs.token || secrets.GITHUB_TOKEN }}
           docker-network: host
           docker-volumes: |
-            ${{ github.workspace }}:/workspace
+            ${{ github.workspace }}/.renovate-out:/out
         env:
           LOG_LEVEL: ${{ inputs.log-level }}
           RENOVATE_BINARY_SOURCE: install
@@ -182,30 +189,37 @@ jobs:
           RENOVATE_REQUIRE_CONFIG: 'required'
           RENOVATE_HOST_RULES: '[{"hostType":"docker","matchHost":"ghcr.io","username":"x-access-token","password":"${{ steps.app-token.outputs.token || secrets.GITHUB_TOKEN }}"}]'
           RENOVATE_REPORT_TYPE: 'file'
-          RENOVATE_REPORT_PATH: /workspace/renovate-pass2.report.json
+          RENOVATE_REPORT_PATH: /out/pass2.report.json
 
       - name: Fail on Renovate problems
-        # Reads Renovate's structured JSON report (problems[] +
-        # repositories[].warnings[]); fails on any non-empty entry.
-        # Files are in the shared workspace volume mounted into both
-        # passes' containers.
+        # Reads Renovate's structured JSON report. Fails the workflow
+        # on ANY problem (warning or error) — per WG-141 policy, every
+        # warning is treated as a build break (silent drift hurts more
+        # than a noisy red mark). If the report is missing, that's
+        # also a hard fail (Renovate may have crashed or couldn't
+        # write the file).
         if: always() && inputs.dry-run == ''
         shell: bash
         run: |
           set -uo pipefail
           fail=0
-          for report in "$GITHUB_WORKSPACE/renovate-pass1.report.json" "$GITHUB_WORKSPACE/renovate-pass2.report.json"; do
-            [ -f "$report" ] || continue
-            warns=$(jq -r '[.repositories[]?.warnings[]?, .problems[]?.msg] | map(select(. != null)) | unique | .[]' "$report")
-            if [ -n "${warns:-}" ]; then
-              echo "::group::Renovate problems from $(basename "$report")"
-              printf '%s\n' "$warns"
+          for label in pass1 pass2; do
+            report="$GITHUB_WORKSPACE/.renovate-out/${label}.report.json"
+            if [ ! -f "$report" ]; then
+              echo "::error title=Renovate report missing::Expected $report — Renovate may have failed before writing it."
+              fail=1
+              continue
+            fi
+            problems=$(jq -r '[.problems[]?, (.repositories[]?.problems[]?), (.repositories[]?.warnings[]?), (.repositories[]?.errors[]?)] | map(if type == "string" then . else .msg end) | map(select(. != null)) | unique | .[]' "$report")
+            if [ -n "${problems:-}" ]; then
+              echo "::group::Renovate problems ($label)"
+              printf '%s\n' "$problems"
               echo "::endgroup::"
               fail=1
             fi
           done
           if [ "$fail" = "1" ]; then
-            echo "::error title=Renovate problems::Renovate emitted warnings/errors. Common cause: Private package visibility (WG-141 platform policy requires Internal)."
+            echo "::error title=Renovate problems::Renovate emitted warnings/errors (see groups above)."
             exit 1
           fi
           echo "no Renovate problems"
