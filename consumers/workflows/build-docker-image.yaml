@@ -119,3 +119,11 @@ jobs:
       # without breaking the build.
       client_id: ${{ vars.INTEGRATION_CLIENT_ID }}
       app_private_key: ${{ secrets.INTEGRATION_APP_PRIVATE_KEY }}
+      # BuildKit secrets — exposed to RUN steps via
+      # `--mount=type=secret,id=ghcr_token`. Lets Dockerfiles pull
+      # private GHCR artifacts at build time (e.g. agent-images
+      # `oras pull ghcr.io/whengas/dotagents:...`). Every consumer
+      # gets ghcr_token wired by default; consumers that don't need
+      # it can ignore the secret.
+      build_secrets: |
+        ghcr_token=${{ secrets.GITHUB_TOKEN }}
