@@ -50,19 +50,26 @@ done
 # orgs with >100 packages. Two-phase: fetch raw response first so an
 # API error (auth, missing scope, etc.) surfaces clearly instead of
 # leaking the error JSON into the row loop as fake package names.
-raw=$(gh api "orgs/${org}/packages?package_type=container" --paginate 2>&1) || {
-  echo "::error::API call failed for orgs/${org}/packages?package_type=container:" >&2
-  echo "$raw" >&2
-  exit 1
-}
-
-if ! echo "$raw" | jq -e 'type == "array"' >/dev/null 2>&1; then
-  echo "::error::Unexpected response shape (expected array, got error or object):" >&2
-  echo "$raw" >&2
-  exit 1
-fi
-
-mapfile -t rows < <(echo "$raw" | jq -r '.[] | "\(.name)\t\(.visibility)"')
+# GitHub's REST GET /orgs/{org}/packages rejects App-installation
+# tokens with 400 "Invalid argument" when the visibility filter is
+# omitted. Iterate per visibility and merge — App tokens accept the
+# filtered form.
+declare -a rows=()
+for v in public internal private; do
+  raw=$(gh api "orgs/${org}/packages?package_type=container&visibility=${v}" --paginate 2>&1) || {
+    echo "::error::API call failed for orgs/${org}/packages?package_type=container&visibility=${v}:" >&2
+    echo "$raw" >&2
+    exit 1
+  }
+  if ! echo "$raw" | jq -e 'type == "array"' >/dev/null 2>&1; then
+    echo "::error::Unexpected response shape for visibility=${v}:" >&2
+    echo "$raw" >&2
+    exit 1
+  fi
+  while IFS= read -r line; do
+    [ -n "$line" ] && rows+=("$line")
+  done < <(echo "$raw" | jq -r --arg v "$v" '.[] | "\(.name)\t\($v)"')
+done
 
 if [ "${#rows[@]}" -eq 0 ]; then
   echo "lint-package-visibility: no container packages found in ${org} — nothing to lint"
