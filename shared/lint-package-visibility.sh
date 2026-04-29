@@ -47,8 +47,22 @@ for n in "${_items[@]}"; do
 done
 
 # Collect all container packages across the org. --paginate handles
-# orgs with >100 packages; --jq emits one TSV row per package.
-mapfile -t rows < <(gh api "orgs/${org}/packages?package_type=container" --paginate --jq '.[] | "\(.name)\t\(.visibility)"')
+# orgs with >100 packages. Two-phase: fetch raw response first so an
+# API error (auth, missing scope, etc.) surfaces clearly instead of
+# leaking the error JSON into the row loop as fake package names.
+raw=$(gh api "orgs/${org}/packages?package_type=container" --paginate 2>&1) || {
+  echo "::error::API call failed for orgs/${org}/packages?package_type=container:" >&2
+  echo "$raw" >&2
+  exit 1
+}
+
+if ! echo "$raw" | jq -e 'type == "array"' >/dev/null 2>&1; then
+  echo "::error::Unexpected response shape (expected array, got error or object):" >&2
+  echo "$raw" >&2
+  exit 1
+fi
+
+mapfile -t rows < <(echo "$raw" | jq -r '.[] | "\(.name)\t\(.visibility)"')
 
 if [ "${#rows[@]}" -eq 0 ]; then
   echo "lint-package-visibility: no container packages found in ${org} — nothing to lint"
