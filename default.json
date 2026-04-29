@@ -29,9 +29,17 @@
       "groupSlug": "all-minor-patch"
     },
     {
-      "description": "Major upgrades always require explicit human review",
+      "description": "Force fix(deps) for non-major Renovate commits so release-please consumers actually cut a patch release on merge. The :semanticCommits preset emits chore(deps) by default, which release-please's standard config treats as no-op — every Renovate merge would land but no version tag would follow, blocking downstream Renovate-driven rollouts (JRL-37).",
+      "matchUpdateTypes": ["minor", "patch", "pin", "digest", "lockFileMaintenance"],
+      "semanticCommitType": "fix",
+      "semanticCommitScope": "deps"
+    },
+    {
+      "description": "Major upgrades always require explicit human review. feat(deps) so release-please cuts a minor bump on merge (or major, depending on the consumer's release-please config).",
       "matchUpdateTypes": ["major"],
       "automerge": false,
+      "semanticCommitType": "feat",
+      "semanticCommitScope": "deps",
       "labels": ["dependencies", "renovate", "major-upgrade"]
     },
     {
