@@ -8,18 +8,24 @@ name: build-docker-image
 #
 # Multi-image support (JRL-39): consumers with more than one
 # Dockerfile, or a single Dockerfile at a non-default path, list
-# variants in `.github/images.yaml`:
+# variants in `.github/images.yaml`. Each entry takes:
+#   name: <published image name (ghcr.io/<owner>/<name>)>
+#   dockerfile: <path to Dockerfile, relative to repo root>
+#   context: <optional, default repo root — set when COPY/ADD
+#            paths are relative to a subdirectory>
 #
 #   images:
 #     - name: agent-base
 #       dockerfile: images/agent-base/Dockerfile
+#       context: images/agent-base   # rootfs/, etc. live here
 #     - name: agent-coder
 #       dockerfile: images/agent-coder/Dockerfile
+#       context: images/agent-coder
 #
 # Single-image consumers with a Dockerfile at the repo root or
 # `docker/Dockerfile` need no sidecar — the discover step falls back
 # to one synthetic entry using the repo name and the reusable's
-# default Dockerfile scan.
+# default Dockerfile scan + repo-root context.
 
 on:
   repository_dispatch:
@@ -99,6 +105,7 @@ jobs:
       registry_name: ghcr.io
       image_name: ${{ github.repository_owner }}/${{ matrix.name }}
       dockerfile: ${{ matrix.dockerfile }}
+      context: ${{ matrix.context || '' }}
       tag: ${{ fromJson(needs.configure.outputs.context).tag }}
       platforms: ${{ fromJson(needs.configure.outputs.context).platforms }}
     secrets:
