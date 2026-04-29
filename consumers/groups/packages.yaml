@@ -1,6 +1,0 @@
-# Packages group — opt in if the repo (or its org) publishes container
-# packages to GHCR. Daily check against the expected visibility policy
-# (default: internal). Allowlist for known exceptions via the
-# PACKAGE_VISIBILITY_ALLOWLIST repo/org variable.
-includes:
-  - lint-package-visibility
