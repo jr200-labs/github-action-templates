@@ -114,6 +114,18 @@ jobs:
           client-id: ${{ inputs.client-id || vars.INTEGRATION_CLIENT_ID }}
           private-key: ${{ secrets.INTEGRATION_APP_PRIVATE_KEY }}
           owner: ${{ github.repository_owner }}
+          # Specifying any `permission-*` puts the action into scoped
+          # mode — must list every permission Renovate needs.
+          # `vulnerability_alerts` doesn't get auto-included in default
+          # full-installation tokens (GitHub quirk), causing 403 on
+          # /repos/X/dependabot/alerts and a persistent WARN. Listing
+          # it explicitly fixes the WARN and unblocks Renovate's
+          # vulnerability-alert feature.
+          permission-contents: write
+          permission-issues: write
+          permission-pull-requests: write
+          permission-workflows: write
+          permission-vulnerability-alerts: read
 
       - name: Prepare report dir (world-writable so renovate's `node` user can write)
         shell: bash
