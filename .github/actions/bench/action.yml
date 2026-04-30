@@ -96,7 +96,7 @@ runs:
 
     - name: upload bootstrap baseline
       if: steps.baseline.outputs.exists == 'false' && inputs.bootstrap-if-missing == 'true'
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: ${{ inputs.bootstrap-artifact-name }}
         path: ${{ inputs.baseline-path }}.new
@@ -113,7 +113,7 @@ runs:
 
     - name: upload current run
       if: always()
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: bench-current
         path: ${{ inputs.current-path }}

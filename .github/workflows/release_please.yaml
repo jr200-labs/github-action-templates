@@ -89,7 +89,7 @@ jobs:
       patch: ${{ steps.release.outputs.patch }}
     steps:
       - name: Checkout (for config validation)
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
 
       - name: Validate release-please-config.json
         # Fail fast on common misconfigurations — release-please defaults
@@ -117,7 +117,7 @@ jobs:
 
       - name: Run release-please
         id: release
-        uses: googleapis/release-please-action@v4
+        uses: googleapis/release-please-action@v5
         with:
           token: ${{ steps.app-token.outputs.token }}
           config-file: ${{ inputs.config-file }}

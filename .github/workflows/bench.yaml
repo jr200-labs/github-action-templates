@@ -39,19 +39,19 @@ jobs:
     runs-on: ${{ inputs.runner || fromJSON(vars.RUNNER_PROFILES)[vars.RUNNER_PROFILE].default }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
         with:
           ref: ${{ inputs.checkout-ref }}
 
       - name: Install pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
         # Version is read from package.json "packageManager" field.
         # The pnpm-version input is kept for backward compat with repos
         # that don't declare packageManager, but passing both causes v4+
         # to error with "Multiple versions of pnpm specified".
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: ${{ inputs.node-version }}
           cache: pnpm
