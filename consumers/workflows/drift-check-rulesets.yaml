@@ -22,7 +22,7 @@ jobs:
     runs-on: ${{ fromJSON(vars.RUNNER_PROFILES)[vars.RUNNER_PROFILE].default }}
     steps:
       - name: Checkout github-action-templates
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
         with:
           repository: jr200-labs/github-action-templates
           ref: master
