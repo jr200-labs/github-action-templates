@@ -100,15 +100,15 @@ jobs:
 
       - name: Mint App installation token
         id: app-token
-        # Use GitHub App auth for private repos only. Public repos on
-        # GitHub Free orgs can't receive org-level secrets, so the
-        # private key would be empty and the JWT decode fails.
-        # Private repos on Teams plan get org secrets fine.
-        if: >-
-          ${{
-            github.event.repository.visibility == 'private'
-            && (inputs.client-id != '' || vars.INTEGRATION_CLIENT_ID != '')
-          }}
+        # Use App auth whenever the App credentials are wired through.
+        # The previous `visibility == 'private'` predicate was based
+        # on a misreading of GitHub's rule: only PRIVATE repos in
+        # Free orgs are blocked from org secrets — public repos in
+        # Free orgs CAN read them. Skipping the mint on public repos
+        # left Renovate falling back to GITHUB_TOKEN, which has no
+        # permission key for /repos/*/dependabot/alerts and produces
+        # a perpetual "Cannot access vulnerability alerts" WARN.
+        if: ${{ inputs.client-id != '' || vars.INTEGRATION_CLIENT_ID != '' }}
         uses: actions/create-github-app-token@v3.1.1
         with:
           client-id: ${{ inputs.client-id || vars.INTEGRATION_CLIENT_ID }}
