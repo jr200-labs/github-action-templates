@@ -43,7 +43,11 @@ jobs:
       issues: write
     with:
       log-level: ${{ inputs.log-level || 'info' }}
-      # Translate the 'normal' sentinel back to empty so the reusable workflow
-      # runs Renovate without RENOVATE_DRY_RUN. Actionlint forbids empty
-      # strings in choice options, so we can't use '' directly above.
-      dry-run: ${{ inputs.dry-run == 'normal' && '' || inputs.dry-run }}
+      # Translate the 'normal' sentinel back to empty so the reusable
+      # workflow runs Renovate without RENOVATE_DRY_RUN. Actionlint
+      # forbids empty strings in choice options, so we can't use ''
+      # directly above. Conditional must be `!= 'normal' && val || ''`
+      # — the `==` form short-circuits to the input value because `''`
+      # is falsy in GHA expressions, so `'' || inputs.dry-run` yields
+      # the original value, leaving Renovate stuck in dry-run forever.
+      dry-run: ${{ inputs.dry-run != 'normal' && inputs.dry-run || '' }}
