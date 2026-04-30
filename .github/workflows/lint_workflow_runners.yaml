@@ -29,10 +29,10 @@ jobs:
     runs-on: ${{ fromJSON(vars.RUNNER_PROFILES)[vars.RUNNER_PROFILE].default }}
     steps:
       - name: Checkout caller repo
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
 
       - name: Checkout template scripts
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
         with:
           repository: jr200-labs/github-action-templates
           ref: master

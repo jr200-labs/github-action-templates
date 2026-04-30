@@ -45,12 +45,12 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
         with:
           ref: ${{ inputs.checkout-ref }}
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v6
+        uses: astral-sh/setup-uv@v8.1.0
 
       - name: Check if private git deps auth is configured
         id: check-git-auth

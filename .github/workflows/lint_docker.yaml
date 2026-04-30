@@ -45,7 +45,7 @@ jobs:
       pull-requests: read
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
 
       - name: Use cached shared hadolint config if no committed one
         # hadolint-action auto-reads .hadolint.yaml from repo root only.
