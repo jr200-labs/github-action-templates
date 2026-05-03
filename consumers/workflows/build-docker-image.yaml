@@ -106,6 +106,7 @@ jobs:
       image_name: ${{ github.repository_owner }}/${{ matrix.name }}
       dockerfile: ${{ matrix.dockerfile }}
       context: ${{ matrix.context || '' }}
+      build-contexts: ${{ matrix.build_contexts || '' }}
       tag: ${{ fromJson(needs.configure.outputs.context).tag }}
       platforms: ${{ fromJson(needs.configure.outputs.context).platforms }}
     secrets:
