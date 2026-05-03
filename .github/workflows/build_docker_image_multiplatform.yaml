@@ -40,6 +40,11 @@ on:
         required: false
         type: string
         default: '.'
+      build-contexts:
+        description: 'Optional newline-delimited additional build contexts for docker/build-push-action (e.g. "upstream=https://github.com/org/repo.git#v1.2.3:path").'
+        required: false
+        type: string
+        default: ''
     secrets:
       registry_username:
         required: true
@@ -215,6 +220,8 @@ jobs:
             netrc=/tmp/.netrc
           secrets: |
             ${{ secrets.build_secrets }}
+          build-contexts: |
+            ${{ inputs.build-contexts }}
 
       - name: Export digest
         run: |
