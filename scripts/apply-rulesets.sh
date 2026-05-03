@@ -10,7 +10,8 @@
 # POSTs a new one. Auto-merge is patched to false on every targeted repo.
 #
 # Usage:
-#   scripts/apply-rulesets.sh [--dry-run]
+#   scripts/apply-rulesets.sh [--dry-run] [--org ORG] [--repo ORG/REPO]
+#                             [--ruleset NAME] [--skip-auto-merge]
 #
 # Requires: gh, jq, yq. Env: gh authenticated as a token with admin on the
 # target orgs/repos. Token plan must support the requested scope (org-level
@@ -20,15 +21,83 @@ set -euo pipefail
 
 DRY_RUN=0
 ORG_FILTER=""
+RULESET_FILTER=""
+SKIP_AUTO_MERGE=0
+declare -a REPO_FILTERS=()
+
+usage() {
+    sed -n '1,/^set -euo/p' "$0" | sed 's/^# \?//'
+    cat <<'EOF'
+
+Options:
+  --dry-run            Print API calls instead of applying changes.
+  --org <org>          Limit reconciliation to one org from targets.yaml.
+  --ruleset <name>     Limit reconciliation to one ruleset from targets.yaml.
+  --repo <org/repo>    Limit repo-scope reconciliation to one or more repos.
+                       Repeat flag to target multiple repos.
+  --skip-auto-merge    Skip PATCH allow_auto_merge=false enforcement.
+  -h, --help           Show this help.
+
+Examples:
+  scripts/apply-rulesets.sh --org jr200-labs --dry-run
+  scripts/apply-rulesets.sh --ruleset trunk-protect --repo jr200-labs/mem0-dashboard
+EOF
+}
+
+repo_selected() {
+    local org="$1" repo="$2"
+    local fq="${org}/${repo}"
+    local selected
+
+    if [ "${#REPO_FILTERS[@]}" -eq 0 ]; then
+        return 0
+    fi
+
+    for selected in "${REPO_FILTERS[@]}"; do
+        if [ "$selected" = "$fq" ]; then
+            return 0
+        fi
+    done
+
+    return 1
+}
+
 while [ $# -gt 0 ]; do
     case "$1" in
         --dry-run)   DRY_RUN=1 ;;
         --org)       shift; ORG_FILTER="$1" ;;
         --org=*)     ORG_FILTER="${1#--org=}" ;;
-        -h|--help)   sed -n '1,/^set -euo/p' "$0" | sed 's/^# \?//'; exit 0 ;;
+        --ruleset)   shift; RULESET_FILTER="$1" ;;
+        --ruleset=*) RULESET_FILTER="${1#--ruleset=}" ;;
+        --repo)      shift; REPO_FILTERS+=("$1") ;;
+        --repo=*)    REPO_FILTERS+=("${1#--repo=}") ;;
+        --skip-auto-merge) SKIP_AUTO_MERGE=1 ;;
+        -h|--help)   usage; exit 0 ;;
         *)           echo "unknown arg: $1" >&2; exit 2 ;;
     esac
     shift
+done
+
+if [ -n "$ORG_FILTER" ] && [ "${#REPO_FILTERS[@]}" -gt 0 ]; then
+    for selected in "${REPO_FILTERS[@]}"; do
+        case "$selected" in
+            "$ORG_FILTER"/*) ;;
+            *)
+                echo "repo filter '$selected' does not match --org '$ORG_FILTER'" >&2
+                exit 2
+                ;;
+        esac
+    done
+fi
+
+for selected in "${REPO_FILTERS[@]}"; do
+    case "$selected" in
+        */*) ;;
+        *)
+            echo "invalid --repo '$selected' (expected ORG/REPO)" >&2
+            exit 2
+            ;;
+    esac
 done
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -87,6 +156,9 @@ apply_repo() {
     repos=$(gh api "orgs/$org/repos?per_page=100&type=all" --paginate --jq '.[] | select(.archived==false) | .name')
     while IFS= read -r repo; do
         [ -z "$repo" ] && continue
+        if ! repo_selected "$org" "$repo"; then
+            continue
+        fi
         local existing
         existing=$(gh api "/repos/$org/$repo/rulesets" --jq ".[] | select(.name==\"$name\") | .id" 2>/dev/null | head -1)
         if [ -n "$existing" ]; then
@@ -103,9 +175,18 @@ apply_repo() {
 disable_auto_merge() {
     local org="$1"
     local repos
+
+    if [ "$SKIP_AUTO_MERGE" = 1 ]; then
+        echo "  org/$org: skipping auto-merge enforcement (--skip-auto-merge)"
+        return
+    fi
+
     repos=$(gh api "orgs/$org/repos?per_page=100&type=all" --paginate --jq '.[] | select(.archived==false) | .name')
     while IFS= read -r repo; do
         [ -z "$repo" ] && continue
+        if ! repo_selected "$org" "$repo"; then
+            continue
+        fi
         local current
         current=$(gh api "/repos/$org/$repo" --jq '.allow_auto_merge' 2>/dev/null)
         if [ "$current" = "false" ]; then
@@ -120,6 +201,7 @@ disable_auto_merge() {
 rulesets=$(yq -r 'keys | .[]' "$TARGETS")
 while IFS= read -r ruleset; do
     [ -z "$ruleset" ] && continue
+    [ -n "$RULESET_FILTER" ] && [ "$ruleset" != "$RULESET_FILTER" ] && continue
     body="$RULESETS_DIR/$ruleset.json"
     [ -f "$body" ] || { echo "missing body file: $body" >&2; exit 1; }
 

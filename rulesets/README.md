@@ -16,6 +16,8 @@ rulesets/
 ```bash
 scripts/apply-rulesets.sh             # reconcile
 scripts/apply-rulesets.sh --dry-run   # show what would change
+scripts/apply-rulesets.sh --org jr200-labs --dry-run
+scripts/apply-rulesets.sh --repo jr200-labs/mem0-dashboard --ruleset trunk-protect
 ```
 
 Requires `gh`, `jq`, `yq` and a `gh auth login` with admin on every targeted org. `gh` token plan must support requested scope — org-level rulesets need GitHub Team; free orgs fall back to per-repo.
@@ -43,6 +45,21 @@ trunk-protect:
 ```
 
 Then `scripts/apply-rulesets.sh`. Idempotent — existing rulesets get PUT in place; new ones get POSTed.
+
+## Onboarding a new repository
+
+Use the repo filter to apply existing canonical rulesets to one new repo without touching the rest of an org:
+
+```bash
+scripts/apply-rulesets.sh --repo jr200-labs/new-repo --ruleset trunk-protect
+```
+
+Useful flags for staged rollout:
+
+- `--repo ORG/REPO` (repeatable): target specific repos only.
+- `--org ORG`: narrow to one org from `targets.yaml`.
+- `--ruleset NAME`: apply one canonical ruleset only.
+- `--skip-auto-merge`: skip the `allow_auto_merge=false` patch if you only want ruleset reconciliation.
 
 ## Adding a new ruleset
 
