@@ -146,6 +146,15 @@ jobs:
       - name: Detect Dockerfile
         id: detect-dockerfile
         run: |
+          if [[ "${{ inputs.context }}" =~ ^https://github\.com/.+\.git#.+ ]]; then
+            if [ -n "${{ inputs.dockerfile }}" ]; then
+              echo "dockerfile=${{ inputs.dockerfile }}" >> $GITHUB_OUTPUT
+            else
+              echo "dockerfile=Dockerfile" >> $GITHUB_OUTPUT
+            fi
+            exit 0
+          fi
+
           if [ -n "${{ inputs.dockerfile }}" ]; then
             if [ ! -f "${{ inputs.dockerfile }}" ]; then
               echo "::error::dockerfile input set to '${{ inputs.dockerfile }}' but file not found"
