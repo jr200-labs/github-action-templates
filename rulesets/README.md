@@ -31,7 +31,10 @@ Requires `gh`, `jq`, `yq` and a `gh auth login` with admin on every targeted org
 - `deletion`: blocks branch deletion.
 - `bypass_actors: []` — no admin override.
 
-Plus `allow_auto_merge=false` patched on every repo so PRs can't auto-merge ahead of the CODEOWNERS review.
+Adjacent repo settings are also reconciled on every targeted repo:
+
+- `allow_auto_merge=false` so PRs can't auto-merge ahead of the CODEOWNERS review.
+- `delete_branch_on_merge=true` so merged PR branches are cleaned up automatically.
 
 ## Adding a target
 
@@ -59,7 +62,7 @@ Useful flags for staged rollout:
 - `--repo ORG/REPO` (repeatable): target specific repos only.
 - `--org ORG`: narrow to one org from `targets.yaml`.
 - `--ruleset NAME`: apply one canonical ruleset only.
-- `--skip-auto-merge`: skip the `allow_auto_merge=false` patch if you only want ruleset reconciliation.
+- `--skip-auto-merge`: skip repo-level merge-setting patches (`allow_auto_merge=false`, `delete_branch_on_merge=true`) if you only want ruleset reconciliation.
 
 ## Adding a new ruleset
 

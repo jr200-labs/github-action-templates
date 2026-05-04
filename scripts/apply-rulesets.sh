@@ -7,7 +7,10 @@
 #
 # Idempotent: if a ruleset with the same name already exists at the target,
 # the script PUTs the canonical body to it (updating in place); otherwise
-# POSTs a new one. Auto-merge is patched to false on every targeted repo.
+# POSTs a new one. Repo-level merge hygiene settings are also reconciled on
+# every targeted repo:
+#   - allow_auto_merge=false
+#   - delete_branch_on_merge=true
 #
 # Usage:
 #   scripts/apply-rulesets.sh [--dry-run] [--org ORG] [--repo ORG/REPO]
@@ -170,14 +173,15 @@ apply_repo() {
     done <<<"$repos"
 }
 
-# Disable auto-merge on every non-archived repo in an org. Skip repos
-# already at allow_auto_merge=false so dry-run output stays meaningful.
-disable_auto_merge() {
+# Reconcile repo-level merge hygiene settings that don't live in rulesets.
+# Rulesets cover branch protection / PR requirements; GitHub keeps a few
+# adjacent behaviors as plain repository settings.
+reconcile_repo_settings() {
     local org="$1"
     local repos
 
     if [ "$SKIP_AUTO_MERGE" = 1 ]; then
-        echo "  org/$org: skipping auto-merge enforcement (--skip-auto-merge)"
+        echo "  org/$org: skipping repo merge-setting enforcement (--skip-auto-merge)"
         return
     fi
 
@@ -187,13 +191,20 @@ disable_auto_merge() {
         if ! repo_selected "$org" "$repo"; then
             continue
         fi
-        local current
-        current=$(gh api "/repos/$org/$repo" --jq '.allow_auto_merge' 2>/dev/null)
-        if [ "$current" = "false" ]; then
+        local current auto_merge delete_branch
+        current=$(gh api "/repos/$org/$repo" -q '{allow_auto_merge: .allow_auto_merge, delete_branch_on_merge: .delete_branch_on_merge}' 2>/dev/null)
+        auto_merge=$(jq -r '.allow_auto_merge' <<<"$current")
+        delete_branch=$(jq -r '.delete_branch_on_merge' <<<"$current")
+
+        if [ "$auto_merge" = "false" ] && [ "$delete_branch" = "true" ]; then
             continue
         fi
-        echo "  repo/$org/$repo: allow_auto_merge=false (drift detected)"
-        run gh api -X PATCH "/repos/$org/$repo" -F allow_auto_merge=false --silent
+
+        echo "  repo/$org/$repo: reconcile allow_auto_merge=false, delete_branch_on_merge=true (drift detected)"
+        run gh api -X PATCH "/repos/$org/$repo" \
+            -F allow_auto_merge=false \
+            -F delete_branch_on_merge=true \
+            --silent
     done <<<"$repos"
 }
 
@@ -216,7 +227,7 @@ while IFS= read -r ruleset; do
             repo) apply_repo "$org" "$ruleset" "$body" ;;
             *) echo "unknown scope '$scope' for $ruleset/$org" >&2; exit 1 ;;
         esac
-        disable_auto_merge "$org"
+        reconcile_repo_settings "$org"
     done <<<"$orgs"
 done <<<"$rulesets"
 
