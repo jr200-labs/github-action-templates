@@ -204,14 +204,24 @@ jobs:
               fail=1
               continue
             fi
+            # Failure surfaces in two places: problems[].{msg,warnings,errors}
+            # AND the repository-level `result` field (e.g. lockfile-error,
+            # config-error, unknown-error). Earlier the gate only checked
+            # the former, letting lockfile-error pass silently.
             problems=$(jq -r '
               [.problems[]?, .repositories[]?.problems[]?] as $p
               | ($p | map(.msg)) + ($p | map(.warnings // [] | .[])) + ($p | map(.errors // [] | .[]))
               | map(select(. != null)) | unique | .[]
             ' "$report")
-            if [ -n "${problems:-}" ]; then
+            results=$(jq -r '
+              .repositories[]?
+              | select(.result // "" | test("error"))
+              | "result=\(.result) on repository=\(.repository // "?")"
+            ' "$report")
+            if [ -n "${problems:-}" ] || [ -n "${results:-}" ]; then
               echo "::group::Renovate problems ($label)"
-              printf '%s\n' "$problems"
+              [ -n "${problems:-}" ] && printf '%s\n' "$problems"
+              [ -n "${results:-}" ] && printf '%s\n' "$results"
               echo "::endgroup::"
               fail=1
             fi
