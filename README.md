@@ -9,7 +9,7 @@ Reusable GitHub Actions workflows + canonical caller workflows shared across con
 
 ## Merging is human-only
 
-Both consumer orgs (`whengas/`, `jr200-labs/`) enforce branch protection + CODEOWNERS rulesets requiring an approving review from a non-self reviewer. The `lint-no-auto-merge` workflow in `hygiene` fails CI if any caller workflow invokes `gh pr merge`, `--auto-merge`, or `gh pr review --approve`. Bots build, test, and publish artifacts; humans merge.
+Both consumer orgs (`whengas/`, `jr200-labs/`) enforce default-branch protection centrally: rulesets require an approving review from a non-self reviewer and repo settings disable auto-merge + enable branch auto-delete on merge. The `lint-no-auto-merge` workflow in `hygiene` fails CI if any caller workflow invokes `gh pr merge`, `--auto-merge`, or `gh pr review --approve`. Bots build, test, and publish artifacts; humans merge.
 
 ## Important
 
