@@ -126,7 +126,7 @@ jobs:
         # floating majors. Pin to a known-good release; Renovate itself can
         # be updated independently of this action via the `renovate-version`
         # input below if needed.
-        uses: renovatebot/github-action@v46.1.12
+        uses: renovatebot/github-action@v46.1.13
         with:
           token: ${{ steps.app-token.outputs.token || secrets.GITHUB_TOKEN }}
           # Use host networking so the Renovate container shares the
@@ -170,7 +170,7 @@ jobs:
         # the PR, pass 2 is a ~30s no-op; if pass 1 deferred, pass 2 creates
         # the PR. Skipped on dry-run so debug runs don't double-execute.
         if: success() && inputs.dry-run == ''
-        uses: renovatebot/github-action@v46.1.12
+        uses: renovatebot/github-action@v46.1.13
         with:
           token: ${{ steps.app-token.outputs.token || secrets.GITHUB_TOKEN }}
           docker-network: host
