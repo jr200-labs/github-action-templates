@@ -6,8 +6,9 @@
 #           ruleset per repo, applied to every non-archived repo in the org)
 #
 # Auto-merge: every repo listed (or discovered via repo scope) also gets
-# allow_auto_merge=false patched so PRs can't auto-merge ahead of the
-# CODEOWNERS review.
+# allow_auto_merge=false patched so PRs can't auto-merge ahead of human
+# merge intent. Review requirements can be tightened or relaxed via the
+# canonical ruleset body in rulesets/trunk-protect.json.
 
 trunk-protect:
   whengas: org      # GitHub Team — org-level ruleset
