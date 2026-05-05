@@ -8,18 +8,18 @@ on:
         required: false
         type: string
         default: "refs/heads/master"
-      unused-variable:
-        description: unused-variable
+      site-path:
+        description: "Path to the Quarto site directory"
         required: false
         type: string
-        default: dummy    
-  
-# Sets permissions of the GITHUB_TOKEN to allow deployment to GitHub Pages
+        default: "docs/site"
       runner:
         description: 'Runner label (e.g. ubuntu-latest or self-hosted)'
         required: false
         type: string
         default: ''
+
+# Sets permissions of the GITHUB_TOKEN to allow deployment to GitHub Pages
 permissions:
   contents: write
   pages: write
@@ -47,13 +47,13 @@ jobs:
       - name: Render Quarto site
         uses: quarto-dev/quarto-actions/render@v2.2.0
         with:
-          path: docs
+          path: ${{ inputs.site-path }}
           to: html
 
       - name: Publish to GitHub Pages
         uses: quarto-dev/quarto-actions/publish@v2.2.0
         with:
-          path: docs
+          path: ${{ inputs.site-path }}
           target: gh-pages
           render: false
         env:
