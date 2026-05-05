@@ -159,6 +159,29 @@ apply_org() {
     rm -f "$tmp_body"
 }
 
+# If a ruleset is canonical at org scope, repo-level rulesets with the same
+# name become accidental additive restrictions. Remove those duplicates so the
+# org-level body is the single source of truth.
+cleanup_repo_duplicates_for_org_ruleset() {
+    local org="$1" name="$2"
+    local repos
+
+    repos=$(gh api "orgs/$org/repos?per_page=100&type=all" --paginate --jq '.[] | select(.archived==false) | .name')
+    while IFS= read -r repo; do
+        [ -z "$repo" ] && continue
+        if ! repo_selected "$org" "$repo"; then
+            continue
+        fi
+        local ids
+        ids=$(gh api "/repos/$org/$repo/rulesets" --jq ".[] | select(.name==\"$name\" and .source_type==\"Repository\") | .id")
+        while IFS= read -r id; do
+            [ -z "$id" ] && continue
+            echo "  repo/$org/$repo: DELETE duplicate repo-level ruleset $name (id=$id)"
+            run gh api "/repos/$org/$repo/rulesets/$id" -X DELETE --silent
+        done <<<"$ids"
+    done <<<"$repos"
+}
+
 # Apply one ruleset spec to every non-archived repo in an org at repo scope.
 apply_repo() {
     local org="$1" name="$2" body_file="$3"
@@ -230,7 +253,10 @@ while IFS= read -r ruleset; do
         [ -n "$ORG_FILTER" ] && [ "$org" != "$ORG_FILTER" ] && continue
         scope=$(yq -r ".\"$ruleset\".\"$org\"" "$TARGETS")
         case "$scope" in
-            org)  apply_org  "$org" "$ruleset" "$body" ;;
+            org)
+                apply_org  "$org" "$ruleset" "$body"
+                cleanup_repo_duplicates_for_org_ruleset "$org" "$ruleset"
+                ;;
             repo) apply_repo "$org" "$ruleset" "$body" ;;
             *) echo "unknown scope '$scope' for $ruleset/$org" >&2; exit 1 ;;
         esac
