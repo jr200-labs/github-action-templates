@@ -129,7 +129,7 @@ canon_ruleset() {
 diff_or_apply() {
     local label="$1" detail_endpoint="$2" body_file="$3"
     local live want
-    live=$(gh api "$detail_endpoint" 2>/dev/null | jq -Sc '{name, target, enforcement, conditions, rules, bypass_actors}')
+    live=$(gh api "$detail_endpoint" | jq -Sc '{name, target, enforcement, conditions, rules, bypass_actors}')
     want=$(canon_ruleset < "$body_file")
     if [ "$live" = "$want" ]; then
         echo "  $label: in sync"
@@ -143,13 +143,20 @@ diff_or_apply() {
 apply_org() {
     local org="$1" name="$2" body_file="$3"
     local existing
-    existing=$(gh api "/orgs/$org/rulesets" --jq ".[] | select(.name==\"$name\") | .id" 2>/dev/null | head -1)
+
+    local tmp_body
+    tmp_body=$(mktemp)
+    # Organization rulesets require a repository targeting condition
+    jq '.conditions += {"repository_name": {"include": ["~ALL"], "exclude": []}}' "$body_file" > "$tmp_body"
+
+    existing=$(gh api "/orgs/$org/rulesets" --jq ".[] | select(.name==\"$name\") | .id" | head -1)
     if [ -n "$existing" ]; then
-        diff_or_apply "org/$org ruleset $name (id=$existing)" "/orgs/$org/rulesets/$existing" "$body_file"
+        diff_or_apply "org/$org ruleset $name (id=$existing)" "/orgs/$org/rulesets/$existing" "$tmp_body"
     else
         echo "  org/$org: POST ruleset $name (missing)"
-        run gh api "/orgs/$org/rulesets" -X POST --input "$body_file" --silent
+        run gh api "/orgs/$org/rulesets" -X POST --input "$tmp_body" --silent
     fi
+    rm -f "$tmp_body"
 }
 
 # Apply one ruleset spec to every non-archived repo in an org at repo scope.
@@ -163,7 +170,7 @@ apply_repo() {
             continue
         fi
         local existing
-        existing=$(gh api "/repos/$org/$repo/rulesets" --jq ".[] | select(.name==\"$name\") | .id" 2>/dev/null | head -1)
+        existing=$(gh api "/repos/$org/$repo/rulesets" --jq ".[] | select(.name==\"$name\") | .id" | head -1)
         if [ -n "$existing" ]; then
             diff_or_apply "repo/$org/$repo ruleset $name (id=$existing)" "/repos/$org/$repo/rulesets/$existing" "$body_file"
         else
@@ -192,7 +199,7 @@ reconcile_repo_settings() {
             continue
         fi
         local current auto_merge delete_branch
-        current=$(gh api "/repos/$org/$repo" -q '{allow_auto_merge: .allow_auto_merge, delete_branch_on_merge: .delete_branch_on_merge}' 2>/dev/null)
+        current=$(gh api "/repos/$org/$repo" -q '{allow_auto_merge: .allow_auto_merge, delete_branch_on_merge: .delete_branch_on_merge}')
         auto_merge=$(jq -r '.allow_auto_merge' <<<"$current")
         delete_branch=$(jq -r '.delete_branch_on_merge' <<<"$current")
 
