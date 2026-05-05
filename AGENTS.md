@@ -48,6 +48,7 @@ Current groups:
 | `node` | ci-node | repo has `package.json` |
 | `go` | ci-go | repo has `go.mod` |
 | `docker` | build-docker-image | repo publishes a docker image to ghcr.io |
+| `quarto-docs` | publish-quarto-docs | repo publishes a Quarto site from `docs/site` to `gh-pages` |
 | `helm-chart` | build-helm-chart | repo publishes a Helm chart (needs `vars.HELM_CHART_REPO` + `secrets.CHARTS_WRITE_TOKEN`) |
 | `wheel` | publish-wheel | repo publishes a wheel to PyPI (needs `secrets.PYPI_API_TOKEN`) |
 | `release` | release-please | repo cuts versioned releases |

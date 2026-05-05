@@ -1,0 +1,4 @@
+# Quarto docs publishing group — opt in if the repo publishes a
+# Quarto site from docs/site to GitHub Pages.
+includes:
+  - publish-quarto-docs
