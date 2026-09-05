@@ -5,6 +5,14 @@ ROOT=$(git rev-parse --show-toplevel)
 reusable="$ROOT/.github/workflows/release_please.yaml"
 release_caller="$ROOT/consumers/workflows/release-please.yaml"
 docker_caller="$ROOT/consumers/workflows/build-docker-image.yaml"
+artifact_callers=(
+  "$docker_caller"
+  "$ROOT/consumers/workflows/build-helm-chart.yaml"
+  "$ROOT/consumers/workflows/publish-crate.yaml"
+  "$ROOT/consumers/workflows/publish-npm-package.yaml"
+  "$ROOT/consumers/workflows/publish-oci-artifact.yaml"
+  "$ROOT/consumers/workflows/publish-wheel.yaml"
+)
 
 grep -Fq 'releases: ${{ steps.release.outputs.releases_created' "$reusable" || \
     grep -Fq 'releases: ${{ steps.normalize-releases.outputs.releases' "$reusable"
@@ -15,6 +23,9 @@ grep -Fq 'RELEASE_COMPONENT: ${{ fromJson(needs.configure.outputs.context).compo
 grep -Fq 'if [ -n "$RELEASE_COMPONENT" ] && [ "$RELEASE_COMPONENT" != "." ]; then' "$docker_caller"
 grep -Fq 'select(.component == strenv(RELEASE_COMPONENT))' "$docker_caller"
 grep -Fq 'success-tag-prefix: ${{ matrix.success-tag-prefix' "$docker_caller"
+for caller in "${artifact_callers[@]}"; do
+  grep -Fq "run-name: \${{ github.event.client_payload['release-tag']" "$caller"
+done
 test "$(grep -c 'include-component-in-tag' "$reusable")" -ge 2
 
 config='{"packages":{".":{"component":"padd"},"cmd/padd-supervisor":{"component":"padd-supervisor"}}}'
