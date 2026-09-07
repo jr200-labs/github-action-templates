@@ -224,7 +224,7 @@ jobs:
         # floating majors. Pin to a known-good release; Renovate itself can
         # be updated independently of this action via the `renovate-version`
         # input below if needed.
-        uses: renovatebot/github-action@v46.2.5
+        uses: renovatebot/github-action@v46.2.6
         with:
           token: ${{ steps.app-token.outputs.token || secrets.GITHUB_TOKEN }}
           renovate-image: ${{ inputs.renovate-image || 'ghcr.io/renovatebot/renovate' }}
@@ -312,7 +312,7 @@ jobs:
         # and rewrite the closed PR title/body to a newer available version
         # without changing the already-merged commit.
         if: success() && inputs.dry-run == '' && steps.renovate-pass2.outputs.run == 'true'
-        uses: renovatebot/github-action@v46.2.5
+        uses: renovatebot/github-action@v46.2.6
         with:
           token: ${{ steps.app-token.outputs.token || secrets.GITHUB_TOKEN }}
           renovate-image: ${{ inputs.renovate-image || 'ghcr.io/renovatebot/renovate' }}
