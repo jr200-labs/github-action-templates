@@ -41,9 +41,15 @@ jobs:
       - name: Sync shared lint config
         run: |
           mkdir -p .shared
-          curl -sfL "https://raw.githubusercontent.com/jr200-labs/github-action-templates/master/shared/.golangci.yml" \
+          curl --fail --show-error --location \
+            --retry 5 --retry-delay 2 --retry-all-errors \
+            --connect-timeout 10 --max-time 60 \
+            "https://raw.githubusercontent.com/jr200-labs/github-action-templates/master/shared/.golangci.yml" \
             -o .shared/.golangci.yml
-          curl -sfL "https://raw.githubusercontent.com/jr200-labs/github-action-templates/master/shared/lint-release-please-config.sh" \
+          curl --fail --show-error --location \
+            --retry 5 --retry-delay 2 --retry-all-errors \
+            --connect-timeout 10 --max-time 60 \
+            "https://raw.githubusercontent.com/jr200-labs/github-action-templates/master/shared/lint-release-please-config.sh" \
             -o .shared/lint-release-please-config.sh
           chmod +x .shared/lint-release-please-config.sh
 
