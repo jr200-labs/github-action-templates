@@ -8,6 +8,7 @@ fi
 
 allowed_vulnerability_warning='Cannot access vulnerability alerts. Please ensure permissions have been granted.'
 allowed_pep440_warning='pep440: failed to calculate newValue'
+allowed_ref_cleanup_warning='Error deleting "refs/renovate/branches/*"'
 fail=0
 
 for report in "$@"; do
@@ -17,10 +18,10 @@ for report in "$@"; do
     continue
   fi
 
-  problems=$(jq -r --arg allowed_vulnerability "$allowed_vulnerability_warning" --arg allowed_pep440 "$allowed_pep440_warning" '
+  problems=$(jq -r --arg allowed_vulnerability "$allowed_vulnerability_warning" --arg allowed_pep440 "$allowed_pep440_warning" --arg allowed_ref_cleanup "$allowed_ref_cleanup_warning" '
     [.problems[]?, .repositories[]?.problems[]?] as $p
     | ($p | map(.msg)) + ($p | map(.warnings // [] | .[])) + ($p | map(.errors // [] | .[]))
-    | map(select(. != null and . != $allowed_vulnerability and . != $allowed_pep440))
+    | map(select(. != null and . != $allowed_vulnerability and . != $allowed_pep440 and . != $allowed_ref_cleanup))
     | unique
     | .[]
   ' "$report")
