@@ -114,15 +114,6 @@
       "enabled": true
     },
     {
-      "description": "Track third-party GHCR images with the built-in Docker datasource. The GitHub-tags workaround is valid only for internal repositories whose release tags are controlled by the consumer organizations.",
-      "matchManagers": ["helm-values"],
-      "matchPackageNames": [
-        "/^ghcr\\.io\\//",
-        "!/^ghcr\\.io\\/(?:whengas|jr200-labs|jr200|janeway-labs|janeway)\\//"
-      ],
-      "enabled": true
-    },
-    {
       "description": "Track GHCR images outside the service values tree with Renovate's built-in manager. The custom GHCR regex managers are scoped to service manifests, so suppressing helm-values elsewhere leaves dependencies such as Ansible role values untracked.",
       "matchManagers": ["helm-values"],
       "matchPackageNames": ["/^ghcr\\.io\\//"],
@@ -216,7 +207,7 @@
         "/services/.*/env/.*/.*values\\.yaml$/"
       ],
       "matchStrings": [
-        "repository:\\s*ghcr\\.io/(?<depName>(?:whengas|jr200-labs|jr200|janeway-labs|janeway)/[^\\s]+)\\s*\\n\\s*tag:\\s*(?<currentValue>v?[0-9]+\\.[0-9]+\\.[0-9]+)"
+        "repository:\\s*ghcr\\.io/(?<depName>[^/\\s]+/[^\\s]+)\\s*\\n\\s*tag:\\s*(?<currentValue>v?[0-9]+\\.[0-9]+\\.[0-9]+)"
       ],
       "datasourceTemplate": "github-tags",
       "versioningTemplate": "semver"
@@ -228,7 +219,7 @@
         "/services/.*/env/.*\\.yaml$/"
       ],
       "matchStrings": [
-        "image:\\s*ghcr\\.io/(?<depName>(?:whengas|jr200-labs|jr200|janeway-labs|janeway)/[^\\s:]+):(?<currentValue>v?[0-9]+\\.[0-9]+\\.[0-9]+)"
+        "image:\\s*ghcr\\.io/(?<depName>[^/\\s]+/[^\\s:]+):(?<currentValue>v?[0-9]+\\.[0-9]+\\.[0-9]+)"
       ],
       "datasourceTemplate": "github-tags",
       "versioningTemplate": "semver"
