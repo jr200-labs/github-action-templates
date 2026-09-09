@@ -205,6 +205,25 @@ cat > "$allowed_pep440" <<'JSON'
 JSON
 "$report_linter" "$allowed_pep440"
 
+allowed_ref_cleanup="$TMPDIR/allowed-ref-cleanup.json"
+cat > "$allowed_ref_cleanup" <<'JSON'
+{
+  "repositories": [
+    {
+      "repository": "example/repo",
+      "problems": [
+        {
+          "warnings": [
+            "Error deleting \"refs/renovate/branches/*\""
+          ]
+        }
+      ]
+    }
+  ]
+}
+JSON
+"$report_linter" "$allowed_ref_cleanup"
+
 real_error="$TMPDIR/real-error.json"
 cat > "$real_error" <<'JSON'
 {
