@@ -381,7 +381,7 @@ jobs:
 
       - name: Set up uv for Python branch repair
         if: success() && inputs.dry-run == '' && inputs.repair-branches && hashFiles('pyproject.toml') != ''
-        uses: astral-sh/setup-uv@v10.0.1
+        uses: astral-sh/setup-uv@v10.1.0
 
       - name: Repair stale uv.lock on Renovate Python branches
         if: success() && inputs.dry-run == '' && inputs.repair-branches && hashFiles('pyproject.toml') != ''

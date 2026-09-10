@@ -316,7 +316,7 @@ jobs:
 
       - name: Set up uv for release PR lockfiles
         if: (steps.release.outcome == 'success' || steps.release-retry.outcome == 'success') && (steps.release-retry.outputs.release_created || steps.release.outputs.release_created) != 'true'
-        uses: astral-sh/setup-uv@v10.0.1
+        uses: astral-sh/setup-uv@v10.1.0
 
       - name: Refresh uv.lock on release PR
         if: (steps.release.outcome == 'success' || steps.release-retry.outcome == 'success') && (steps.release-retry.outputs.release_created || steps.release.outputs.release_created) != 'true'

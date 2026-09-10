@@ -40,7 +40,7 @@ jobs:
           ref: ${{ inputs.checkout-ref }}
           fetch-depth: 0
 
-      - uses: astral-sh/setup-uv@v10.0.1
+      - uses: astral-sh/setup-uv@v10.1.0
 
       - uses: quarto-dev/quarto-actions/setup@v2.2.0
 
