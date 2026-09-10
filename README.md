@@ -18,6 +18,31 @@ Release with generated notes.
 
 Both consumer orgs (`whengas/`, `jr200-labs`) enforce default-branch protection centrally: rulesets require PRs, repo settings disable auto-merge by default + enable branch auto-delete, and the `lint-no-auto-merge` workflow in `hygiene` fails CI if any caller workflow invokes `gh pr merge`, `--auto-merge`, or `gh pr review --approve`. Shared-ref auto-merge guardrails live in config for a future opt-in, but the feature is currently disabled.
 
+## MCP protocol probe
+
+`scripts/probe-mcp-server.sh` is a reusable synthetic check for MCP deployments. It
+performs `initialize`, `notifications/initialized`, and `tools/list`, then
+verifies any required tool names. Transport and protocol failures use stable,
+searchable `MCP_PROBE_ERROR` fields; transient transport retries use
+`MCP_PROBE_RETRY`. The endpoint is a required secret because an MCP URL may
+contain credentials.
+
+Callers choose a runner with network access to the target service and keep the
+workflow bespoke because deployment topology and credential provisioning vary:
+
+```yaml
+- name: Download the MCP protocol probe
+  run: |
+    curl -fsSL \
+      https://raw.githubusercontent.com/jr200-labs/github-action-templates/master/scripts/probe-mcp-server.sh \
+      -o probe-mcp-server.sh
+- name: Probe MCP initialization and tools
+  env:
+    MCP_ENDPOINT: ${{ secrets.MCP_PROBE_ENDPOINT }}
+    MCP_REQUIRED_TOOLS_JSON: '["read_topic", "attach_repository"]'
+  run: bash probe-mcp-server.sh
+```
+
 ## Important
 
 **Read [GOTCHAS.md](GOTCHAS.md) before wiring up a new consumer.** It
