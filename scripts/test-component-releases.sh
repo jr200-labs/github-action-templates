@@ -16,7 +16,9 @@ artifact_callers=(
 
 grep -Fq 'releases: ${{ steps.release.outputs.releases_created' "$reusable" || \
     grep -Fq 'releases: ${{ steps.normalize-releases.outputs.releases' "$reusable"
-grep -Fq 'PATHS_RELEASED: ${{ steps.release.outputs.paths_released }}' "$reusable"
+grep -Fq 'id: release-retry' "$reusable"
+grep -Fq "if: steps.release.outcome == 'failure'" "$reusable"
+grep -Fq 'PATHS_RELEASED: ${{ steps.release-retry.outputs.paths_released || steps.release.outputs.paths_released }}' "$reusable"
 grep -Fq 'release: ${{ fromJSON(needs.release.outputs.releases) }}' "$release_caller"
 grep -Fq '"component": "${{ matrix.release.component }}"' "$release_caller"
 grep -Fq 'RELEASE_COMPONENT: ${{ fromJson(needs.configure.outputs.context).component' "$docker_caller"

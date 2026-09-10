@@ -86,14 +86,14 @@ jobs:
       contents: write
       pull-requests: write
     outputs:
-      release_created: ${{ steps.release.outcome == 'success' && steps.release.outputs.releases_created == 'true' || steps.duplicate-release.outputs.duplicate == 'true' }}
+      release_created: ${{ steps.release.outcome == 'success' && steps.release.outputs.releases_created == 'true' || steps.release-retry.outcome == 'success' && steps.release-retry.outputs.releases_created == 'true' || steps.duplicate-release.outputs.duplicate == 'true' }}
       releases: ${{ steps.normalize-releases.outputs.releases || steps.duplicate-release.outputs.releases || '[]' }}
-      tag_name: ${{ steps.release.outputs.tag_name || steps.duplicate-release.outputs.tag_name }}
-      sha: ${{ steps.release.outputs.sha || steps.duplicate-release.outputs.sha }}
-      version: ${{ steps.release.outputs.version || steps.duplicate-release.outputs.version }}
-      major: ${{ steps.release.outputs.major }}
-      minor: ${{ steps.release.outputs.minor }}
-      patch: ${{ steps.release.outputs.patch }}
+      tag_name: ${{ steps.release-retry.outputs.tag_name || steps.release.outputs.tag_name || steps.duplicate-release.outputs.tag_name }}
+      sha: ${{ steps.release-retry.outputs.sha || steps.release.outputs.sha || steps.duplicate-release.outputs.sha }}
+      version: ${{ steps.release-retry.outputs.version || steps.release.outputs.version || steps.duplicate-release.outputs.version }}
+      major: ${{ steps.release-retry.outputs.major || steps.release.outputs.major }}
+      minor: ${{ steps.release-retry.outputs.minor || steps.release.outputs.minor }}
+      patch: ${{ steps.release-retry.outputs.patch || steps.release.outputs.patch }}
     steps:
       - name: Checkout (for config validation)
         uses: actions/checkout@v7
@@ -203,13 +203,30 @@ jobs:
           target-branch: ${{ inputs.target-branch }}
           release-type: ${{ inputs.release-type }}
 
+      - name: Wait before retrying release-please
+        if: steps.release.outcome == 'failure'
+        shell: bash
+        run: sleep 15
+
+      - name: Retry release-please
+        id: release-retry
+        if: steps.release.outcome == 'failure'
+        continue-on-error: true
+        uses: googleapis/release-please-action@v5
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          config-file: ${{ inputs.config-file }}
+          manifest-file: ${{ inputs.manifest-file }}
+          target-branch: ${{ inputs.target-branch }}
+          release-type: ${{ inputs.release-type }}
+
       - name: Normalize released components
         id: normalize-releases
-        if: steps.release.outcome == 'success' && steps.release.outputs.releases_created == 'true'
+        if: steps.release.outcome == 'success' && steps.release.outputs.releases_created == 'true' || steps.release-retry.outcome == 'success' && steps.release-retry.outputs.releases_created == 'true'
         env:
           CONFIG_FILE: ${{ inputs.config-file }}
-          PATHS_RELEASED: ${{ steps.release.outputs.paths_released }}
-          RELEASE_OUTPUTS: ${{ toJSON(steps.release.outputs) }}
+          PATHS_RELEASED: ${{ steps.release-retry.outputs.paths_released || steps.release.outputs.paths_released }}
+          RELEASE_OUTPUTS: ${{ steps.release-retry.outcome == 'success' && toJSON(steps.release-retry.outputs) || toJSON(steps.release.outputs) }}
         shell: bash
         run: |
           set -euo pipefail
@@ -234,7 +251,7 @@ jobs:
 
       - name: Detect duplicate release tag
         id: duplicate-release
-        if: steps.release.outcome == 'failure'
+        if: steps.release.outcome == 'failure' && steps.release-retry.outcome == 'failure'
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           TARGET_BRANCH: ${{ inputs.target-branch }}
@@ -291,18 +308,18 @@ jobs:
           echo "duplicate=true" >> "$GITHUB_OUTPUT"
 
       - name: Fail release-please
-        if: steps.release.outcome == 'failure' && steps.duplicate-release.outputs.duplicate != 'true'
+        if: steps.release.outcome == 'failure' && steps.release-retry.outcome == 'failure' && steps.duplicate-release.outputs.duplicate != 'true'
         shell: bash
         run: |
           echo "::error title=release-please failed::release-please failed and no duplicate existing release tag was detected."
           exit 1
 
       - name: Set up uv for release PR lockfiles
-        if: steps.release.outcome == 'success' && steps.release.outputs.release_created != 'true'
+        if: (steps.release.outcome == 'success' || steps.release-retry.outcome == 'success') && (steps.release-retry.outputs.release_created || steps.release.outputs.release_created) != 'true'
         uses: astral-sh/setup-uv@v10.0.1
 
       - name: Refresh uv.lock on release PR
-        if: steps.release.outcome == 'success' && steps.release.outputs.release_created != 'true'
+        if: (steps.release.outcome == 'success' || steps.release-retry.outcome == 'success') && (steps.release-retry.outputs.release_created || steps.release.outputs.release_created) != 'true'
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           TARGET_BRANCH: ${{ inputs.target-branch }}
@@ -355,12 +372,12 @@ jobs:
           gh api "repos/${GITHUB_REPOSITORY}/pulls/${pr_number}" -X PATCH -f state=open >/dev/null
 
       - name: Close stale release PRs after publish
-        if: steps.release.outputs.release_created == 'true'
+        if: (steps.release-retry.outputs.release_created || steps.release.outputs.release_created) == 'true'
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           TARGET_BRANCH: ${{ inputs.target-branch }}
-          RELEASE_SHA: ${{ steps.release.outputs.sha }}
-          RELEASE_TAG: ${{ steps.release.outputs.tag_name }}
+          RELEASE_SHA: ${{ steps.release-retry.outputs.sha || steps.release.outputs.sha }}
+          RELEASE_TAG: ${{ steps.release-retry.outputs.tag_name || steps.release.outputs.tag_name }}
         shell: bash
         run: |
           head_ref="release-please--branches--${TARGET_BRANCH}"
