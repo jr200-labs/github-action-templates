@@ -115,13 +115,10 @@ jobs:
         # Python/Go/Rust repos with `Missing required file: package.json`
         # AFTER the conventional-commit PR has been merged. See
         # shared/lint-release-please-config.sh for the full ruleset.
-        # Curl-into-.shared/ pattern matches ruff.toml / eslint.config.mjs
-        # in ci_uv_python.yaml / ci_npmjs.yaml.
+        # The preceding sync fetches this validator from the consumer's
+        # pinned shared ref together with the config base.
         shell: bash
         run: |
-          mkdir -p .shared
-          curl -sfL "https://raw.githubusercontent.com/jr200-labs/github-action-templates/master/shared/lint-release-please-config.sh" \
-            -o .shared/lint-release-please-config.sh
           chmod +x .shared/lint-release-please-config.sh
           .shared/lint-release-please-config.sh "${{ inputs.config-file }}"
 
