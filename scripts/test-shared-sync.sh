@@ -5,6 +5,12 @@ ROOT=$(git rev-parse --show-toplevel)
 TMPDIR=$(mktemp -d)
 trap 'rm -rf "$TMPDIR"' EXIT
 
+if grep -Fq 'github-action-templates/master/shared/lint-release-please-config.sh' \
+    "$ROOT/.github/workflows/release_please.yaml"; then
+    echo "release workflow bypasses the consumer's pinned shared ref for config validation" >&2
+    exit 1
+fi
+
 invalid_release_config="$TMPDIR/invalid-release-please-config.json"
 jq '
   .["release-type"] = "go"
