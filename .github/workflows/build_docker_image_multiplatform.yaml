@@ -273,8 +273,9 @@ jobs:
           context: ${{ inputs.context }}
           provenance: false
           # Keep the cache across release tags, but separate monorepo images and CPU architectures.
+          # Export intermediate stages so dependency downloads and compiler work survive ephemeral runners.
           cache-from: type=gha,scope=${{ inputs.image_name }}-${{ matrix.platform }}
-          cache-to: ${{ inputs.enable-gha-cache-export && format('type=gha,scope={0}-{1},mode=min', inputs.image_name, matrix.platform) || '' }}
+          cache-to: ${{ inputs.enable-gha-cache-export && format('type=gha,scope={0}-{1},mode=max', inputs.image_name, matrix.platform) || '' }}
           build-args: |
             BUILD_OS=${{ matrix.os }}
             BUILD_ARCH=${{ matrix.architecture }}

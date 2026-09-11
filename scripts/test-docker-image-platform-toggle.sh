@@ -28,7 +28,7 @@ if [ "$success_tag_line" -le "$inspect_line" ]; then
     echo "image success tag must be published after manifest inspection" >&2
     exit 1
 fi
-grep -q "cache-to: \${{ inputs.enable-gha-cache-export && format('type=gha,scope={0}-{1},mode=min', inputs.image_name, matrix.platform) || '' }}" "$reusable"
+grep -q "cache-to: \${{ inputs.enable-gha-cache-export && format('type=gha,scope={0}-{1},mode=max', inputs.image_name, matrix.platform) || '' }}" "$reusable"
 if grep -q 'scope=${{ inputs.tag }}-' "$reusable"; then
     echo "docker image cache must survive release tags" >&2
     exit 1
