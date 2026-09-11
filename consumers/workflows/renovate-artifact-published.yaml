@@ -26,7 +26,10 @@ concurrency:
   # Renovate can group different artifacts onto the same branch and writes
   # repository-wide internal refs. Serialize every targeted run for this
   # repository so simultaneous publication notifications cannot race pushes.
+  # Preserve every pending notification when one release publishes several
+  # artifacts at once; the default single-slot queue replaces the older run.
   group: renovate-artifact-${{ github.repository }}
+  queue: max
   cancel-in-progress: false
 
 permissions:
