@@ -23,7 +23,10 @@ on:
         default: manual
 
 concurrency:
-  group: renovate-artifact-${{ github.event.client_payload.artifact.name || inputs.artifact-name || 'manual' }}
+  # Renovate can group different artifacts onto the same branch and writes
+  # repository-wide internal refs. Serialize every targeted run for this
+  # repository so simultaneous publication notifications cannot race pushes.
+  group: renovate-artifact-${{ github.repository }}
   cancel-in-progress: false
 
 permissions:
