@@ -130,6 +130,7 @@ YAML
     test -f "$workflow"
     yq -o=json '.' "$workflow" | jq -e '.on.repository_dispatch.types == ["artifact-published"]' >/dev/null
     yq -o=json '.' "$workflow" | jq -e '.concurrency.group == "renovate-artifact-${{ github.repository }}"' >/dev/null
+    yq -o=json '.' "$workflow" | jq -e '.concurrency.queue == "max"' >/dev/null
     yq -o=json '.' "$workflow" | jq -e '.concurrency."cancel-in-progress" == false' >/dev/null
     yq -o=json '.' "$workflow" | jq -e '.jobs.renovate.with."dependency-names" == "${{ needs.validate.outputs.dependencies }}"' >/dev/null
     mv .github/workflows/ci.yaml .github/workflows/bespoke_ci.yaml
