@@ -17,6 +17,23 @@ artifacts:
       dependencies:
         - whengas/api
   - component: api
+    publisher: docker
+    type: docker
+    name: ghcr.io/whengas/api-worker
+    renovate:
+      repository: whengas/whengas-iac
+      dependencies:
+        - whengas/api-worker
+        - whengas/api
+  - component: api
+    publisher: docker
+    type: docker
+    name: ghcr.io/whengas/api-docs
+    renovate:
+      repository: whengas/documentation
+      dependencies:
+        - whengas/api-docs
+  - component: api
     publisher: npm
     type: npm
     name: "@whengas/api"
@@ -35,9 +52,11 @@ artifacts:
 YAML
 
 docker=$($root/scripts/resolve-artifact-renovate.sh "$tmpdir/artifacts.yaml" docker api)
-jq -e '.include | length == 1' <<<"$docker" >/dev/null
-jq -e '.include[0].artifact_name == "ghcr.io/whengas/api"' <<<"$docker" >/dev/null
-jq -e '.include[0].dependencies == ["whengas/api"]' <<<"$docker" >/dev/null
+jq -e '.include | length == 2' <<<"$docker" >/dev/null
+jq -e '.include[] | select(.target_repository == "whengas/whengas-iac") | .artifact_name == "ghcr.io/whengas/api, ghcr.io/whengas/api-worker"' <<<"$docker" >/dev/null
+jq -e '.include[] | select(.target_repository == "whengas/whengas-iac") | .artifact_type == "docker"' <<<"$docker" >/dev/null
+jq -e '.include[] | select(.target_repository == "whengas/whengas-iac") | .dependencies == ["whengas/api", "whengas/api-worker"]' <<<"$docker" >/dev/null
+jq -e '.include[] | select(.target_repository == "whengas/documentation") | .dependencies == ["whengas/api-docs"]' <<<"$docker" >/dev/null
 
 npm=$($root/scripts/resolve-artifact-renovate.sh "$tmpdir/artifacts.yaml" npm api)
 jq -e '.include[0].artifact_type == "npm"' <<<"$npm" >/dev/null
