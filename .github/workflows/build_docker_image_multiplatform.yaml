@@ -62,7 +62,7 @@ on:
         type: string
         default: ''
       enable-gha-cache-export:
-        description: 'Export the Docker cache to GitHub Actions cache.'
+        description: 'Export the Docker build cache. Retained under its original name for caller compatibility.'
         required: false
         type: boolean
         default: true
@@ -272,10 +272,12 @@ jobs:
           file: ${{ steps.detect-dockerfile.outputs.dockerfile }}
           context: ${{ inputs.context }}
           provenance: false
-          # Keep the cache across release tags, but separate monorepo images and CPU architectures.
-          # Export intermediate stages so dependency downloads and compiler work survive ephemeral runners.
-          cache-from: type=gha,scope=${{ inputs.image_name }}-${{ matrix.platform }}
-          cache-to: ${{ inputs.enable-gha-cache-export && format('type=gha,scope={0}-{1},mode=max', inputs.image_name, matrix.platform) || '' }}
+          # GHCR is substantially faster than the Actions cache from ephemeral ARC runners.
+          # Keep the old GHA entry as a read-only fallback while registry caches warm.
+          cache-from: |
+            type=registry,ref=${{ env.REGISTRY_IMAGE }}:buildcache-${{ matrix.architecture }}
+            type=gha,scope=${{ inputs.image_name }}-${{ matrix.platform }}
+          cache-to: ${{ inputs.enable-gha-cache-export && format('type=registry,ref={0}:buildcache-{1},mode=max,image-manifest=true,oci-mediatypes=true', env.REGISTRY_IMAGE, matrix.architecture) || '' }}
           build-args: |
             BUILD_OS=${{ matrix.os }}
             BUILD_ARCH=${{ matrix.architecture }}

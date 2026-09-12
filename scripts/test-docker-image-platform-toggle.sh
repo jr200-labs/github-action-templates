@@ -15,7 +15,8 @@ grep -Fq 'source-sha: ${{ fromJson(needs.configure.outputs.context).sha' "$calle
 grep -Fq 'context: ${{ matrix.context || '\''.'\'' }}' "$caller"
 grep -q '\${{ inputs.build-args }}' "$reusable"
 grep -q 'enable-gha-cache-export:' "$reusable"
-grep -q 'cache-from: type=gha,scope=${{ inputs.image_name }}-${{ matrix.platform }}' "$reusable"
+grep -Fq 'type=registry,ref=${{ env.REGISTRY_IMAGE }}:buildcache-${{ matrix.architecture }}' "$reusable"
+grep -Fq 'type=gha,scope=${{ inputs.image_name }}-${{ matrix.platform }}' "$reusable"
 grep -q 'name: Publish image success tag' "$reusable"
 grep -q 'docker buildx imagetools inspect' "$reusable"
 grep -Fq 'name: digests-${{ needs.setup-matrix.outputs.sanitized_image_name }}--${{ env.PLATFORM_PAIR }}' "$reusable"
@@ -28,7 +29,7 @@ if [ "$success_tag_line" -le "$inspect_line" ]; then
     echo "image success tag must be published after manifest inspection" >&2
     exit 1
 fi
-grep -q "cache-to: \${{ inputs.enable-gha-cache-export && format('type=gha,scope={0}-{1},mode=max', inputs.image_name, matrix.platform) || '' }}" "$reusable"
+grep -Fq "cache-to: \${{ inputs.enable-gha-cache-export && format('type=registry,ref={0}:buildcache-{1},mode=max,image-manifest=true,oci-mediatypes=true', env.REGISTRY_IMAGE, matrix.architecture) || '' }}" "$reusable"
 if grep -q 'scope=${{ inputs.tag }}-' "$reusable"; then
     echo "docker image cache must survive release tags" >&2
     exit 1
