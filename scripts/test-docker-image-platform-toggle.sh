@@ -36,16 +36,16 @@ if grep -q 'scope=${{ inputs.tag }}-' "$reusable"; then
 fi
 
 # A short image name must not collect digest artifacts from another image for
-# which it is a prefix (for example, padd and padd-supervisor).
+# which it is a prefix (for example, app and app-worker).
 shopt -s extglob
-artifacts=(digests-whengas-padd--linux-amd64 digests-whengas-padd-supervisor--linux-amd64)
+artifacts=(digests-example-org-app--linux-amd64 digests-example-org-app-worker--linux-amd64)
 matched=()
 for artifact in "${artifacts[@]}"; do
-    if [[ "$artifact" == digests-whengas-padd--* ]]; then
+    if [[ "$artifact" == digests-example-org-app--* ]]; then
         matched+=("$artifact")
     fi
 done
-if [ "${matched[*]}" != "digests-whengas-padd--linux-amd64" ]; then
+if [ "${matched[*]}" != "digests-example-org-app--linux-amd64" ]; then
     echo "docker digest artifact pattern crosses image names" >&2
     exit 1
 fi
@@ -122,29 +122,29 @@ chmod +x "$TMPDIR/bin/gh"
 
 GH_CALLS="$TMPDIR/gh-calls" \
 PATH="$TMPDIR/bin:$PATH" \
-IMAGE_NAME=whengas/agent-runtime \
+IMAGE_NAME=example-org/runtime \
 IMAGE_TAG=v1.17.5 \
 SOURCE_SHA=a2b237a239a0e65c31149eff6dc8a21722c80cc1 \
-REGISTRY_IMAGE=ghcr.io/whengas/agent-runtime \
-GITHUB_REPOSITORY=whengas/agent-images \
+REGISTRY_IMAGE=ghcr.io/example-org/runtime \
+GITHUB_REPOSITORY=example-org/images \
 GH_TOKEN=test-token \
 SUCCESS_TAG_PREFIX= \
     "$success_tag_script" >/dev/null
 
 grep -q -- '--method POST' "$TMPDIR/gh-calls"
-grep -q 'refs/tags/agent-runtime-v1.17.5' "$TMPDIR/gh-calls"
+grep -q 'refs/tags/runtime-v1.17.5' "$TMPDIR/gh-calls"
 grep -q 'sha=a2b237a239a0e65c31149eff6dc8a21722c80cc1' "$TMPDIR/gh-calls"
 
 : > "$TMPDIR/gh-calls"
 GH_CALLS="$TMPDIR/gh-calls" \
 PATH="$TMPDIR/bin:$PATH" \
-IMAGE_NAME=whengas/padd-supervisor \
+IMAGE_NAME=example-org/app-worker \
 IMAGE_TAG=v0.2.0 \
 SOURCE_SHA=b2b237a239a0e65c31149eff6dc8a21722c80cc2 \
-SUCCESS_TAG_PREFIX=padd-supervisor-image \
-REGISTRY_IMAGE=ghcr.io/whengas/padd-supervisor \
-GITHUB_REPOSITORY=whengas/padd \
+SUCCESS_TAG_PREFIX=app-worker-image \
+REGISTRY_IMAGE=ghcr.io/example-org/app-worker \
+GITHUB_REPOSITORY=example-org/application \
 GH_TOKEN=test-token \
     "$success_tag_script" >/dev/null
 
-grep -q 'refs/tags/padd-supervisor-image-v0.2.0' "$TMPDIR/gh-calls"
+grep -q 'refs/tags/app-worker-image-v0.2.0' "$TMPDIR/gh-calls"

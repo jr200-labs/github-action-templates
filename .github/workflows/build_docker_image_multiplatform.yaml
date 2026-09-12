@@ -89,8 +89,8 @@ env:
   IMAGE_NAME: ${{ inputs.image_name }}
   # Honor inputs.image_name when set (monorepo image-variant layouts
   # need different package paths under the same repo, e.g.
-  # ghcr.io/whengas/agent-base + agent-coder + agent-reviewer from
-  # one whengas/agent-images repo). Falls back to github.repository
+  # ghcr.io/example-org/base + worker + reviewer from one repository).
+  # Falls back to github.repository
   # so existing single-image callers without image_name keep working.
   REGISTRY_IMAGE: ${{ inputs.registry_name }}/${{ inputs.image_name || github.repository }}
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -298,8 +298,8 @@ jobs:
       - name: Upload digest
         uses: actions/upload-artifact@v7
         with:
-          # The double separator prevents a prefix image such as `org/padd`
-          # from matching artifacts for `org/padd-supervisor` in the same run.
+          # The double separator prevents a prefix image such as `org/app`
+          # from matching artifacts for `org/app-worker` in the same run.
           name: digests-${{ needs.setup-matrix.outputs.sanitized_image_name }}--${{ env.PLATFORM_PAIR }}
           path: /tmp/digests/*
           if-no-files-found: error

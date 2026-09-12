@@ -30,9 +30,9 @@ for caller in "${artifact_callers[@]}"; do
 done
 test "$(grep -c 'include-component-in-tag' "$reusable")" -ge 2
 
-config='{"packages":{".":{"component":"padd"},"cmd/padd-supervisor":{"component":"padd-supervisor"}}}'
-paths='[".","cmd/padd-supervisor"]'
-outputs='{"tag_name":"padd-v1.2.3","version":"1.2.3","sha":"aaa","cmd/padd-supervisor--tag_name":"padd-supervisor-v0.4.0","cmd/padd-supervisor--version":"0.4.0","cmd/padd-supervisor--sha":"bbb"}'
+config='{"packages":{".":{"component":"application"},"cmd/worker":{"component":"worker"}}}'
+paths='[".","cmd/worker"]'
+outputs='{"tag_name":"application-v1.2.3","version":"1.2.3","sha":"aaa","cmd/worker--tag_name":"worker-v0.4.0","cmd/worker--version":"0.4.0","cmd/worker--sha":"bbb"}'
 
 releases=$(jq -cn \
     --argjson paths "$paths" \
@@ -53,25 +53,25 @@ releases=$(jq -cn \
 
 jq -e '
   length == 2
-  and .[0] == {path: ".", component: "padd", tag_name: "padd-v1.2.3", version: "1.2.3", sha: "aaa"}
-  and .[1] == {path: "cmd/padd-supervisor", component: "padd-supervisor", tag_name: "padd-supervisor-v0.4.0", version: "0.4.0", sha: "bbb"}
+  and .[0] == {path: ".", component: "application", tag_name: "application-v1.2.3", version: "1.2.3", sha: "aaa"}
+  and .[1] == {path: "cmd/worker", component: "worker", tag_name: "worker-v0.4.0", version: "0.4.0", sha: "bbb"}
 ' <<<"$releases" >/dev/null
 
 images=$(mktemp)
 trap 'rm -f "$images"' EXIT
 printf '%s\n' \
   'images:' \
-  '  - name: agent-runtime' \
+  '  - name: runtime' \
   '    component: runtime' \
-  '  - name: openhands-standard' >"$images"
+  '  - name: application' >"$images"
 
 all_images=$(yq -o=json -I=0 '{"include": .images}' "$images")
 runtime_images=$(RELEASE_COMPONENT=runtime yq -o=json -I=0 \
   '{"include": [.images[] | select(.component == strenv(RELEASE_COMPONENT))]}' \
   "$images")
 
-jq -e '.include | map(.name) == ["agent-runtime", "openhands-standard"]' \
+jq -e '.include | map(.name) == ["runtime", "application"]' \
   <<<"$all_images" >/dev/null
-jq -e '.include | map(.name) == ["agent-runtime"]' <<<"$runtime_images" >/dev/null
+jq -e '.include | map(.name) == ["runtime"]' <<<"$runtime_images" >/dev/null
 
 echo "test-component-releases: OK"

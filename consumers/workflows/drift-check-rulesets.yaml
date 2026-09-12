@@ -33,11 +33,15 @@ jobs:
   drift-check:
     runs-on: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.runner == 'self-hosted' && 'self-hosted' || github.event_name == 'workflow_dispatch' && github.event.inputs.runner == 'github-hosted' && 'ubuntu-latest' || fromJSON(vars.RUNNER_PROFILES)[vars.RUNNER_PROFILE].default }}
     steps:
+      - name: Checkout consumer configuration
+        uses: actions/checkout@v7
+
       - name: Checkout github-action-templates
         uses: actions/checkout@v7
         with:
           repository: jr200-labs/github-action-templates
           ref: master
+          path: .gha-templates
 
       - name: Mint App token (org admin scope)
         id: app-token
@@ -57,9 +61,19 @@ jobs:
         id: dry
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          RULESET_TARGETS_FILE: ${{ vars.RULESET_TARGETS_FILE || '.github/ruleset-targets.yaml' }}
+          RULESET_AUTOMERGE_CONFIG_FILE: ${{ vars.RULESET_AUTOMERGE_CONFIG_FILE || '.github/ruleset-automerge.json' }}
         run: |
           set -o pipefail
-          OUT=$(./scripts/apply-rulesets.sh --dry-run --org "$GITHUB_REPOSITORY_OWNER" 2>&1)
+          [ -f "$RULESET_TARGETS_FILE" ] || {
+            echo "missing consumer ruleset targets: $RULESET_TARGETS_FILE" >&2
+            exit 1
+          }
+          args=(--dry-run --org "$GITHUB_REPOSITORY_OWNER" --targets-file "$GITHUB_WORKSPACE/$RULESET_TARGETS_FILE")
+          if [ -f "$RULESET_AUTOMERGE_CONFIG_FILE" ]; then
+            args+=(--automerge-config "$GITHUB_WORKSPACE/$RULESET_AUTOMERGE_CONFIG_FILE")
+          fi
+          OUT=$(.gha-templates/scripts/apply-rulesets.sh "${args[@]}" 2>&1)
           echo "$OUT"
           DRIFT=$(echo "$OUT" | grep '^DRY:' || true)
           {
@@ -75,7 +89,7 @@ jobs:
         run: |
           TITLE="[drift] ${GITHUB_REPOSITORY_OWNER} ruleset state diverged from canonical"
           BODY=$(cat <<EOF
-          \`apply-rulesets.sh --dry-run --org $GITHUB_REPOSITORY_OWNER\` (canonical bodies in jr200-labs/github-action-templates/rulesets/) found differences vs live ruleset state.
+          The ruleset dry run for \`$GITHUB_REPOSITORY_OWNER\`, using the consumer-owned target map and canonical bodies, found differences from live state.
 
           Each \`DRY:\` line is an action that would run on a real reconcile.
 
@@ -83,7 +97,7 @@ jobs:
           ${{ steps.dry.outputs.drift }}
           \`\`\`
 
-          To resolve: either run \`scripts/apply-rulesets.sh --org $GITHUB_REPOSITORY_OWNER\` from a github-action-templates checkout (canonical wins), or update the canonical bodies in github-action-templates if the drift is intentional.
+          To resolve: run the reconcile command with the repository-owned targets file, or update the canonical ruleset body if the drift is intentional.
 
           Detected by \`.github/workflows/drift-check-rulesets.yaml\`. Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           EOF

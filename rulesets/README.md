@@ -1,6 +1,6 @@
 # Rulesets
 
-Source-of-truth for GitHub branch-protection rulesets across jr200-labs and consumer orgs. Reconciled by `scripts/apply-rulesets.sh`.
+Source of truth for GitHub branch-protection rulesets. Reconciled by `scripts/apply-rulesets.sh`.
 
 ## Layout
 
@@ -18,12 +18,18 @@ rulesets/
 scripts/apply-rulesets.sh             # reconcile
 scripts/apply-rulesets.sh --dry-run   # show what would change
 scripts/apply-rulesets.sh --org jr200-labs --dry-run
-scripts/apply-rulesets.sh --org whengas
-scripts/apply-rulesets.sh --repo jr200-labs/mem0-dashboard --ruleset trunk-protect
-scripts/apply-rulesets.sh --org janeway-labs --repo janeway-labs/translatepane --ruleset trunk-protect
+scripts/apply-rulesets.sh --repo jr200-labs/example-repository --ruleset trunk-protect
+scripts/apply-rulesets.sh --targets-file ../consumer/ruleset-targets.yaml --org example-org
 ```
 
 Requires `gh`, `jq`, `yq` and a `gh auth login` with admin on every targeted org. `gh` token plan must support requested scope — org-level rulesets need GitHub Team; free orgs fall back to per-repo. Private repositories on plans without branch protection/rulesets support will fail with GitHub's "Upgrade to GitHub Pro or make this repository public" error until the repo is public or the org has a paid plan.
+
+The generated drift workflow reads its target map from
+`.github/ruleset-targets.yaml` in the consumer repository. Set the
+`RULESET_TARGETS_FILE` repository or organization variable to use another
+path. An optional `.github/ruleset-automerge.json` supplies consumer-owned App
+identities and path policy; override its path with
+`RULESET_AUTOMERGE_CONFIG_FILE`.
 
 ## What `trunk-protect` does
 
@@ -46,28 +52,32 @@ Edit `targets.yaml`:
 
 ```yaml
 trunk-protect:
-  whengas: org
   jr200-labs: repo
-  janeway-labs: repo
-  some-new-org: org    # add this line
+  example-org: org
 ```
 
-Then `scripts/apply-rulesets.sh`. Idempotent — existing rulesets get PUT in place; new ones get POSTed.
+Keep consumer-specific targets outside this repository and pass them with
+`--targets-file`. The checked-in file contains only this repository owner's
+defaults. The command is idempotent: existing rulesets get PUT in place and
+new ones get POSTed.
 
 ## Onboarding a new repository
 
 Use the repo filter to apply existing canonical rulesets to one new repo without touching the rest of an org:
 
 ```bash
-scripts/apply-rulesets.sh --repo jr200-labs/new-repo --ruleset trunk-protect
-scripts/apply-rulesets.sh --org janeway-labs --repo janeway-labs/translatepane --ruleset trunk-protect
+scripts/apply-rulesets.sh --repo jr200-labs/example-repository --ruleset trunk-protect
+scripts/apply-rulesets.sh --targets-file ../consumer/ruleset-targets.yaml \
+  --org example-org --repo example-org/example-repository --ruleset trunk-protect
 ```
 
 Useful flags for staged rollout:
 
 - `--repo ORG/REPO` (repeatable): target specific repos only.
-- `--org ORG`: narrow to one supported org (`jr200-labs`, `whengas`, or `janeway-labs`) and prompt `Y/n` per repo before applying repo-scoped changes. For org-scoped rulesets, the script also prompts once before applying the org-wide rule.
+- `--org ORG`: narrow to one organization configured in the selected targets file and prompt `Y/n` per repository before applying repository-scoped changes. For organization-scoped rulesets, the script also prompts once before applying the organization-wide rule.
 - `--ruleset NAME`: apply one canonical ruleset only.
+- `--targets-file PATH`: load organization and scope mappings from an external YAML file.
+- `--automerge-config PATH`: load allowed automation identities and paths from an external JSON file.
 - `--skip-auto-merge`: skip repo-level merge-setting patches (`allow_auto_merge`, `delete_branch_on_merge`, `allow_update_branch`) and shared workflow ref PR auto-merge queueing if you only want ruleset reconciliation.
 
 ## Adding a new ruleset

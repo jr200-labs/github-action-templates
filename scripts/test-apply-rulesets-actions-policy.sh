@@ -10,20 +10,31 @@ bin="$tmp/bin"
 capture="$tmp/capture"
 mkdir -p "$bin" "$capture"
 
+cat > "$tmp/targets.yaml" <<'YAML'
+trunk-protect:
+  example-enterprise: org
+  jr200-labs: repo
+YAML
+cp "$root/rulesets/shared-workflow-ref-automerge.json" "$tmp/automerge.json"
+
 cat > "$bin/yq" <<'YQ'
 #!/usr/bin/env bash
 set -euo pipefail
 
 query="$2"
 case "$query" in
+  "to_entries | .[].value | keys | .[]")
+    echo "example-enterprise"
+    echo "jr200-labs"
+    ;;
   "keys | .[]")
     echo "trunk-protect"
     ;;
   ".\"trunk-protect\" | keys | .[]")
-    echo "whengas"
+    echo "example-enterprise"
     echo "jr200-labs"
     ;;
-  ".\"trunk-protect\".\"whengas\"")
+  ".\"trunk-protect\".\"example-enterprise\"")
     echo "org"
     ;;
   ".\"trunk-protect\".\"jr200-labs\"")
@@ -60,7 +71,7 @@ if [ "$command" = "pr" ]; then
         shift
       done
       case "$repo" in
-        whengas/whengas-faker)
+        example-enterprise/private-repo)
           printf '%s\n' 42 43 44
           ;;
         jr200-labs/public-repo)
@@ -86,13 +97,13 @@ if [ "$command" = "pr" ]; then
         shift
       done
       case "$repo" in
-        whengas/whengas-faker)
+        example-enterprise/private-repo)
           case "$number" in
             42)
               jq -n --arg repo "$repo" '{
                 title: "fix(deps): update shared workflow ref",
                 headRefName: "renovate/shared-workflow-ref",
-                author: {login: "app/whengas-ci-integration", is_bot: true},
+                author: {login: "app/consumer-ci-integration", is_bot: true},
                 autoMergeRequest: null,
                 url: ("https://github.com/" + $repo + "/pull/42"),
                 files: [
@@ -120,7 +131,7 @@ if [ "$command" = "pr" ]; then
               jq -n --arg repo "$repo" '{
                 title: "fix(deps): update shared workflow ref",
                 headRefName: "renovate/shared-workflow-ref",
-                author: {login: "app/whengas-ci-integration", is_bot: true},
+                author: {login: "app/consumer-ci-integration", is_bot: true},
                 autoMergeRequest: null,
                 url: ("https://github.com/" + $repo + "/pull/44"),
                 files: [
@@ -204,44 +215,44 @@ while [ "$#" -gt 0 ]; do
   shift
 done
 
-if [ "$endpoint" = "repos/whengas/whengas-faker/pulls" ] || [ "$endpoint" = "repos/jr200-labs/public-repo/pulls" ]; then
+if [ "$endpoint" = "repos/example-enterprise/private-repo/pulls" ] || [ "$endpoint" = "repos/jr200-labs/public-repo/pulls" ]; then
   echo "unexpected direct pulls API call; use gh pr list/view/merge wrapper in this test" >&2
   exit 1
 fi
 
 case "$method:$endpoint" in
-  "GET:orgs/whengas/repos?per_page=100&type=all")
-    echo "whengas-faker"
+  "GET:orgs/example-enterprise/repos?per_page=100&type=all")
+    echo "private-repo"
     ;;
   "GET:orgs/jr200-labs/repos?per_page=100&type=all")
     echo "public-repo"
     ;;
-  "GET:/repos/whengas/whengas-faker/rulesets")
+  "GET:/repos/example-enterprise/private-repo/rulesets")
     true
     ;;
-  "GET:/orgs/whengas/rulesets")
+  "GET:/orgs/example-enterprise/rulesets")
     echo "1"
     ;;
-  "GET:/orgs/whengas/rulesets/1")
+  "GET:/orgs/example-enterprise/rulesets/1")
     cat "$TEST_RULESET_BODY"
     ;;
-  "PUT:/orgs/whengas/rulesets/1")
+  "PUT:/orgs/example-enterprise/rulesets/1")
     true
     ;;
   "GET:/repos/jr200-labs/public-repo/rulesets")
     echo "1"
     ;;
-  "GET:/repos/whengas/whengas-faker/rulesets/1")
+  "GET:/repos/example-enterprise/private-repo/rulesets/1")
     cat "$TEST_RULESET_BODY"
     ;;
   "GET:/repos/jr200-labs/public-repo/rulesets/1")
     cat "$TEST_RULESET_BODY"
     ;;
-  "GET:/repos/whengas/whengas-faker")
+  "GET:/repos/example-enterprise/private-repo")
     printf '{"allow_auto_merge":true,"delete_branch_on_merge":true,"allow_update_branch":true}\n'
     ;;
-  "PATCH:/repos/whengas/whengas-faker")
-    printf '%s' "$fields" > "$TEST_CAPTURE_DIR/whengas-repo-settings.txt"
+  "PATCH:/repos/example-enterprise/private-repo")
+    printf '%s' "$fields" > "$TEST_CAPTURE_DIR/enterprise-repo-settings.txt"
     true
     ;;
   "GET:/repos/jr200-labs/public-repo")
@@ -251,10 +262,10 @@ case "$method:$endpoint" in
     printf '%s' "$fields" > "$TEST_CAPTURE_DIR/jr200-repo-settings.txt"
     true
     ;;
-  "GET:/orgs/whengas/actions/permissions/fork-pr-workflows-private-repos")
+  "GET:/orgs/example-enterprise/actions/permissions/fork-pr-workflows-private-repos")
     printf '{"run_workflows_from_fork_pull_requests":true,"send_write_tokens_to_workflows":true,"send_secrets_and_variables":true,"require_approval_for_fork_pr_workflows":true}\n'
     ;;
-  "PUT:/orgs/whengas/actions/permissions/fork-pr-workflows-private-repos")
+  "PUT:/orgs/example-enterprise/actions/permissions/fork-pr-workflows-private-repos")
     cp "$input_file" "$TEST_CAPTURE_DIR/org-actions-policy.json"
     ;;
   "GET:/repos/jr200-labs/public-repo/actions/permissions/fork-pr-workflows-private-repos")
@@ -263,8 +274,8 @@ case "$method:$endpoint" in
   "PUT:/repos/jr200-labs/public-repo/actions/permissions/fork-pr-workflows-private-repos")
     cp "$input_file" "$TEST_CAPTURE_DIR/actions-policy.json"
     ;;
-  *":/repos/whengas/whengas-faker/actions/permissions/fork-pr-workflows-private-repos")
-    echo "whengas Actions policy must be reconciled at org scope only" >&2
+  *":/repos/example-enterprise/private-repo/actions/permissions/fork-pr-workflows-private-repos")
+    echo "organization-scoped Actions policy must be reconciled at org scope only" >&2
     exit 1
     ;;
   *":/orgs/jr200-labs/actions/permissions/fork-pr-workflows-private-repos")
@@ -282,17 +293,27 @@ chmod +x "$bin/gh"
 PATH="$bin:$PATH" \
 TEST_RULESET_BODY="$root/rulesets/trunk-protect.json" \
 TEST_CAPTURE_DIR="$capture" \
-  "$root/scripts/apply-rulesets.sh" --org whengas --repo whengas/whengas-faker --ruleset trunk-protect >"$tmp/apply-rulesets-actions-policy.out"
+  "$root/scripts/apply-rulesets.sh" \
+    --targets-file "$tmp/targets.yaml" \
+    --automerge-config "$tmp/automerge.json" \
+    --org example-enterprise \
+    --repo example-enterprise/private-repo \
+    --ruleset trunk-protect >"$tmp/apply-rulesets-actions-policy.out"
 
 PATH="$bin:$PATH" \
 TEST_RULESET_BODY="$root/rulesets/trunk-protect.json" \
 TEST_CAPTURE_DIR="$capture" \
-  "$root/scripts/apply-rulesets.sh" --org jr200-labs --repo jr200-labs/public-repo --ruleset trunk-protect >"$tmp/apply-rulesets-actions-policy-jr200.out"
+  "$root/scripts/apply-rulesets.sh" \
+    --targets-file "$tmp/targets.yaml" \
+    --automerge-config "$tmp/automerge.json" \
+    --org jr200-labs \
+    --repo jr200-labs/public-repo \
+    --ruleset trunk-protect >"$tmp/apply-rulesets-actions-policy-jr200.out"
 
 org_payload="$capture/org-actions-policy.json"
 repo_payload="$capture/actions-policy.json"
 automerge_capture="$capture/shared-ref-automerge.txt"
-whengas_settings="$capture/whengas-repo-settings.txt"
+enterprise_settings="$capture/enterprise-repo-settings.txt"
 jr200_settings="$capture/jr200-repo-settings.txt"
 if [ ! -f "$org_payload" ]; then
   echo "expected org Actions private fork workflow approval payload to be written" >&2
@@ -316,7 +337,7 @@ if [ -f "$automerge_capture" ]; then
   echo "did not expect shared workflow ref auto-merge queueing while disabled" >&2
   exit 1
 fi
-for settings in "$whengas_settings" "$jr200_settings"; do
+for settings in "$enterprise_settings" "$jr200_settings"; do
   if [ ! -f "$settings" ]; then
     echo "expected repo settings patch to be captured: $settings" >&2
     exit 1
