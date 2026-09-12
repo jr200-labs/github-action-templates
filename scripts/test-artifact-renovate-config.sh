@@ -11,40 +11,59 @@ artifacts:
   - component: api
     publisher: docker
     type: docker
-    name: ghcr.io/whengas/api
+    name: ghcr.io/example-org/api
     renovate:
-      repository: whengas/whengas-iac
+      repository: example-org/infrastructure
       dependencies:
-        - whengas/api
+        - example-org/api
+  - component: api
+    publisher: docker
+    type: docker
+    name: ghcr.io/example-org/api-worker
+    renovate:
+      repository: example-org/infrastructure
+      dependencies:
+        - example-org/api-worker
+        - example-org/api
+  - component: api
+    publisher: docker
+    type: docker
+    name: ghcr.io/example-org/api-docs
+    renovate:
+      repository: example-org/documentation
+      dependencies:
+        - example-org/api-docs
   - component: api
     publisher: npm
     type: npm
-    name: "@whengas/api"
+    name: "@example-org/api"
     renovate:
-      repository: whengas/whengas-iac
+      repository: example-org/infrastructure
       dependencies:
-        - "@whengas/api"
+        - "@example-org/api"
   - component: java-client
     publisher: maven-central
     type: maven
-    name: dev.whengas:api-client
+    name: org.example:api-client
     renovate:
-      repository: whengas/whengas-iac
+      repository: example-org/infrastructure
       dependencies:
-        - dev.whengas:api-client
+        - org.example:api-client
 YAML
 
 docker=$($root/scripts/resolve-artifact-renovate.sh "$tmpdir/artifacts.yaml" docker api)
-jq -e '.include | length == 1' <<<"$docker" >/dev/null
-jq -e '.include[0].artifact_name == "ghcr.io/whengas/api"' <<<"$docker" >/dev/null
-jq -e '.include[0].dependencies == ["whengas/api"]' <<<"$docker" >/dev/null
+jq -e '.include | length == 2' <<<"$docker" >/dev/null
+jq -e '.include[] | select(.target_repository == "example-org/infrastructure") | .artifact_name == "ghcr.io/example-org/api, ghcr.io/example-org/api-worker"' <<<"$docker" >/dev/null
+jq -e '.include[] | select(.target_repository == "example-org/infrastructure") | .artifact_type == "docker"' <<<"$docker" >/dev/null
+jq -e '.include[] | select(.target_repository == "example-org/infrastructure") | .dependencies == ["example-org/api", "example-org/api-worker"]' <<<"$docker" >/dev/null
+jq -e '.include[] | select(.target_repository == "example-org/documentation") | .dependencies == ["example-org/api-docs"]' <<<"$docker" >/dev/null
 
 npm=$($root/scripts/resolve-artifact-renovate.sh "$tmpdir/artifacts.yaml" npm api)
 jq -e '.include[0].artifact_type == "npm"' <<<"$npm" >/dev/null
 
 custom=$($root/scripts/resolve-artifact-renovate.sh "$tmpdir/artifacts.yaml" maven-central java-client)
 jq -e '.include[0].artifact_type == "maven"' <<<"$custom" >/dev/null
-jq -e '.include[0].dependencies == ["dev.whengas:api-client"]' <<<"$custom" >/dev/null
+jq -e '.include[0].dependencies == ["org.example:api-client"]' <<<"$custom" >/dev/null
 
 missing=$($root/scripts/resolve-artifact-renovate.sh "$tmpdir/missing.yaml" docker api)
 jq -e '.include == [{"configured":false}]' <<<"$missing" >/dev/null
