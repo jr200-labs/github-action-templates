@@ -88,6 +88,8 @@ make_consumer_repo "$consumer_repo"
     SYNC_BASE_URL="file://$ROOT/consumers" ./scripts/sync-shared
     test -f .github/workflows/commitlint.yaml
     test -f .github/workflows/sync-shared-drift.yaml
+    ! yq -e '.on.workflow_run' .github/workflows/sync-shared-drift.yaml >/dev/null 2>&1
+    ! yq -e '.jobs."sync-shared-drift".if' .github/workflows/sync-shared-drift.yaml >/dev/null 2>&1
     test -f .github/workflows/ci.yaml
     ! yq -e '.jobs.commitlint' .github/workflows/ci.yaml >/dev/null 2>&1
     ! yq -e '.jobs."lint-pr-metadata"' .github/workflows/ci.yaml >/dev/null 2>&1
