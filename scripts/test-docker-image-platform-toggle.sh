@@ -15,8 +15,8 @@ grep -Fq 'source-sha: ${{ fromJson(needs.configure.outputs.context).sha' "$calle
 grep -Fq 'context: ${{ matrix.context || '\''.'\'' }}' "$caller"
 grep -q '\${{ inputs.build-args }}' "$reusable"
 grep -q 'enable-gha-cache-export:' "$reusable"
-grep -Fq 'type=registry,ref=${{ env.REGISTRY_IMAGE }}:buildcache-${{ matrix.architecture }}' "$reusable"
-grep -Fq 'type=gha,scope=${{ inputs.image_name }}-${{ matrix.platform }}' "$reusable"
+grep -Fq "steps.buildkit.outputs.mode == 'ephemeral' && format('type=registry,ref={0}:buildcache-{1}'" "$reusable"
+grep -Fq "steps.buildkit.outputs.mode == 'ephemeral' && format('type=gha,scope={0}-{1}'" "$reusable"
 grep -q 'name: Publish image success tag' "$reusable"
 grep -q 'docker buildx imagetools inspect' "$reusable"
 grep -Fq 'name: digests-${{ needs.setup-matrix.outputs.sanitized_image_name }}--${{ env.PLATFORM_PAIR }}' "$reusable"
@@ -29,9 +29,71 @@ if [ "$success_tag_line" -le "$inspect_line" ]; then
     echo "image success tag must be published after manifest inspection" >&2
     exit 1
 fi
-grep -Fq "cache-to: \${{ inputs.enable-gha-cache-export && format('type=registry,ref={0}:buildcache-{1},mode=max,image-manifest=true,oci-mediatypes=true', env.REGISTRY_IMAGE, matrix.architecture) || '' }}" "$reusable"
+grep -Fq "cache-to: \${{ steps.buildkit.outputs.mode == 'ephemeral' && inputs.enable-gha-cache-export && format('type=registry,ref={0}:buildcache-{1},mode=max,image-manifest=true,oci-mediatypes=true', env.REGISTRY_IMAGE, matrix.architecture) || '' }}" "$reusable"
 if grep -q 'scope=${{ inputs.tag }}-' "$reusable"; then
     echo "docker image cache must survive release tags" >&2
+    exit 1
+fi
+
+# Runner-owned environment and certificate mounts stay out of canonical callers.
+if grep -q 'buildkit-endpoint:' "$caller"; then
+    echo "canonical callers must not carry runner-specific BuildKit configuration" >&2
+    exit 1
+fi
+
+selector_script="$TMPDIR/select-buildkit.sh"
+yq -r '.jobs.build.steps[] | select(.id == "buildkit_config").run' "$reusable" > "$selector_script"
+GITHUB_OUTPUT="$TMPDIR/no-remote.out" env -u BUILDKIT_ENDPOINT -u BUILDKIT_SERVER_NAME -u BUILDKIT_TLS_DIR \
+    bash "$selector_script"
+grep -qx 'requested=false' "$TMPDIR/no-remote.out"
+
+mkdir -p "$TMPDIR/tls"
+touch "$TMPDIR/tls/ca.crt" "$TMPDIR/tls/tls.crt" "$TMPDIR/tls/tls.key"
+GITHUB_OUTPUT="$TMPDIR/remote-config.out" \
+    BUILDKIT_ENDPOINT=tcp://buildkit.example.svc:1234 \
+    BUILDKIT_SERVER_NAME=buildkit.example.svc \
+    BUILDKIT_TLS_DIR="$TMPDIR/tls" bash "$selector_script"
+grep -qx 'requested=true' "$TMPDIR/remote-config.out"
+grep -qx 'endpoint=tcp://buildkit.example.svc:1234' "$TMPDIR/remote-config.out"
+grep -qx "tls_dir=$TMPDIR/tls" "$TMPDIR/remote-config.out"
+
+GITHUB_OUTPUT="$TMPDIR/missing-tls.out" \
+    BUILDKIT_ENDPOINT=tcp://buildkit.example.svc:1234 \
+    BUILDKIT_SERVER_NAME=buildkit.example.svc \
+    BUILDKIT_TLS_DIR="$TMPDIR/missing-tls" bash "$selector_script"
+grep -qx 'requested=false' "$TMPDIR/missing-tls.out"
+
+finalizer_script="$TMPDIR/finalize-buildkit.sh"
+yq -r '.jobs.build.steps[] | select(.id == "buildkit").run' "$reusable" > "$finalizer_script"
+GITHUB_OUTPUT="$TMPDIR/remote-mode.out" REMOTE_REQUESTED=true REMOTE_OUTCOME=success bash "$finalizer_script"
+grep -qx 'mode=remote' "$TMPDIR/remote-mode.out"
+GITHUB_OUTPUT="$TMPDIR/failed-remote.out" REMOTE_REQUESTED=true REMOTE_OUTCOME=failure bash "$finalizer_script"
+grep -qx 'mode=ephemeral' "$TMPDIR/failed-remote.out"
+GITHUB_OUTPUT="$TMPDIR/local-mode.out" REMOTE_REQUESTED=false REMOTE_OUTCOME=skipped bash "$finalizer_script"
+grep -qx 'mode=ephemeral' "$TMPDIR/local-mode.out"
+
+fallback_step=$(yq -o=json -I=0 '.jobs.build.steps[] | select(.name == "Set up per-job Docker Buildx")' "$reusable")
+jq -e '.if == "steps.buildkit.outputs.mode == '\''ephemeral'\''" and (.with == null)' <<<"$fallback_step" >/dev/null
+remote_step=$(yq -o=json -I=0 '.jobs.build.steps[] | select(.name == "Connect to runner-provided BuildKit")' "$reusable")
+jq -e '
+  .if == "steps.buildkit_config.outputs.requested == '\''true'\''" and
+  ."continue-on-error" == true and
+  .with.driver == "remote" and
+  .with.endpoint == "${{ steps.buildkit_config.outputs.endpoint }}" and
+  (.with."driver-opts" | contains("cacert=${{ steps.buildkit_config.outputs.tls_dir }}/ca.crt")) and
+  (.with."driver-opts" | contains("cert=${{ steps.buildkit_config.outputs.tls_dir }}/tls.crt")) and
+  (.with."driver-opts" | contains("key=${{ steps.buildkit_config.outputs.tls_dir }}/tls.key")) and
+  (.with."driver-opts" | contains("servername=${{ steps.buildkit_config.outputs.server_name }}"))
+' <<<"$remote_step" >/dev/null
+
+cache_from=$(yq -r '.jobs.build.steps[] | select(.id == "build-and-push") | .with."cache-from"' "$reusable")
+if [ "$(grep -Fc "steps.buildkit.outputs.mode == 'ephemeral'" <<<"$cache_from")" -ne 2 ]; then
+    echo "remote BuildKit must disable both registry and GHA cache imports" >&2
+    exit 1
+fi
+cache_to=$(yq -r '.jobs.build.steps[] | select(.id == "build-and-push") | .with."cache-to"' "$reusable")
+if [[ "$cache_to" != *"steps.buildkit.outputs.mode == 'ephemeral' && inputs.enable-gha-cache-export"* ]]; then
+    echo "remote BuildKit must disable external cache export" >&2
     exit 1
 fi
 
