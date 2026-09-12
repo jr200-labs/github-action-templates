@@ -18,7 +18,8 @@
 #
 # Usage:
 #   scripts/apply-rulesets.sh [--dry-run] [--org ORG] [--repo ORG/REPO]
-#                             [--ruleset NAME] [--skip-auto-merge]
+#                             [--ruleset NAME] [--targets-file PATH]
+#                             [--automerge-config PATH] [--skip-auto-merge]
 #
 # Requires: gh, jq, yq. Env: gh authenticated as a token with admin on the
 # target orgs/repos. Token plan must support the requested scope (org-level
@@ -33,7 +34,10 @@ SKIP_AUTO_MERGE=0
 INTERACTIVE_ORG_SELECTION=0
 APPLY_ORG_SCOPE=1
 declare -a REPO_FILTERS=()
-declare -a SUPPORTED_ORGS=("jr200-labs" "whengas" "janeway-labs")
+REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+TARGETS="$REPO_ROOT/rulesets/targets.yaml"
+RULESETS_DIR="$REPO_ROOT/rulesets"
+SHARED_REF_AUTOMERGE_CONFIG="$RULESETS_DIR/shared-workflow-ref-automerge.json"
 
 usage() {
     sed -n '1,/^set -euo/p' "$0" | sed 's/^# \?//'
@@ -48,26 +52,29 @@ Options:
   --ruleset <name>     Limit reconciliation to one ruleset from targets.yaml.
   --repo <org/repo>    Limit repo-scope reconciliation to one or more repos.
                        Repeat flag to target multiple repos.
+  --targets-file <p>   Read ruleset targets from this YAML file.
+  --automerge-config <p>
+                       Read shared-ref auto-merge policy from this JSON file.
   --skip-auto-merge    Skip PATCH allow_auto_merge enforcement and shared
                        workflow ref PR auto-merge queueing.
   -h, --help           Show this help.
 
 Examples:
   scripts/apply-rulesets.sh --org jr200-labs --dry-run
-  scripts/apply-rulesets.sh --repo janeway-labs/translatepane --ruleset trunk-protect
-  scripts/apply-rulesets.sh --org whengas
-  scripts/apply-rulesets.sh --ruleset trunk-protect --repo jr200-labs/mem0-dashboard
+  scripts/apply-rulesets.sh --repo jr200-labs/example-repository --ruleset trunk-protect
+  scripts/apply-rulesets.sh --targets-file ../consumer/ruleset-targets.yaml --org example-org
 EOF
 }
 
+configured_orgs() {
+    yq -r 'to_entries | .[].value | keys | .[]' "$TARGETS" | sort -u
+}
+
 org_supported() {
-    local candidate="$1"
-    local supported
-    for supported in "${SUPPORTED_ORGS[@]}"; do
-        if [ "$supported" = "$candidate" ]; then
-            return 0
-        fi
-    done
+    local candidate="$1" supported
+    while IFS= read -r supported; do
+        [ "$supported" = "$candidate" ] && return 0
+    done < <(configured_orgs)
     return 1
 }
 
@@ -134,6 +141,10 @@ while [ $# -gt 0 ]; do
         --ruleset=*) RULESET_FILTER="${1#--ruleset=}" ;;
         --repo)      shift; REPO_FILTERS+=("$1") ;;
         --repo=*)    REPO_FILTERS+=("${1#--repo=}") ;;
+        --targets-file) shift; TARGETS="$1" ;;
+        --targets-file=*) TARGETS="${1#--targets-file=}" ;;
+        --automerge-config) shift; SHARED_REF_AUTOMERGE_CONFIG="$1" ;;
+        --automerge-config=*) SHARED_REF_AUTOMERGE_CONFIG="${1#--automerge-config=}" ;;
         --skip-auto-merge) SKIP_AUTO_MERGE=1 ;;
         -h|--help)   usage; exit 0 ;;
         *)           echo "unknown arg: $1" >&2; exit 2 ;;
@@ -141,8 +152,16 @@ while [ $# -gt 0 ]; do
     shift
 done
 
+for cmd in gh jq yq; do
+    command -v "$cmd" >/dev/null 2>&1 || { echo "missing: $cmd" >&2; exit 1; }
+done
+
+[ -f "$TARGETS" ] || { echo "missing targets file: $TARGETS" >&2; exit 1; }
+[ -f "$SHARED_REF_AUTOMERGE_CONFIG" ] || { echo "missing config: $SHARED_REF_AUTOMERGE_CONFIG" >&2; exit 1; }
+
 if [ -n "$ORG_FILTER" ] && ! org_supported "$ORG_FILTER"; then
-    echo "unsupported --org '$ORG_FILTER' (supported: ${SUPPORTED_ORGS[*]})" >&2
+    supported_orgs=$(configured_orgs | paste -sd ' ' -)
+    echo "unsupported --org '$ORG_FILTER' (configured: $supported_orgs)" >&2
     exit 2
 fi
 
@@ -172,17 +191,6 @@ if [ -n "$ORG_FILTER" ] && [ "${#REPO_FILTERS[@]}" -eq 0 ]; then
     INTERACTIVE_ORG_SELECTION=1
     interactive_select_repos "$ORG_FILTER"
 fi
-
-REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-TARGETS="$REPO_ROOT/rulesets/targets.yaml"
-RULESETS_DIR="$REPO_ROOT/rulesets"
-SHARED_REF_AUTOMERGE_CONFIG="$RULESETS_DIR/shared-workflow-ref-automerge.json"
-
-for cmd in gh jq yq; do
-    command -v "$cmd" >/dev/null 2>&1 || { echo "missing: $cmd" >&2; exit 1; }
-done
-
-[ -f "$SHARED_REF_AUTOMERGE_CONFIG" ] || { echo "missing config: $SHARED_REF_AUTOMERGE_CONFIG" >&2; exit 1; }
 
 shared_ref_automerge_enabled() {
     jq -e '.enabled == true' "$SHARED_REF_AUTOMERGE_CONFIG" >/dev/null

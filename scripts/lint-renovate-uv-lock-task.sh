@@ -108,11 +108,8 @@ fi
 internal_minimum_age_rule_count=$(jq '
   [
     .packageRules[]?
-    | select(.minimumReleaseAge == null)
-    | select((.matchPackageNames // []) | index("polars-hist-db"))
-    | select((.matchPackageNames // []) | index("whengas/**"))
+    | select(has("minimumReleaseAge") and .minimumReleaseAge == null)
     | select((.matchPackageNames // []) | index("jr200-labs/**"))
-    | select((.matchPackageNames // []) | index("janeway-labs/**"))
   ]
   | length
 ' "$file")
@@ -126,9 +123,7 @@ private_git_rule_count=$(jq '
   [
     .packageRules[]?
     | select((.matchManagers // []) | index("custom.regex"))
-    | select((.matchPackageNames // []) | index("whengas/**"))
     | select((.matchPackageNames // []) | index("jr200-labs/**"))
-    | select((.matchPackageNames // []) | index("janeway-labs/**"))
     | select(.groupName == "private git Python dependencies")
     | select(.groupSlug == "private-git-python")
     | select(.skipArtifactsUpdate == true)

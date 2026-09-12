@@ -41,15 +41,10 @@
       "semanticCommitScope": "deps"
     },
     {
-      "description": "Internal packages are part of our own release pipeline, so they should roll forward immediately instead of waiting behind Renovate's release-age hold. This keeps chained infra releases moving when one repo consumes a just-published package from another internal repo.",
+      "description": "Packages published by this organization are part of the same release pipeline, so they should roll forward immediately instead of waiting behind Renovate's release-age hold.",
       "matchPackageNames": [
-        "polars-hist-db",
-        "whengas/**",
-        "whengas-*",
         "jr200-labs/**",
-        "jr200-*",
-        "janeway-labs/**",
-        "janeway-*"
+        "jr200-*"
       ],
       "minimumReleaseAge": null
     },
@@ -97,12 +92,6 @@
       "enabled": false
     },
     {
-      "description": "Disable pep621 manager for pyapi-service-kit — it's a private git-pinned dep handled by our custom regex manager. The pep621 manager can't resolve git+https refs (unsupported/unversioned value) and collides with the regex manager, causing 'Ignoring upgrade collision' and no PR being created. review-by: 2026-10-09",
-      "matchManagers": ["pep621"],
-      "matchPackageNames": ["pyapi-service-kit"],
-      "enabled": false
-    },
-    {
       "description": "Disable Renovate's built-in helm-values manager first, then selectively re-enable it below. The custom regex managers own semver GHCR image pins under `services/.../env/.../*values.yaml`; running both managers for those pins produces duplicate, conflicting bump attempts.",
       "matchManagers": ["helm-values"],
       "enabled": false
@@ -128,9 +117,9 @@
       "groupSlug": "shared-workflow-ref"
     },
     {
-      "description": "Private git Python deps use github-tags package names like whengas/pyapi-service-kit, but uv's --upgrade-package expects the Python distribution name. Keep these out of mixed PyPI groups and skip Renovate's automatic artifact updater; the shared uv lock postUpgradeTask below regenerates uv.lock with plain `uv lock`.",
+      "description": "Private git Python dependencies use repository package names, while uv's --upgrade-package expects Python distribution names. Keep dependencies published by this organization out of mixed PyPI groups and skip Renovate's automatic artifact updater; the shared uv lock postUpgradeTask below regenerates uv.lock with plain `uv lock`. Consumers from other organizations can add their namespaces in their repository-owned Renovate config.",
       "matchManagers": ["custom.regex"],
-      "matchPackageNames": ["whengas/**", "jr200-labs/**", "janeway-labs/**"],
+      "matchPackageNames": ["jr200-labs/**"],
       "groupName": "private git Python dependencies",
       "groupSlug": "private-git-python",
       "skipArtifactsUpdate": true

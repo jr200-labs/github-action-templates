@@ -3,7 +3,6 @@
   "title": "fix(deps): update shared workflow ref",
   "headRefName": "renovate/shared-workflow-ref",
   "allowedAuthorLogins": [
-    "app/whengas-ci-integration",
     "app/jr200-labs-cicd-bot"
   ],
   "allowedPathGlobs": [

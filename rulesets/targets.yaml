@@ -11,6 +11,4 @@
 # Renovate PRs without turning the feature on by default.
 
 trunk-protect:
-  whengas: org      # GitHub Team — org-level ruleset
   jr200-labs: repo  # free plan — one ruleset per non-archived repo
-  janeway-labs: repo # free/private bootstrap — repo-level ruleset where plan/visibility permits

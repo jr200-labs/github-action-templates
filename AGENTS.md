@@ -171,7 +171,7 @@ drift stays visible.
 
 The canonical caller workflows encode invariants that are easy to break by hand and have bitten us before:
 
-- **Top-level `permissions:`** — only the caller's *top-level* permissions cascade into reusable workflows. Job-level permissions on the caller are silently ignored when the caller invokes a reusable. Missing this on `build_docker_image.yaml` was the keymint v1.0.0 silent build failure.
+- **Top-level `permissions:`** — only the caller's *top-level* permissions cascade into reusable workflows. Job-level permissions on the caller are silently ignored when the caller invokes a reusable. Missing this on a Docker caller can cause a silent build failure.
 - **Secret name match** — the reusable declares a secret name; the caller must pass it under exactly that name. `app_private_key` vs `INTEGRATION_APP_PRIVATE_KEY` is a one-character bug that fails the run at startup.
 - **Runner forwarding** — every reusable that runs jobs takes a `runner:` input parameterised via `vars.RUNNER_PROFILES[vars.RUNNER_PROFILE].<role>`. Linux CI generally uses `default`; native Swift/Xcode macOS app CI uses `macos`. Hard-coded labels such as `ubuntu-latest` or `macos-latest` are forbidden.
 
@@ -196,7 +196,12 @@ When you write a repo's `integration-tests.yaml`, follow these structural rules 
 - **Service containers** — declared at job level via `services:` with healthchecks. Connect via `localhost:<host-port>` from the runner.
 - **Tooling install** — apt packages for client libs, binaries downloaded from GitHub releases, etc. Pin versions where it matters.
 
-Reference: `jr200-labs/polars-hist-db/.github/workflows/integration-tests.yaml` (MariaDB service container + nats-server binary). Copy + modify; don't try to abstract until 3+ consumers exist with similar shapes (we have 1 today).
+Start with a repository-owned workflow containing the required service containers and binaries. Copy and adapt that pattern; do not abstract it until at least three consumers have similar requirements.
+
+Use neutral fictitious identifiers in reusable workflows, tests, comments, and
+documentation. Consumer organization, repository, package, and application
+names belong in consumer-owned configuration or explicit workflow/script
+parameters.
 
 ## Lint configs
 

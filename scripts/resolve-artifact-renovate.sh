@@ -43,19 +43,25 @@ jq -e '
 matches=$(jq -c \
   --arg publisher "$publisher" \
   --arg component "$component" '
-    [.artifacts[]
-      | select(.publisher == $publisher and .component == $component)
-      | (.renovate.repository | split("/")) as $repository
+    # A component publisher completes before this resolver runs, so all of its
+    # matching artifacts are available. Batch each target repository into one
+    # Renovate invocation to avoid concurrent writers and redundant scans.
+    [.artifacts[] | select(.publisher == $publisher and .component == $component)]
+    | sort_by(.renovate.repository)
+    | group_by(.renovate.repository)
+    | map(
+      . as $artifacts
+      | ($artifacts[0].renovate.repository | split("/")) as $repository
       | {
           configured: true,
-          artifact_type: .type,
-          artifact_name: .name,
-          target_repository: .renovate.repository,
+          artifact_type: ($artifacts | map(.type) | unique | if length == 1 then .[0] else "multiple" end),
+          artifact_name: ($artifacts | map(.name) | sort | join(", ")),
+          target_repository: $artifacts[0].renovate.repository,
           target_owner: $repository[0],
           target_name: $repository[1],
-          dependencies: .renovate.dependencies
+          dependencies: ($artifacts | map(.renovate.dependencies[]) | unique)
         }
-    ]
+    )
   ' <<<"$catalog")
 
 if [ "$(jq 'length' <<<"$matches")" -eq 0 ]; then

@@ -11,7 +11,7 @@
 # release-please) give one changelog entry per commit they see on the
 # base branch. Rebase-merge lands every branch commit verbatim on base,
 # so a 2-commit PR with conventional titles produces 2 changelog
-# entries from a single PR (observed on nats-otlp-exporter #12). Merge
+# entries from a single PR. Merge
 # commits leak the same branch commits plus a merge commit. Squash-only
 # guarantees 1 PR = 1 changelog line. Also keeps master history linear
 # with PR-granular bisect.
