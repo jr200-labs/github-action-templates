@@ -86,14 +86,14 @@ jobs:
       contents: write
       pull-requests: write
     outputs:
-      release_created: ${{ steps.release.outcome == 'success' && steps.release.outputs.releases_created == 'true' || steps.release-retry.outcome == 'success' && steps.release-retry.outputs.releases_created == 'true' || steps.duplicate-release.outputs.duplicate == 'true' }}
-      releases: ${{ steps.normalize-releases.outputs.releases || steps.duplicate-release.outputs.releases || '[]' }}
-      tag_name: ${{ steps.release-retry.outputs.tag_name || steps.release.outputs.tag_name || steps.duplicate-release.outputs.tag_name }}
-      sha: ${{ steps.release-retry.outputs.sha || steps.release.outputs.sha || steps.duplicate-release.outputs.sha }}
-      version: ${{ steps.release-retry.outputs.version || steps.release.outputs.version || steps.duplicate-release.outputs.version }}
-      major: ${{ steps.release-retry.outputs.major || steps.release.outputs.major }}
-      minor: ${{ steps.release-retry.outputs.minor || steps.release.outputs.minor }}
-      patch: ${{ steps.release-retry.outputs.patch || steps.release.outputs.patch }}
+      release_created: ${{ steps.normalize-releases.outputs.release_created }}
+      releases: ${{ steps.normalize-releases.outputs.releases || '[]' }}
+      tag_name: ${{ steps.normalize-releases.outputs.tag_name }}
+      sha: ${{ steps.normalize-releases.outputs.sha }}
+      version: ${{ steps.normalize-releases.outputs.version }}
+      major: ${{ steps.normalize-releases.outputs.major }}
+      minor: ${{ steps.normalize-releases.outputs.minor }}
+      patch: ${{ steps.normalize-releases.outputs.patch }}
     steps:
       - name: Checkout (for config validation)
         uses: actions/checkout@v7
@@ -192,6 +192,16 @@ jobs:
           private-key: ${{ secrets.app_private_key }}
           owner: ${{ github.repository_owner }}
 
+      - name: Snapshot releases before release-please
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh api --paginate "repos/${GITHUB_REPOSITORY}/releases?per_page=100" --jq '.[].tag_name' \
+            | jq -Rsc 'split("\n") | map(select(length > 0)) | unique' \
+            > /tmp/release-tags-before.json
+
       - name: Run release-please
         id: release
         continue-on-error: true
@@ -222,36 +232,57 @@ jobs:
 
       - name: Normalize released components
         id: normalize-releases
-        if: steps.release.outcome == 'success' && steps.release.outputs.releases_created == 'true' || steps.release-retry.outcome == 'success' && steps.release-retry.outputs.releases_created == 'true'
+        if: always() && steps.app-token.outcome == 'success'
         env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
           CONFIG_FILE: ${{ inputs.config-file }}
-          PATHS_RELEASED: ${{ steps.release-retry.outputs.paths_released || steps.release.outputs.paths_released }}
-          RELEASE_OUTPUTS: ${{ steps.release-retry.outcome == 'success' && toJSON(steps.release-retry.outputs) || toJSON(steps.release.outputs) }}
+          MANIFEST_FILE: ${{ inputs.manifest-file }}
+          FIRST_PATHS: ${{ steps.release.outputs.paths_released || '[]' }}
+          FIRST_OUTPUTS: ${{ toJSON(steps.release.outputs) }}
+          RETRY_PATHS: ${{ steps.release-retry.outputs.paths_released || '[]' }}
+          RETRY_OUTPUTS: ${{ toJSON(steps.release-retry.outputs) }}
+          RELEASE_SHA: ${{ github.sha }}
+          # Dispatching the caller at a release tag is an explicit replay of
+          # downstream publication for a release whose original fan-out was
+          # interrupted. Branch dispatches retain normal release-please behavior.
+          REPLAY_TAG: ${{ github.event_name == 'workflow_dispatch' && github.ref_type == 'tag' && github.ref_name || '' }}
         shell: bash
         run: |
           set -euo pipefail
 
-          releases=$(jq -cn \
-            --argjson paths "${PATHS_RELEASED:-[]}" \
-            --argjson outputs "$RELEASE_OUTPUTS" \
-            --slurpfile config "$CONFIG_FILE" '
-              [
-                $paths[] as $path
-                | (if $path == "." then "" else ($path + "--") end) as $prefix
-                | {
-                    path: $path,
-                    component: ($config[0].packages[$path].component // $path),
-                    tag_name: $outputs[$prefix + "tag_name"],
-                    version: $outputs[$prefix + "version"],
-                    sha: $outputs[$prefix + "sha"]
-                  }
-              ]
-            ')
+          after_tags=$(
+            gh api --paginate "repos/${GITHUB_REPOSITORY}/releases?per_page=100" --jq '.[].tag_name' \
+              | jq -Rsc 'split("\n") | map(select(length > 0)) | unique'
+          )
+          before_tags=$(cat /tmp/release-tags-before.json)
+          curl -sfL \
+            "https://raw.githubusercontent.com/jr200-labs/github-action-templates/master/scripts/reconcile-release-please.sh" \
+            -o /tmp/reconcile-release-please.sh
+          chmod +x /tmp/reconcile-release-please.sh
+          releases=$(BEFORE_TAGS="$before_tags" AFTER_TAGS="$after_tags" /tmp/reconcile-release-please.sh)
+
           echo "releases=$releases" >> "$GITHUB_OUTPUT"
+          if [ "$(jq 'length' <<<"$releases")" -gt 0 ]; then
+            echo "release_created=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "release_created=false" >> "$GITHUB_OUTPUT"
+          fi
+
+          primary_release=$(jq -c '([.[] | select(.path == ".")][0] // .[0]) // empty' <<<"$releases")
+          if [ -n "$primary_release" ]; then
+            version=$(jq -r '.version' <<<"$primary_release")
+            echo "tag_name=$(jq -r '.tag_name' <<<"$primary_release")" >> "$GITHUB_OUTPUT"
+            echo "sha=$(jq -r '.sha' <<<"$primary_release")" >> "$GITHUB_OUTPUT"
+            echo "version=$version" >> "$GITHUB_OUTPUT"
+            IFS=. read -r major minor patch_rest <<<"$version"
+            echo "major=$major" >> "$GITHUB_OUTPUT"
+            echo "minor=$minor" >> "$GITHUB_OUTPUT"
+            echo "patch=${patch_rest%%-*}" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Detect duplicate release tag
         id: duplicate-release
-        if: steps.release.outcome == 'failure' && steps.release-retry.outcome == 'failure'
+        if: steps.release.outcome == 'failure' && steps.release-retry.outcome == 'failure' && steps.normalize-releases.outputs.release_created != 'true'
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           TARGET_BRANCH: ${{ inputs.target-branch }}
@@ -308,18 +339,18 @@ jobs:
           echo "duplicate=true" >> "$GITHUB_OUTPUT"
 
       - name: Fail release-please
-        if: steps.release.outcome == 'failure' && steps.release-retry.outcome == 'failure' && steps.duplicate-release.outputs.duplicate != 'true'
+        if: steps.release.outcome == 'failure' && steps.release-retry.outcome == 'failure' && steps.normalize-releases.outputs.release_created != 'true' && steps.duplicate-release.outputs.duplicate != 'true'
         shell: bash
         run: |
           echo "::error title=release-please failed::release-please failed and no duplicate existing release tag was detected."
           exit 1
 
       - name: Set up uv for release PR lockfiles
-        if: (steps.release.outcome == 'success' || steps.release-retry.outcome == 'success') && (steps.release-retry.outputs.release_created || steps.release.outputs.release_created) != 'true'
+        if: (steps.release.outcome == 'success' || steps.release-retry.outcome == 'success') && steps.normalize-releases.outputs.release_created != 'true'
         uses: astral-sh/setup-uv@v10.1.0
 
       - name: Refresh uv.lock on release PR
-        if: (steps.release.outcome == 'success' || steps.release-retry.outcome == 'success') && (steps.release-retry.outputs.release_created || steps.release.outputs.release_created) != 'true'
+        if: (steps.release.outcome == 'success' || steps.release-retry.outcome == 'success') && steps.normalize-releases.outputs.release_created != 'true'
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           TARGET_BRANCH: ${{ inputs.target-branch }}
@@ -372,12 +403,12 @@ jobs:
           gh api "repos/${GITHUB_REPOSITORY}/pulls/${pr_number}" -X PATCH -f state=open >/dev/null
 
       - name: Close stale release PRs after publish
-        if: (steps.release-retry.outputs.release_created || steps.release.outputs.release_created) == 'true'
+        if: steps.normalize-releases.outputs.release_created == 'true'
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           TARGET_BRANCH: ${{ inputs.target-branch }}
-          RELEASE_SHA: ${{ steps.release-retry.outputs.sha || steps.release.outputs.sha }}
-          RELEASE_TAG: ${{ steps.release-retry.outputs.tag_name || steps.release.outputs.tag_name }}
+          RELEASE_SHA: ${{ steps.normalize-releases.outputs.sha }}
+          RELEASE_TAG: ${{ steps.normalize-releases.outputs.tag_name }}
         shell: bash
         run: |
           head_ref="release-please--branches--${TARGET_BRANCH}"
