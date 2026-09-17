@@ -77,14 +77,18 @@ jq -cn \
        else error("requested replay tag is not a GitHub release: " + $replay_tag)
        end) as $replay_tags
     | ($new_tags + $replay_tags | unique) as $recoverable_tags
+    | (normalized($first_paths; $first_outputs)
+       + normalized($retry_paths; $retry_outputs)
+       | unique_by(.tag_name)) as $reported
     | (expected_releases | map(select(.tag_name as $tag | $recoverable_tags | index($tag)))) as $recovered
-    | ($recoverable_tags - ($recovered | map(.tag_name))) as $unmatched
+    # Release Please outputs are authoritative for releases created by this
+    # invocation. The checked-out manifest can legitimately lag when another
+    # release commit reaches the target branch while this run is queued.
+    | ($recoverable_tags - (($reported + $recovered) | map(.tag_name) | unique)) as $unmatched
     | if $unmatched | length > 0 then
         error("new GitHub release tag(s) do not match the release manifest: " + ($unmatched | join(", ")))
       else
-        (normalized($first_paths; $first_outputs)
-          + normalized($retry_paths; $retry_outputs)
-          + $recovered
+        ($reported + $recovered
           | unique_by(.tag_name))
       end
   '
