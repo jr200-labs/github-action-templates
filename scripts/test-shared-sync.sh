@@ -134,7 +134,8 @@ YAML
     yq -o=json '.' "$workflow" | jq -e '.concurrency.group == "renovate-artifact-${{ github.repository }}"' >/dev/null
     yq -o=json '.' "$workflow" | jq -e '.concurrency.queue == "max"' >/dev/null
     yq -o=json '.' "$workflow" | jq -e '.concurrency."cancel-in-progress" == false' >/dev/null
-    yq -o=json '.' "$workflow" | jq -e '.jobs.renovate.with."dependency-names" == "${{ needs.validate.outputs.dependencies }}"' >/dev/null
+    yq -o=json '.' "$workflow" | jq -e '.jobs.validate == null' >/dev/null
+    yq -o=json '.' "$workflow" | jq -e '.jobs.renovate.with."dependency-names" == "${{ github.event_name == '\''repository_dispatch'\'' && toJSON(github.event.client_payload.dependencies) || inputs.dependencies }}"' >/dev/null
     mv .github/workflows/ci.yaml .github/workflows/bespoke_ci.yaml
     STRICT=1 SYNC_BASE_URL="file://$ROOT/consumers" ./scripts/sync-shared --check
 )

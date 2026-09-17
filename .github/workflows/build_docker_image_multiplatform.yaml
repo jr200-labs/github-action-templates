@@ -87,31 +87,37 @@ on:
 
 env:
   IMAGE_NAME: ${{ inputs.image_name }}
-  # Honor inputs.image_name when set (monorepo image-variant layouts
-  # need different package paths under the same repo, e.g.
-  # ghcr.io/example-org/base + worker + reviewer from one repository).
-  # Falls back to github.repository
-  # so existing single-image callers without image_name keep working.
+  # Honor inputs.image_name when set (monorepo image-variant layouts need
+  # different package paths under one repository). Falls back to
+  # github.repository so existing single-image callers keep working.
   REGISTRY_IMAGE: ${{ inputs.registry_name }}/${{ inputs.image_name || github.repository }}
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   DEFAULT_UNIVERSE: |-
     [
-      {"platform": "linux/amd64", "os": "linux", "architecture": "amd64", "build-runner": "${{ inputs.runner || fromJSON(vars.RUNNER_PROFILES)[vars.RUNNER_PROFILE].heavy || fromJSON(vars.RUNNER_PROFILES)[vars.RUNNER_PROFILE].default }}"},
-      {"platform": "linux/arm64", "os": "linux", "architecture": "arm64", "build-runner": "${{ inputs.runner || fromJSON(vars.RUNNER_PROFILES)[vars.RUNNER_PROFILE].heavy || fromJSON(vars.RUNNER_PROFILES)[vars.RUNNER_PROFILE].default }}"}
+      {"platform": "linux/amd64", "os": "linux", "architecture": "amd64"},
+      {"platform": "linux/arm64", "os": "linux", "architecture": "arm64"}
     ]
 
 jobs:
-  setup-matrix:
-    runs-on: ${{ inputs.runner || fromJSON(vars.RUNNER_PROFILES)[vars.RUNNER_PROFILE].default }}
-    outputs:
-      matrix: ${{ steps.create-matrix.outputs.matrix }}
-      sanitized_image_name: ${{ steps.create-matrix.outputs.sanitized_image_name }}
+  publish:
+    name: Build and publish image
+    runs-on: ${{ inputs.runner || fromJSON(vars.RUNNER_PROFILES)[vars.RUNNER_PROFILE].heavy || fromJSON(vars.RUNNER_PROFILES)[vars.RUNNER_PROFILE].default }}
+
+    permissions:
+      contents: write
+      packages: write
+
     steps:
-      - name: Determine Platforms
-        id: create-matrix
+      - name: Resolve platforms
+        id: platforms
+        env:
+          INPUT_PLATFORMS: ${{ inputs.platforms }}
+          DOCKER_IMAGE_PLATFORMS: ${{ vars.DOCKER_IMAGE_PLATFORMS }}
+          RUNNER_ARCH: ${{ runner.arch }}
         run: |
-          platforms='${{ inputs.platforms }}'
-          docker_image_platforms='${{ vars.DOCKER_IMAGE_PLATFORMS }}'
+          set -euo pipefail
+          platforms="$INPUT_PLATFORMS"
+          docker_image_platforms="$DOCKER_IMAGE_PLATFORMS"
           default_universe='${{ env.DEFAULT_UNIVERSE }}'
 
           echo "input filtered_platforms: $platforms"
@@ -149,40 +155,28 @@ jobs:
             exit 1
           fi
 
-          result_matrix=$(echo "$default_universe" | jq -c \
-            --argjson platforms "$platforms_json" \
-            '[.[] | select(.platform as $platform | $platforms | index($platform))]')
-          if [ "$result_matrix" = "[]" ]; then
+          selected=$(jq -nc \
+            --argjson requested "$platforms_json" \
+            --argjson universe "$default_universe" \
+            '$universe | map(select(.platform as $platform | $requested | index($platform)))')
+          if [ "$selected" = "[]" ]; then
             echo "::error::docker image platform filter resolved to an empty matrix"
             exit 1
           fi
 
-          echo "resolved platforms: $platforms_json"
-          echo set-matrix: $result_matrix
-          echo "matrix=$result_matrix" >> $GITHUB_OUTPUT
-          sanitized_image_name='${{ inputs.image_name }}'
-          sanitized_image_name="${sanitized_image_name//\//-}"
-          sanitized_image_name="${sanitized_image_name//:/-}"
-          echo "sanitized_image_name=${sanitized_image_name}" >> $GITHUB_OUTPUT
+          amd64=$(jq -r 'any(.platform == "linux/amd64")' <<<"$selected")
+          arm64=$(jq -r 'any(.platform == "linux/arm64")' <<<"$selected")
+          case "$RUNNER_ARCH" in
+            X64) needs_qemu=$arm64 ;;
+            ARM64) needs_qemu=$amd64 ;;
+            *) needs_qemu=true ;;
+          esac
 
-  build:
-    name: Build ${{ matrix.platform }} Image
-    needs: setup-matrix
-    runs-on: ${{ matrix.build-runner }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include: ${{ fromJson(needs.setup-matrix.outputs.matrix) }}
-
-    permissions:
-      contents: read
-      packages: write
-
-    steps:
-      - name: Prepare
-        run: |
-          platform=${{ matrix.platform }}
-          echo "PLATFORM_PAIR=${platform//\//-}" >> $GITHUB_ENV
+          echo "resolved platforms: $(jq -c 'map(.platform)' <<<"$selected")"
+          echo "matrix=$selected" >> "$GITHUB_OUTPUT"
+          echo "amd64=$amd64" >> "$GITHUB_OUTPUT"
+          echo "arm64=$arm64" >> "$GITHUB_OUTPUT"
+          echo "needs_qemu=$needs_qemu" >> "$GITHUB_OUTPUT"
 
       - uses: actions/checkout@v7
         with:
@@ -190,7 +184,7 @@ jobs:
           ref: ${{ inputs.checkout-ref }}
 
       - name: Set up QEMU
-        if: ${{ !((runner.arch == 'X64' && matrix.architecture == 'amd64') || (runner.arch == 'ARM64' && matrix.architecture == 'arm64')) }}
+        if: steps.platforms.outputs.needs_qemu == 'true'
         uses: docker/setup-qemu-action@v4
 
       - name: Extract Docker metadata
@@ -272,9 +266,9 @@ jobs:
         run: |
           if [[ "${{ inputs.context }}" =~ ^https://github\.com/.+\.git#.+ ]]; then
             if [ -n "${{ inputs.dockerfile }}" ]; then
-              echo "dockerfile=${{ inputs.dockerfile }}" >> $GITHUB_OUTPUT
+              echo "dockerfile=${{ inputs.dockerfile }}" >> "$GITHUB_OUTPUT"
             else
-              echo "dockerfile=Dockerfile" >> $GITHUB_OUTPUT
+              echo "dockerfile=Dockerfile" >> "$GITHUB_OUTPUT"
             fi
             exit 0
           fi
@@ -284,11 +278,11 @@ jobs:
               echo "::error::dockerfile input set to '${{ inputs.dockerfile }}' but file not found"
               exit 1
             fi
-            echo "dockerfile=${{ inputs.dockerfile }}" >> $GITHUB_OUTPUT
+            echo "dockerfile=${{ inputs.dockerfile }}" >> "$GITHUB_OUTPUT"
           elif [ -f docker/Dockerfile ]; then
-            echo "dockerfile=docker/Dockerfile" >> $GITHUB_OUTPUT
+            echo "dockerfile=docker/Dockerfile" >> "$GITHUB_OUTPUT"
           elif [ -f Dockerfile ]; then
-            echo "dockerfile=Dockerfile" >> $GITHUB_OUTPUT
+            echo "dockerfile=Dockerfile" >> "$GITHUB_OUTPUT"
           else
             echo "::error::No Dockerfile found at docker/Dockerfile or ./Dockerfile, and no dockerfile input set"
             exit 1
@@ -298,9 +292,9 @@ jobs:
         id: check-git-auth
         run: |
           if [ -n "$CLIENT_ID" ] && [ -n "$APP_KEY" ]; then
-            echo "available=true" >> $GITHUB_OUTPUT
+            echo "available=true" >> "$GITHUB_OUTPUT"
           else
-            echo "available=false" >> $GITHUB_OUTPUT
+            echo "available=false" >> "$GITHUB_OUTPUT"
             echo "::notice::Skipping private git deps auth (client_id/app_private_key not configured)"
           fi
         env:
@@ -320,25 +314,25 @@ jobs:
         if: steps.git-auth.outputs.token != ''
         run: printf 'machine github.com\nlogin x-access-token\npassword %s\n' "${{ steps.git-auth.outputs.token }}" > /tmp/.netrc
 
-      - name: Build and push Docker image
-        id: build-and-push
+      - name: Build and push linux/amd64 image
+        id: build-amd64
+        if: steps.platforms.outputs.amd64 == 'true'
+        continue-on-error: true
         uses: docker/build-push-action@v7
         with:
-          platforms: ${{ matrix.platform }}
+          platforms: linux/amd64
           labels: ${{ steps.meta.outputs.labels }}
           outputs: type=image,name=${{ env.REGISTRY_IMAGE }},push-by-digest=true,name-canonical=true,push=true
           file: ${{ steps.detect-dockerfile.outputs.dockerfile }}
           context: ${{ inputs.context }}
           provenance: false
-          # Persistent remote builders keep their hot cache in BuildKit. Ephemeral
-          # fallback builders retain the registry cache and read-only GHA fallback.
           cache-from: |
-            ${{ steps.buildkit.outputs.mode == 'ephemeral' && format('type=registry,ref={0}:buildcache-{1}', env.REGISTRY_IMAGE, matrix.architecture) || '' }}
-            ${{ steps.buildkit.outputs.mode == 'ephemeral' && format('type=gha,scope={0}-{1}', inputs.image_name, matrix.platform) || '' }}
-          cache-to: ${{ steps.buildkit.outputs.mode == 'ephemeral' && inputs.enable-gha-cache-export && format('type=registry,ref={0}:buildcache-{1},mode=max,image-manifest=true,oci-mediatypes=true', env.REGISTRY_IMAGE, matrix.architecture) || '' }}
+            ${{ steps.buildkit.outputs.mode == 'ephemeral' && format('type=registry,ref={0}:buildcache-amd64', env.REGISTRY_IMAGE) || '' }}
+            ${{ steps.buildkit.outputs.mode == 'ephemeral' && format('type=gha,scope={0}-linux/amd64', inputs.image_name) || '' }}
+          cache-to: ${{ steps.buildkit.outputs.mode == 'ephemeral' && inputs.enable-gha-cache-export && format('type=registry,ref={0}:buildcache-amd64,mode=max,image-manifest=true,oci-mediatypes=true', env.REGISTRY_IMAGE) || '' }}
           build-args: |
-            BUILD_OS=${{ matrix.os }}
-            BUILD_ARCH=${{ matrix.architecture }}
+            BUILD_OS=linux
+            BUILD_ARCH=amd64
             ${{ inputs.build-args }}
           secret-files: |
             netrc=/tmp/.netrc
@@ -347,67 +341,84 @@ jobs:
           build-contexts: |
             ${{ inputs.build-contexts }}
 
-      - name: Export digest
+      - name: Build and push linux/arm64 image
+        id: build-arm64
+        if: steps.platforms.outputs.arm64 == 'true'
+        continue-on-error: true
+        uses: docker/build-push-action@v7
+        with:
+          platforms: linux/arm64
+          labels: ${{ steps.meta.outputs.labels }}
+          outputs: type=image,name=${{ env.REGISTRY_IMAGE }},push-by-digest=true,name-canonical=true,push=true
+          file: ${{ steps.detect-dockerfile.outputs.dockerfile }}
+          context: ${{ inputs.context }}
+          provenance: false
+          cache-from: |
+            ${{ steps.buildkit.outputs.mode == 'ephemeral' && format('type=registry,ref={0}:buildcache-arm64', env.REGISTRY_IMAGE) || '' }}
+            ${{ steps.buildkit.outputs.mode == 'ephemeral' && format('type=gha,scope={0}-linux/arm64', inputs.image_name) || '' }}
+          cache-to: ${{ steps.buildkit.outputs.mode == 'ephemeral' && inputs.enable-gha-cache-export && format('type=registry,ref={0}:buildcache-arm64,mode=max,image-manifest=true,oci-mediatypes=true', env.REGISTRY_IMAGE) || '' }}
+          build-args: |
+            BUILD_OS=linux
+            BUILD_ARCH=arm64
+            ${{ inputs.build-args }}
+          secret-files: |
+            netrc=/tmp/.netrc
+          secrets: |
+            ${{ secrets.build_secrets }}
+          build-contexts: |
+            ${{ inputs.build-contexts }}
+
+      - name: Validate platform builds
+        if: always()
+        env:
+          AMD64_SELECTED: ${{ steps.platforms.outputs.amd64 }}
+          AMD64_OUTCOME: ${{ steps.build-amd64.outcome }}
+          ARM64_SELECTED: ${{ steps.platforms.outputs.arm64 }}
+          ARM64_OUTCOME: ${{ steps.build-arm64.outcome }}
         run: |
-          mkdir -p /tmp/digests
-          digest="${{ steps.build-and-push.outputs.digest }}"
-          touch "/tmp/digests/${digest#sha256:}"
-
-      - name: Upload digest
-        uses: actions/upload-artifact@v7
-        with:
-          # The double separator prevents a prefix image such as `org/app`
-          # from matching artifacts for `org/app-worker` in the same run.
-          name: digests-${{ needs.setup-matrix.outputs.sanitized_image_name }}--${{ env.PLATFORM_PAIR }}
-          path: /tmp/digests/*
-          if-no-files-found: error
-          retention-days: 1
-
-  merge:
-    name: Merge platform specific Docker image into multi platform image
-    runs-on: ${{ inputs.runner || fromJSON(vars.RUNNER_PROFILES)[vars.RUNNER_PROFILE].default }}
-    needs:
-      - setup-matrix
-      - build
-
-    permissions:
-      contents: write
-      packages: write
-
-    steps:
-      - name: Download digests
-        uses: actions/download-artifact@v8
-        with:
-          path: /tmp/digests
-          pattern: digests-${{ needs.setup-matrix.outputs.sanitized_image_name }}--*
-          merge-multiple: true
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
-
-      - name: Docker meta
-        id: meta
-        uses: docker/metadata-action@v6
-        with:
-          images: ${{ env.REGISTRY_IMAGE }}
-
-      - name: Login to Docker Hub
-        uses: docker/login-action@v4
-        with:
-          registry: ${{ inputs.registry_name }}
-          username: ${{ secrets.registry_username }}
-          password: ${{ secrets.registry_token }}
+          set -euo pipefail
+          failed=()
+          if [ "$AMD64_SELECTED" = true ] && [ "$AMD64_OUTCOME" != success ]; then
+            failed+=("linux/amd64 ($AMD64_OUTCOME)")
+          fi
+          if [ "$ARM64_SELECTED" = true ] && [ "$ARM64_OUTCOME" != success ]; then
+            failed+=("linux/arm64 ($ARM64_OUTCOME)")
+          fi
+          if [ "${#failed[@]}" -ne 0 ]; then
+            printf '::error::platform build failed: %s\n' "${failed[*]}"
+            exit 1
+          fi
 
       - name: Create manifest list and push
-        working-directory: /tmp/digests
+        env:
+          IMAGE_TAG: ${{ inputs.tag }}
+          AMD64_SELECTED: ${{ steps.platforms.outputs.amd64 }}
+          AMD64_DIGEST: ${{ steps.build-amd64.outputs.digest }}
+          ARM64_SELECTED: ${{ steps.platforms.outputs.arm64 }}
+          ARM64_DIGEST: ${{ steps.build-arm64.outputs.digest }}
         run: |
+          set -euo pipefail
+          sources=()
+          if [ "$AMD64_SELECTED" = true ]; then
+            [[ "$AMD64_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]] || {
+              echo "::error::linux/amd64 build returned an invalid digest"
+              exit 1
+            }
+            sources+=("${REGISTRY_IMAGE}@${AMD64_DIGEST}")
+          fi
+          if [ "$ARM64_SELECTED" = true ]; then
+            [[ "$ARM64_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]] || {
+              echo "::error::linux/arm64 build returned an invalid digest"
+              exit 1
+            }
+            sources+=("${REGISTRY_IMAGE}@${ARM64_DIGEST}")
+          fi
           docker buildx imagetools create \
-            -t ${{ env.REGISTRY_IMAGE }}:${{ inputs.tag }} \
-            $(printf '${{ env.REGISTRY_IMAGE }}@sha256:%s ' *)
+            -t "${REGISTRY_IMAGE}:${IMAGE_TAG}" \
+            "${sources[@]}"
 
       - name: Inspect image
-        run: |
-          docker buildx imagetools inspect ${{ env.REGISTRY_IMAGE }}:${{ inputs.tag }}
+        run: docker buildx imagetools inspect "${REGISTRY_IMAGE}:${{ inputs.tag }}"
 
       - name: Publish image success tag
         if: startsWith(inputs.tag, 'v') && inputs.source-sha != ''
@@ -446,18 +457,3 @@ jobs:
             -f ref="refs/tags/${success_tag}" \
             -f sha="$SOURCE_SHA"
           echo "Published $success_tag at $SOURCE_SHA after verifying ${REGISTRY_IMAGE}:${IMAGE_TAG}"
-
-
-      # - name: Repository Dispatch
-      #   uses: peter-evans/repository-dispatch@v4
-      #   if: github.event_name != 'workflow_dispatch'
-      #   with:
-      #     token: ${{ secrets.GITHUB_TOKEN }}
-      #     event-type: ${{ inputs.next_workflow }}
-      #     client-payload: |-
-      #       {
-      #         "ref": "${{ github.ref }}",
-      #         "sha": "${{ github.sha }}",
-      #         "tag": "${{ inputs.tag }}",
-      #         "artifacts": "${{ env.REGISTRY_IMAGE }}:${{ inputs.tag }}"
-      #       }
