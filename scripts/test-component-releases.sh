@@ -95,6 +95,26 @@ combined=$(
 )
 jq -e 'map(.tag_name) == ["v1.2.3", "worker-v0.4.0"]' <<<"$combined" >/dev/null
 
+# A queued component release can observe a newer target branch and create a
+# second component release whose version is newer than the run's checked-out
+# manifest. Release Please reports both releases explicitly; reconciliation
+# must retain those outputs instead of orphaning their publication events.
+concurrent=$(
+  CONFIG_FILE="$config_file" \
+  MANIFEST_FILE="$manifest" \
+  FIRST_PATHS='["cmd/worker","."]' \
+  FIRST_OUTPUTS='{"releases_created":"true","cmd/worker--tag_name":"worker-v0.4.0","cmd/worker--version":"0.4.0","cmd/worker--sha":"worker-sha","tag_name":"v1.2.4","version":"1.2.4","sha":"application-sha"}' \
+  BEFORE_TAGS='["v1.2.3","worker-v0.3.0"]' \
+  AFTER_TAGS='["v1.2.3","worker-v0.3.0","v1.2.4","worker-v0.4.0"]' \
+  RELEASE_SHA=queued-run-sha \
+  "$reconciler"
+)
+jq -e '
+  length == 2
+  and .[0] == {path: ".", component: "application", tag_name: "v1.2.4", version: "1.2.4", sha: "application-sha"}
+  and .[1] == {path: "cmd/worker", component: "worker", tag_name: "worker-v0.4.0", version: "0.4.0", sha: "worker-sha"}
+' <<<"$concurrent" >/dev/null
+
 replayed=$(
   CONFIG_FILE="$config_file" \
   MANIFEST_FILE="$manifest" \
