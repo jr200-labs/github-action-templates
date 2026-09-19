@@ -27,3 +27,21 @@ if BANNED_COMMIT_WORDS=forbidden "$policy" "commit message" "$custom" >/tmp/mess
     exit 1
 fi
 grep -q "blocked attribution term" /tmp/message-policy-custom.err
+
+metadata_workflow="$ROOT/.github/workflows/lint_pr_metadata.yaml"
+commit_workflow="$ROOT/.github/workflows/lint_commits.yaml"
+
+# Renovate derives generated metadata and commit subjects from dependency
+# names. Both workflows must recognize the same trusted generated-PR shape and
+# must retain Conventional Commit validation after bypassing attribution scans.
+for workflow in "$metadata_workflow" "$commit_workflow"; do
+    grep -Fq '"${PR_BRANCH:-}" == renovate/*' "$workflow"
+    grep -Fq "\"\${PR_AUTHOR:-}\" == *'[bot]'" "$workflow"
+    grep -Fq '"${PR_BODY:-}" == *'"'"'<!--renovate-debug:'"'"'*' "$workflow"
+done
+
+grep -Fq 'PR metadata attribution checks: skipped (Renovate)' "$metadata_workflow"
+grep -Fq 'PR title attribution check: skipped (Renovate)' "$commit_workflow"
+grep -Fq 'Commit attribution checks: skipped (Renovate)' "$commit_workflow"
+grep -Fq 'cog verify --file "${title_file}"' "$commit_workflow"
+grep -Fq 'cog check "${range}"' "$commit_workflow"
