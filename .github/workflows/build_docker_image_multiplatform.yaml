@@ -104,7 +104,7 @@ jobs:
     runs-on: ${{ inputs.runner || fromJSON(vars.RUNNER_PROFILES)[vars.RUNNER_PROFILE].heavy || fromJSON(vars.RUNNER_PROFILES)[vars.RUNNER_PROFILE].default }}
 
     permissions:
-      contents: write
+      contents: read
       packages: write
 
     steps:
@@ -420,10 +420,21 @@ jobs:
       - name: Inspect image
         run: docker buildx imagetools inspect "${REGISTRY_IMAGE}:${{ inputs.tag }}"
 
+  publish-success-tag:
+    name: Publish image success tag
+    needs: publish
+    if: startsWith(inputs.tag, 'v') && inputs.source-sha != ''
+    runs-on: ${{ inputs.runner || fromJSON(vars.RUNNER_PROFILES)[vars.RUNNER_PROFILE].default }}
+
+    permissions:
+      contents: write
+
+    steps:
       - name: Publish image success tag
-        if: startsWith(inputs.tag, 'v') && inputs.source-sha != ''
         env:
           GH_TOKEN: ${{ github.token }}
+          IMAGE_NAME: ${{ inputs.image_name }}
+          REGISTRY_IMAGE: ${{ inputs.registry_name }}/${{ inputs.image_name || github.repository }}
           IMAGE_TAG: ${{ inputs.tag }}
           SOURCE_SHA: ${{ inputs.source-sha }}
           SUCCESS_TAG_PREFIX: ${{ inputs.success-tag-prefix }}

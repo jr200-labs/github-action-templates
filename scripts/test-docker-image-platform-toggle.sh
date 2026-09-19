@@ -15,8 +15,10 @@ grep -Fq 'context: ${{ matrix.context || '\''.'\'' }}' "$caller"
 grep -Fq 'needs: [configure, main]' "$caller"
 grep -Fq 'uses: jr200-labs/github-action-templates/.github/workflows/notify_artifact_published.yaml@master' "$caller"
 
-# Every selected platform and the final manifest are published in one job.
+# Every selected platform and the final manifest are published in one job. The
+# success ref is written by a dependent job with a fresh repository token.
 grep -q '^  publish:$' "$reusable"
+grep -q '^  publish-success-tag:$' "$reusable"
 if grep -Eq '^  (setup-matrix|build|merge):$' "$reusable"; then
     echo "docker image publication must use one publish job" >&2
     exit 1
@@ -37,13 +39,9 @@ grep -q 'docker buildx imagetools create' "$reusable"
 grep -q 'docker buildx imagetools inspect' "$reusable"
 grep -q 'success_tag="${SUCCESS_TAG_PREFIX:-$image_name}-${IMAGE_TAG}"' "$reusable"
 grep -q "|| existing_sha=''" "$reusable"
-
-inspect_line=$(grep -n 'docker buildx imagetools inspect' "$reusable" | cut -d: -f1)
-success_tag_line=$(grep -n 'name: Publish image success tag' "$reusable" | cut -d: -f1)
-if [ "$success_tag_line" -le "$inspect_line" ]; then
-    echo "image success tag must be published after manifest inspection" >&2
-    exit 1
-fi
+yq -e '.jobs.publish.permissions.contents == "read"' "$reusable" >/dev/null
+yq -e '.jobs."publish-success-tag".needs == "publish"' "$reusable" >/dev/null
+yq -e '.jobs."publish-success-tag".permissions.contents == "write"' "$reusable" >/dev/null
 
 # Runner-owned environment and certificate mounts stay out of canonical callers.
 if grep -q 'buildkit-endpoint:' "$caller"; then
@@ -257,7 +255,7 @@ grep -q 'linux/amd64 build returned an invalid digest' "$TMPDIR/invalid-digest.s
 
 # Release success tags remain post-inspection, idempotent and conflict-safe.
 success_tag_script="$TMPDIR/publish-image-success-tag.sh"
-yq -r '.jobs.publish.steps[] | select(.name == "Publish image success tag").run' "$reusable" > "$success_tag_script"
+yq -r '.jobs."publish-success-tag".steps[] | select(.name == "Publish image success tag").run' "$reusable" > "$success_tag_script"
 cat > "$TMPDIR/bin/gh" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
