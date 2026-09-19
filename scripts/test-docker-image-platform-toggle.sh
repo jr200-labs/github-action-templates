@@ -263,6 +263,11 @@ cat > "$TMPDIR/bin/gh" <<'EOF'
 set -euo pipefail
 if [[ " $* " == *" --method POST "* ]]; then
     printf '%s\n' "$*" >> "$GH_CALLS"
+    call_count=$(wc -l < "$GH_CALLS")
+    if [ "$call_count" -le "${GH_POST_FAILURES:-0}" ]; then
+        echo 'Resource not accessible by integration' >&2
+        exit 1
+    fi
     exit 0
 fi
 if [ -n "${GH_EXISTING_SHA:-}" ]; then
@@ -273,6 +278,11 @@ printf '%s\n' '{"message":"Not Found","status":"404"}'
 exit 1
 EOF
 chmod +x "$TMPDIR/bin/gh"
+cat > "$TMPDIR/bin/sleep" <<'EOF'
+#!/usr/bin/env bash
+exit 0
+EOF
+chmod +x "$TMPDIR/bin/sleep"
 
 : > "$TMPDIR/gh-calls"
 GH_CALLS="$TMPDIR/gh-calls" GH_EXISTING_SHA= PATH="$TMPDIR/bin:$PATH" \
@@ -282,6 +292,17 @@ GH_CALLS="$TMPDIR/gh-calls" GH_EXISTING_SHA= PATH="$TMPDIR/bin:$PATH" \
     GH_TOKEN=test-token SUCCESS_TAG_PREFIX= bash "$success_tag_script" >/dev/null
 grep -q -- '--method POST' "$TMPDIR/gh-calls"
 grep -q 'refs/tags/runtime-v1.17.5' "$TMPDIR/gh-calls"
+
+: > "$TMPDIR/gh-calls"
+GH_CALLS="$TMPDIR/gh-calls" GH_POST_FAILURES=1 GH_EXISTING_SHA= PATH="$TMPDIR/bin:$PATH" \
+    IMAGE_NAME=example-org/runtime IMAGE_TAG=v1.17.5 \
+    SOURCE_SHA=a2b237a239a0e65c31149eff6dc8a21722c80cc1 \
+    REGISTRY_IMAGE=ghcr.io/example-org/runtime GITHUB_REPOSITORY=example-org/images \
+    GH_TOKEN=test-token SUCCESS_TAG_PREFIX= bash "$success_tag_script" >/dev/null
+if [ "$(wc -l < "$TMPDIR/gh-calls")" -ne 2 ]; then
+    echo "transient success tag failure must retry once" >&2
+    exit 1
+fi
 
 : > "$TMPDIR/gh-calls"
 GH_CALLS="$TMPDIR/gh-calls" GH_EXISTING_SHA=a2b237a239a0e65c31149eff6dc8a21722c80cc1 \
