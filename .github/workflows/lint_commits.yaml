@@ -30,6 +30,11 @@ jobs:
     permissions:
       contents: read
       pull-requests: read
+    env:
+      PR_TITLE: ${{ github.event.pull_request.title }}
+      PR_BODY: ${{ github.event.pull_request.body }}
+      PR_BRANCH: ${{ github.head_ref }}
+      PR_AUTHOR: ${{ github.event.pull_request.user.login }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -59,14 +64,16 @@ jobs:
 
       - name: Verify PR title
         if: github.event_name == 'pull_request'
-        env:
-          PR_TITLE: ${{ github.event.pull_request.title }}
         shell: bash
         run: |
           set -euo pipefail
           title_file="$(mktemp)"
           printf '%s\n' "${PR_TITLE}" > "${title_file}"
-          /tmp/lint-message-text.sh "PR title" "${title_file}"
+          if [[ "${PR_BRANCH:-}" == renovate/* && "${PR_AUTHOR:-}" == *'[bot]' && "${PR_BODY:-}" == *'<!--renovate-debug:'* ]]; then
+            echo "PR title attribution check: skipped (Renovate)"
+          else
+            /tmp/lint-message-text.sh "PR title" "${title_file}"
+          fi
           cog verify --file "${title_file}"
           rm -f "${title_file}"
 
@@ -107,11 +114,18 @@ jobs:
             fi
           fi
 
-          while IFS= read -r sha; do
-            message_file="$(mktemp)"
-            git log -1 --format=%B "${sha}" > "${message_file}"
-            /tmp/lint-message-text.sh "commit ${sha}" "${message_file}"
-            rm -f "${message_file}"
-          done < <(git rev-list --reverse "${range}")
+          if [[ "${PR_BRANCH:-}" == renovate/* && "${PR_AUTHOR:-}" == *'[bot]' && "${PR_BODY:-}" == *'<!--renovate-debug:'* ]]; then
+            # Renovate derives commit subjects from package names. Keep the
+            # Conventional Commit check below, but do not interpret dependency
+            # identifiers such as @openai/codex as human attribution.
+            echo "Commit attribution checks: skipped (Renovate)"
+          else
+            while IFS= read -r sha; do
+              message_file="$(mktemp)"
+              git log -1 --format=%B "${sha}" > "${message_file}"
+              /tmp/lint-message-text.sh "commit ${sha}" "${message_file}"
+              rm -f "${message_file}"
+            done < <(git rev-list --reverse "${range}")
+          fi
 
           cog check "${range}"

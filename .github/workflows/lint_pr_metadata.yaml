@@ -75,11 +75,15 @@ jobs:
             is_renovate=false
           fi
 
-          scan "branch name" "${PR_BRANCH:-}"
-          scan "PR title"    "${PR_TITLE:-}"
           if "$is_renovate"; then
-            echo "PR body checks: skipped (Renovate)"
+            # The branch, title, and body are generated from dependency data.
+            # A package name may legitimately equal a blocked attribution term
+            # (for example @openai/codex), so none of that generated metadata is
+            # evidence of human-authored attribution.
+            echo "PR metadata attribution checks: skipped (Renovate)"
           else
+            scan "branch name" "${PR_BRANCH:-}"
+            scan "PR title"    "${PR_TITLE:-}"
             scan "PR body" "${PR_BODY:-}"
 
             # Cap PR body length. Long-form context belongs in the Linear
