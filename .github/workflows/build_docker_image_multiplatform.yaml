@@ -451,9 +451,34 @@ jobs:
             exit 1
           fi
 
-          gh api --method POST \
-            -H 'Accept: application/vnd.github+json' \
-            "repos/${GITHUB_REPOSITORY}/git/refs" \
-            -f ref="refs/tags/${success_tag}" \
-            -f sha="$SOURCE_SHA"
-          echo "Published $success_tag at $SOURCE_SHA after verifying ${REGISTRY_IMAGE}:${IMAGE_TAG}"
+          for attempt in 1 2 3; do
+            if create_error=$(gh api --method POST \
+              -H 'Accept: application/vnd.github+json' \
+              "repos/${GITHUB_REPOSITORY}/git/refs" \
+              -f ref="refs/tags/${success_tag}" \
+              -f sha="$SOURCE_SHA" 2>&1); then
+              echo "Published $success_tag at $SOURCE_SHA after verifying ${REGISTRY_IMAGE}:${IMAGE_TAG}"
+              exit 0
+            fi
+
+            existing_sha=$(gh api \
+              -H 'Accept: application/vnd.github+json' \
+              "repos/${GITHUB_REPOSITORY}/git/ref/tags/${success_tag}" \
+              --jq '.object.sha' 2>/dev/null) || existing_sha=''
+            if [ "$existing_sha" = "$SOURCE_SHA" ]; then
+              echo "::notice::Success tag $success_tag was created concurrently at $SOURCE_SHA"
+              exit 0
+            fi
+            if [ -n "$existing_sha" ]; then
+              echo "::error::Success tag $success_tag already points to $existing_sha, not $SOURCE_SHA"
+              exit 1
+            fi
+            if [ "$attempt" -eq 3 ]; then
+              echo "::error::Failed to publish $success_tag after $attempt attempts: $create_error"
+              exit 1
+            fi
+
+            delay=$((attempt * 2))
+            echo "::warning::Failed to publish $success_tag on attempt $attempt; retrying in ${delay}s"
+            sleep "$delay"
+          done
