@@ -346,61 +346,72 @@ jobs:
           exit 1
 
       - name: Set up uv for release PR lockfiles
-        if: (steps.release.outcome == 'success' || steps.release-retry.outcome == 'success') && steps.normalize-releases.outputs.release_created != 'true'
+        if: steps.release.outcome == 'success' || steps.release-retry.outcome == 'success'
         uses: astral-sh/setup-uv@v10.1.0
 
       - name: Refresh uv.lock on release PR
-        if: (steps.release.outcome == 'success' || steps.release-retry.outcome == 'success') && steps.normalize-releases.outputs.release_created != 'true'
+        if: steps.release.outcome == 'success' || steps.release-retry.outcome == 'success'
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           TARGET_BRANCH: ${{ inputs.target-branch }}
+          FIRST_PRS: ${{ steps.release.outputs.prs || '[]' }}
+          RETRY_PRS: ${{ steps.release-retry.outputs.prs || '[]' }}
         shell: bash
         run: |
           set -euo pipefail
 
-          head_ref="release-please--branches--${TARGET_BRANCH}"
-          pr_json=$(
-            gh pr list \
-              --repo "${GITHUB_REPOSITORY}" \
-              --state open \
-              --head "${head_ref}" \
-              --json number,headRefName \
-              --jq '.[0] // empty'
-          )
-          if [ -z "${pr_json}" ]; then
-            echo "No open release PR found for ${head_ref}; skipping uv.lock refresh."
-            exit 0
-          fi
-          pr_number=$(jq -r '.number' <<<"${pr_json}")
+          # Use action outputs, not a reconstructed branch name: grouped and
+          # separate component releases have different branch conventions.
+          prs=$(jq -cen --argjson first "$FIRST_PRS" --argjson retry "$RETRY_PRS" '
+            if ($first | type) != "array" or ($retry | type) != "array" then
+              error("Expected release PR arrays")
+            else ($first + $retry | unique_by(.number)) end
+            | if all(.[]; (.number | type) == "number" and .number > 0
+                and (.headBranchName | type) == "string") then .
+              else error("Invalid release PR identity") end')
+          rows=$(jq -c '.[]' <<<"$prs")
+          while IFS= read -r pr_json; do
+            [ -n "$pr_json" ] || continue
+            pr_number=$(jq -r '.number' <<<"$pr_json")
+            head_ref=$(jq -r '.headBranchName' <<<"$pr_json")
+            git check-ref-format "refs/heads/${head_ref}"
+            live=$(gh pr view "$pr_number" --repo "$GITHUB_REPOSITORY" \
+              --json number,headRefName,baseRefName,state,isCrossRepository)
+            jq -e --arg head "$head_ref" --arg base "$TARGET_BRANCH" --argjson number "$pr_number" '
+              .number == $number and .headRefName == $head and .baseRefName == $base
+              and .state == "OPEN" and .isCrossRepository == false' <<<"$live" >/dev/null
 
-          git fetch origin "${head_ref}"
-          git checkout -B "${head_ref}" "origin/${head_ref}"
+            git fetch origin "refs/heads/${head_ref}"
+            git checkout --detach FETCH_HEAD
+            printf 'machine github.com\nlogin x-access-token\npassword %s\n' "$GH_TOKEN" > ~/.netrc
+            chmod 0600 ~/.netrc
+            locks=$(git ls-files -- uv.lock ':(glob)**/uv.lock')
+            while IFS= read -r lock; do
+              [ -n "$lock" ] || continue
+              directory=$(dirname "$lock")
+              [ -f "$directory/pyproject.toml" ] || continue
+              (
+                cd "$directory"
+                uv lock
+                uv lock --check
+              )
+              git add -- "$lock"
+            done <<<"$locks"
+            if git diff --cached --quiet; then
+              echo "Release PR #${pr_number}: lockfiles already up to date or not applicable."
+              continue
+            fi
 
-          if [ ! -f pyproject.toml ] || [ ! -f uv.lock ]; then
-            echo "No pyproject.toml + uv.lock pair found; skipping uv.lock refresh."
-            exit 0
-          fi
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git commit -m "chore: update release lockfile"
+            git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+            git push origin "HEAD:${head_ref}"
 
-          printf 'machine github.com\nlogin x-access-token\npassword %s\n' "$GH_TOKEN" > ~/.netrc
-          chmod 0600 ~/.netrc
-          uv lock
-          if git diff --quiet -- uv.lock; then
-            echo "uv.lock already up to date."
-            exit 0
-          fi
-
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add uv.lock
-          git commit -m "chore: update release lockfile"
-          git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
-          git push origin "HEAD:${head_ref}"
-
-          # Workflow-triggered pushes can leave release PR checks attached to
-          # the pre-refresh head SHA. Reopening forces a pull_request event on
-          # the current head without adding a no-op commit.
-          gh api "repos/${GITHUB_REPOSITORY}/pulls/${pr_number}" -X PATCH -f state=closed >/dev/null
-          gh api "repos/${GITHUB_REPOSITORY}/pulls/${pr_number}" -X PATCH -f state=open >/dev/null
+            # Reopening forces checks onto the refreshed head without a no-op commit.
+            gh api "repos/${GITHUB_REPOSITORY}/pulls/${pr_number}" -X PATCH -f state=closed >/dev/null
+            gh api "repos/${GITHUB_REPOSITORY}/pulls/${pr_number}" -X PATCH -f state=open >/dev/null
+          done <<<"$rows"
 
       - name: Close stale release PRs after publish
         if: steps.normalize-releases.outputs.release_created == 'true'
