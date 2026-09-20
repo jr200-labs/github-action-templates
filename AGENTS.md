@@ -54,6 +54,7 @@ Current groups:
 | `npm-package` | publish-npm-package | repo publishes a Node package to npmjs.com on release (needs `secrets.NPMJS_API_TOKEN`) |
 | `go` | ci-go | repo has `go.mod` |
 | `swift` | ci-swift | repo is a native Swift/Xcode app, including macOS app development |
+| `macos-app` | macos-app + shared packaging script | repo builds a signed app bundle and publishes ZIP/checksum release assets |
 | `docker` | build-docker-image | repo publishes a docker image to ghcr.io |
 | `quarto-docs` | publish-quarto-docs | repo publishes a Quarto site from `docs` to `gh-pages` |
 | `helm-chart` | build-helm-chart | repo publishes a Helm chart (needs `vars.HELM_CHART_REPO` + `secrets.CHARTS_WRITE_TOKEN`) |
@@ -64,6 +65,37 @@ Current groups:
 | `artifact-renovate` | renovate-artifact-published | repo runs targeted Renovate when a configured package or artifact is published |
 | `package-access` | package-access-drift | repo consumes private GitHub packages with granular Actions access |
 | `drift-check-rulesets` | drift-check-rulesets | one consumer per org watches its own ruleset state |
+
+## macOS app release bundles
+
+For an installable macOS app, opt into `macos-app` and run `sync-shared` to install
+the canonical caller and `.shared/package-macos-app.py`. Keep app-specific build
+and test steps in a repository script, configured by `.github/macos-app.json`:
+
+```json
+{
+  "app": "dist/Example.app",
+  "artifact": "example-macos",
+  "build": ["bash", "scripts/build-app.sh"],
+  "setup_uv": false,
+  "tag_prefix": "v"
+}
+```
+
+`app`, `artifact`, and `build` are required; optional `setup_uv` defaults to false
+and `tag_prefix` to `v`. `build` is an argv array, not an interpolated shell
+expression. It must run the repository's tests and create a signed bundle at
+`app` within 20 minutes. Fresh app/output paths are required; existing artifacts
+are never deleted or overwritten. The shared script requires Python 3.9+.
+
+The reusable workflow accepts config path, checkout ref, release tag, publish flag,
+and separate build/publish runner inputs. Canonical callers use configured runner
+profiles. PR/manual runs build and upload artifacts only; `release-published`
+builds the exact existing non-draft release tag, verifies its app version, and
+attaches the verified ZIP and checksum. Publishing never replaces existing assets.
+The build job has read-only contents permission; only the publish job gets write.
+The script verifies signatures but does not provide signing identities, Developer
+ID signing or notarization. Repository scripts own signing policy and credentials.
 
 ## Package access drift
 

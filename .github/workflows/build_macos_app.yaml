@@ -1,0 +1,100 @@
+name: template-build-macos-app
+
+on:
+  workflow_call:
+    inputs:
+      config-path:
+        description: Repository-owned app packaging JSON
+        type: string
+        default: .github/macos-app.json
+      checkout-ref:
+        description: Optional ref for non-release builds (empty uses the triggering ref)
+        type: string
+        default: ''
+      release-tag:
+        description: Existing non-draft GitHub Release tag; its source is built exactly
+        type: string
+        default: ''
+      publish:
+        description: Attach ZIP and checksum after a successful release build
+        type: boolean
+        default: false
+      runner:
+        description: macOS build runner label
+        type: string
+        default: ''
+      publish-runner:
+        description: Release attachment runner label
+        type: string
+        default: ''
+
+jobs:
+  package:
+    runs-on: ${{ inputs.runner || fromJSON(vars.RUNNER_PROFILES)[vars.RUNNER_PROFILE].macos }}
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    outputs:
+      artifact: ${{ steps.config.outputs.artifact }}
+    steps:
+      - name: Validate release
+        if: inputs.publish || inputs.release-tag != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ inputs.release-tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_TAG" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]]
+          gh release view "$RELEASE_TAG" --json tagName,isDraft |
+            jq -e --arg tag "$RELEASE_TAG" '.tagName == $tag and .isDraft == false'
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.release-tag != '' && format('refs/tags/{0}', inputs.release-tag) || inputs.checkout-ref }}
+          persist-credentials: false
+      - name: Read app configuration
+        id: config
+        env:
+          APP_CONFIG: ${{ inputs.config-path }}
+        run: python3 .shared/package-macos-app.py metadata --config "$APP_CONFIG" >> "$GITHUB_OUTPUT"
+      - uses: astral-sh/setup-uv@v7
+        if: steps.config.outputs.setup_uv == 'true'
+      - name: Build, verify and archive
+        env:
+          APP_CONFIG: ${{ inputs.config-path }}
+          RELEASE_TAG: ${{ inputs.release-tag }}
+          UV_MANAGED_PYTHON: 'true'
+        run: python3 .shared/package-macos-app.py package --config "$APP_CONFIG" --release-tag "$RELEASE_TAG" --output "$RUNNER_TEMP/macos-release"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ${{ steps.config.outputs.artifact }}
+          path: ${{ runner.temp }}/macos-release/*
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    if: inputs.publish
+    needs: package
+    runs-on: ${{ inputs.publish-runner || fromJSON(vars.RUNNER_PROFILES)[vars.RUNNER_PROFILE].default }}
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: ${{ needs.package.outputs.artifact }}
+          path: ${{ runner.temp }}/macos-release
+      - name: Verify transfer and attach release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ inputs.release-tag }}
+          ARTIFACT: ${{ needs.package.outputs.artifact }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$ARTIFACT" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$ ]]
+          cd "$RUNNER_TEMP/macos-release"
+          shasum -a 256 -c "$ARTIFACT.zip.sha256"
+          gh release upload "$RELEASE_TAG" "$ARTIFACT.zip" "$ARTIFACT.zip.sha256"
