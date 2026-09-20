@@ -63,7 +63,7 @@ jobs:
         env:
           APP_CONFIG: ${{ inputs.config-path }}
         run: python3 .shared/package-macos-app.py metadata --config "$APP_CONFIG" >> "$GITHUB_OUTPUT"
-      - uses: astral-sh/setup-uv@v7
+      - uses: astral-sh/setup-uv@v10.1.0
         if: steps.config.outputs.setup_uv == 'true'
       - name: Build, verify and archive
         env:
