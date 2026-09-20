@@ -78,6 +78,10 @@ and test steps in a repository script, configured by `.github/macos-app.json`:
   "artifact": "example-macos",
   "build": ["bash", "scripts/build-app.sh"],
   "setup_uv": false,
+  "sparkle": {
+    "appcast": "appcast.xml",
+    "generate": ["bash", "scripts/generate-appcast.sh"]
+  },
   "tag_prefix": "v"
 }
 ```
@@ -88,11 +92,20 @@ expression. It must run the repository's tests and create a signed bundle at
 `app` within 20 minutes. Fresh app/output paths are required; existing artifacts
 are never deleted or overwritten. The shared script requires Python 3.9+.
 
+The optional `sparkle` block adds a signed appcast to release publications.
+`generate` is an argv array for a repository-owned command. On a release only,
+the shared workflow passes it `--archive`, `--output`, and
+`--download-url-prefix` arguments and exposes `SPARKLE_EDDSA_PRIVATE_KEY`. The
+command must write the new nonempty XML file named by `appcast`. The canonical
+caller forwards the repository secret under that fixed name. Pull requests and
+manual build-only runs never receive the signing key or invoke the generator.
+
 The reusable workflow accepts config path, checkout ref, release tag, publish flag,
 and separate build/publish runner inputs. Canonical callers use configured runner
 profiles. PR/manual runs build and upload artifacts only; `release-published`
 builds the exact existing non-draft release tag, verifies its app version, and
-attaches the verified ZIP and checksum. Publishing never replaces existing assets.
+attaches the verified ZIP, checksum, and configured signed appcast. Publishing
+never replaces existing assets.
 The build job has read-only contents permission; only the publish job gets write.
 The script verifies signatures but does not provide signing identities, Developer
 ID signing or notarization. Repository scripts own signing policy and credentials.
