@@ -100,7 +100,7 @@ on:
         type: boolean
         default: false
       renovate-image:
-        description: Optional Renovate image reference
+        description: Optional Renovate image reference for self-hosted runners
         required: false
         type: string
         default: ''
@@ -218,7 +218,9 @@ jobs:
       - name: Pre-pull Renovate image
         shell: bash
         env:
-          RENOVATE_IMAGE: ${{ inputs.renovate-image || 'ghcr.io/renovatebot/renovate' }}
+          # An ARC-only registry override cannot resolve from GitHub-hosted
+          # runners. Use the public image whenever GitHub hosts the job.
+          RENOVATE_IMAGE: ${{ runner.environment == 'self-hosted' && inputs.renovate-image || 'ghcr.io/renovatebot/renovate' }}
           RENOVATE_VERSION: 43.275.0
         run: |
           set -euo pipefail
@@ -241,7 +243,7 @@ jobs:
             sleep "$delay"
           done
 
-      - name: Self-hosted Renovate (pass 1)
+      - name: Renovate (pass 1)
         # renovatebot/github-action only publishes specific patch tags, no
         # floating majors. Pin to a known-good release; Renovate itself can
         # be updated independently of this action via the `renovate-version`
@@ -249,7 +251,7 @@ jobs:
         uses: renovatebot/github-action@v46.3.1
         with:
           token: ${{ steps.app-token.outputs.token || secrets.GITHUB_TOKEN }}
-          renovate-image: ${{ inputs.renovate-image || 'ghcr.io/renovatebot/renovate' }}
+          renovate-image: ${{ runner.environment == 'self-hosted' && inputs.renovate-image || 'ghcr.io/renovatebot/renovate' }}
           renovate-version: 43.275.0
           # Use host networking so the Renovate container shares the
           # runner pod's network. Dind's default bridge network has
@@ -328,7 +330,7 @@ jobs:
             echo "Renovate pass 1 did not report repository-changed; pass 2 will be skipped."
           fi
 
-      - name: Self-hosted Renovate (pass 2 — catches repository-changed quirk)
+      - name: Renovate (pass 2 — catches repository-changed quirk)
         # Renovate occasionally exits with `"result": "repository-changed"`
         # after pushing a branch update but BEFORE opening the PR, deferring
         # PR creation to the next scheduled run. A second idempotent pass
@@ -340,7 +342,7 @@ jobs:
         uses: renovatebot/github-action@v46.3.1
         with:
           token: ${{ steps.app-token.outputs.token || secrets.GITHUB_TOKEN }}
-          renovate-image: ${{ inputs.renovate-image || 'ghcr.io/renovatebot/renovate' }}
+          renovate-image: ${{ runner.environment == 'self-hosted' && inputs.renovate-image || 'ghcr.io/renovatebot/renovate' }}
           renovate-version: 43.275.0
           docker-network: host
           docker-volumes: |

@@ -47,6 +47,12 @@ if [ "$(grep -c 'RENOVATE_HOST_RULES:.*github.token' "$workflow")" -ne 2 ]; then
   exit 1
 fi
 
+hosted_image_guard="runner.environment == 'self-hosted' && inputs.renovate-image || 'ghcr.io/renovatebot/renovate'"
+if [ "$(grep -Fc "$hosted_image_guard" "$workflow")" -ne 3 ]; then
+  echo "lint-renovate-workflow-token: image override must be limited to self-hosted runners for pre-pull and both passes" >&2
+  exit 1
+fi
+
 while IFS= read -r caller; do
   if ! grep -q '^  packages: read$' "$caller"; then
     echo "lint-renovate-workflow-token: Renovate caller must grant packages:read: $caller" >&2
