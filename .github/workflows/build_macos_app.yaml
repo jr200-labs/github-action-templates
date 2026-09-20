@@ -27,6 +27,10 @@ on:
         description: Release attachment runner label
         type: string
         default: ''
+    secrets:
+      SPARKLE_EDDSA_PRIVATE_KEY:
+        description: Optional private key used by a configured Sparkle appcast generator
+        required: false
 
 jobs:
   package:
@@ -36,6 +40,7 @@ jobs:
       contents: read
     outputs:
       artifact: ${{ steps.config.outputs.artifact }}
+      appcast: ${{ steps.config.outputs.appcast }}
     steps:
       - name: Validate release
         if: inputs.publish || inputs.release-tag != ''
@@ -66,6 +71,21 @@ jobs:
           RELEASE_TAG: ${{ inputs.release-tag }}
           UV_MANAGED_PYTHON: 'true'
         run: python3 .shared/package-macos-app.py package --config "$APP_CONFIG" --release-tag "$RELEASE_TAG" --output "$RUNNER_TEMP/macos-release"
+      - name: Generate signed Sparkle appcast
+        if: inputs.publish && steps.config.outputs.appcast != ''
+        env:
+          APP_CONFIG: ${{ inputs.config-path }}
+          RELEASE_TAG: ${{ inputs.release-tag }}
+          SPARKLE_EDDSA_PRIVATE_KEY: ${{ secrets.SPARKLE_EDDSA_PRIVATE_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$SPARKLE_EDDSA_PRIVATE_KEY"
+          python3 .shared/package-macos-app.py appcast \
+            --config "$APP_CONFIG" \
+            --release-tag "$RELEASE_TAG" \
+            --repository "$GITHUB_REPOSITORY" \
+            --output "$RUNNER_TEMP/macos-release"
       - uses: actions/upload-artifact@v7
         with:
           name: ${{ steps.config.outputs.artifact }}
@@ -91,10 +111,17 @@ jobs:
           GH_REPO: ${{ github.repository }}
           RELEASE_TAG: ${{ inputs.release-tag }}
           ARTIFACT: ${{ needs.package.outputs.artifact }}
+          APPCAST: ${{ needs.package.outputs.appcast }}
         shell: bash
         run: |
           set -euo pipefail
           [[ "$ARTIFACT" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$ ]]
           cd "$RUNNER_TEMP/macos-release"
           shasum -a 256 -c "$ARTIFACT.zip.sha256"
-          gh release upload "$RELEASE_TAG" "$ARTIFACT.zip" "$ARTIFACT.zip.sha256"
+          assets=("$ARTIFACT.zip" "$ARTIFACT.zip.sha256")
+          if [[ -n "$APPCAST" ]]; then
+            [[ "$APPCAST" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,79}\.xml$ ]]
+            test -s "$APPCAST" && test ! -L "$APPCAST"
+            assets+=("$APPCAST")
+          fi
+          gh release upload "$RELEASE_TAG" "${assets[@]}"

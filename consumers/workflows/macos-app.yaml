@@ -23,3 +23,5 @@ jobs:
       publish: ${{ github.event_name == 'repository_dispatch' }}
       runner: ${{ fromJSON(vars.RUNNER_PROFILES)[vars.RUNNER_PROFILE].macos }}
       publish-runner: ${{ fromJSON(vars.RUNNER_PROFILES)[vars.RUNNER_PROFILE].default }}
+    secrets:
+      SPARKLE_EDDSA_PRIVATE_KEY: ${{ secrets.SPARKLE_EDDSA_PRIVATE_KEY }}
