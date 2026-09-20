@@ -1,0 +1,5 @@
+# Package an app bundle and attach verified assets to a GitHub Release.
+includes:
+  - macos-app
+files:
+  - .shared/package-macos-app.py
