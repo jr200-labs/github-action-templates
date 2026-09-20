@@ -77,11 +77,14 @@ jobs:
           echo "exe=$(pwd)/actionlint" >> "$GITHUB_OUTPUT"
 
       - name: Run actionlint
+        # actionlint does not yet recognize GitHub's concurrency.queue key.
+        # test-shared-sync.sh checks the Renovate queue configuration.
         run: |
           "${{ steps.get_actionlint.outputs.exe }}" \
             -color \
             -shellcheck= \
-            -ignore 'peaceiris/actions-gh-pages@v3'
+            -ignore 'peaceiris/actions-gh-pages@v3' \
+            -ignore 'unexpected key "queue" for "concurrency" section'
 
   validate-shared-sync:
     runs-on: ${{ fromJSON(vars.RUNNER_PROFILES)[vars.RUNNER_PROFILE].default }}
