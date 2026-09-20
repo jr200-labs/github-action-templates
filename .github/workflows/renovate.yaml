@@ -114,6 +114,13 @@ on:
         description: Org-level GitHub App private key (per-org integration App)
         required: false
 
+# All entry points mutate the same branches, PRs and repository-wide refs.
+# Keep this lock distinct from older callers' artifact-only concurrency group.
+concurrency:
+  group: renovate-repository-${{ github.repository }}
+  queue: max
+  cancel-in-progress: false
+
 jobs:
   renovate:
     runs-on: ${{ inputs.runner || fromJSON(vars.RUNNER_PROFILES)[vars.RUNNER_PROFILE].default }}

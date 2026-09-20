@@ -5,6 +5,15 @@ ROOT=$(git rev-parse --show-toplevel)
 TMPDIR=$(mktemp -d)
 trap 'rm -rf "$TMPDIR"' EXIT
 
+# Every caller must share the same lock, including manual and scheduled runs.
+yq -o=json '.' "$ROOT/.github/workflows/renovate.yaml" | jq -e '
+  .concurrency == {
+    "group": "renovate-repository-${{ github.repository }}",
+    "queue": "max",
+    "cancel-in-progress": false
+  }
+' >/dev/null
+
 if grep -Fq 'github-action-templates/master/shared/lint-release-please-config.sh' \
     "$ROOT/.github/workflows/release_please.yaml"; then
     echo "release workflow bypasses the consumer's pinned shared ref for config validation" >&2
@@ -131,9 +140,12 @@ YAML
     workflow=.github/workflows/renovate-artifact-published.yaml
     test -f "$workflow"
     yq -o=json '.' "$workflow" | jq -e '.on.repository_dispatch.types == ["artifact-published"]' >/dev/null
-    yq -o=json '.' "$workflow" | jq -e '.concurrency.group == "renovate-artifact-${{ github.repository }}"' >/dev/null
-    yq -o=json '.' "$workflow" | jq -e '.concurrency.queue == "max"' >/dev/null
-    yq -o=json '.' "$workflow" | jq -e '.concurrency."cancel-in-progress" == false' >/dev/null
+    for caller in "$workflow" .github/workflows/renovate.yaml; do
+        yq -o=json '.' "$caller" | jq -e '
+          .concurrency == null and
+          .jobs.renovate.uses == "jr200-labs/github-action-templates/.github/workflows/renovate.yaml@master"
+        ' >/dev/null
+    done
     yq -o=json '.' "$workflow" | jq -e '.jobs.validate == null' >/dev/null
     yq -o=json '.' "$workflow" | jq -e '.jobs.renovate.with."dependency-names" == "${{ github.event_name == '\''repository_dispatch'\'' && toJSON(github.event.client_payload.dependencies) || inputs.dependencies }}"' >/dev/null
     mv .github/workflows/ci.yaml .github/workflows/bespoke_ci.yaml
