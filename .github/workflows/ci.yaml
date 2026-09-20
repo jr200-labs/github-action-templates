@@ -91,6 +91,7 @@ jobs:
         run: |
           ./scripts/test-message-text-policy.sh
           ./scripts/test-component-releases.sh
+          python3 scripts/test-release-pr-lockfiles.py
           ./scripts/test-docker-image-platform-toggle.sh
           ./scripts/test-npm-preview-publish.sh
           ./scripts/test-artifact-renovate-config.sh
