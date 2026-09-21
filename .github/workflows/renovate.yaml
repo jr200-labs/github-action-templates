@@ -255,7 +255,7 @@ jobs:
         # floating majors. Pin to a known-good release; Renovate itself can
         # be updated independently of this action via the `renovate-version`
         # input below if needed.
-        uses: renovatebot/github-action@v46.3.1
+        uses: renovatebot/github-action@v46.3.3
         with:
           token: ${{ steps.app-token.outputs.token || secrets.GITHUB_TOKEN }}
           renovate-image: ${{ runner.environment == 'self-hosted' && inputs.renovate-image || 'ghcr.io/renovatebot/renovate' }}
@@ -346,7 +346,7 @@ jobs:
         # and rewrite the closed PR title/body to a newer available version
         # without changing the already-merged commit.
         if: success() && inputs.dry-run == '' && steps.renovate-pass2.outputs.run == 'true'
-        uses: renovatebot/github-action@v46.3.1
+        uses: renovatebot/github-action@v46.3.3
         with:
           token: ${{ steps.app-token.outputs.token || secrets.GITHUB_TOKEN }}
           renovate-image: ${{ runner.environment == 'self-hosted' && inputs.renovate-image || 'ghcr.io/renovatebot/renovate' }}
@@ -390,7 +390,7 @@ jobs:
 
       - name: Set up uv for Python branch repair
         if: success() && inputs.dry-run == '' && inputs.repair-branches && hashFiles('pyproject.toml') != ''
-        uses: astral-sh/setup-uv@v10.1.0
+        uses: astral-sh/setup-uv@v10.2.0
 
       - name: Repair stale uv.lock on Renovate Python branches
         if: success() && inputs.dry-run == '' && inputs.repair-branches && hashFiles('pyproject.toml') != ''
