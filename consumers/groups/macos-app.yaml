@@ -1,5 +1,6 @@
-# Package an app bundle and attach verified assets to a GitHub Release.
+# Check app packaging in CI and publish verified assets after Release Please creates a release.
 includes:
   - macos-app
+  - publish-macos-app
 files:
   - .shared/package-macos-app.py
