@@ -2,6 +2,13 @@ name: template-build-macos-app
 
 on:
   workflow_call:
+    outputs:
+      artifact:
+        description: Uploaded artifact name
+        value: ${{ jobs.package.outputs.artifact }}
+      appcast:
+        description: Optional appcast filename
+        value: ${{ jobs.package.outputs.appcast }}
     inputs:
       config-path:
         description: Repository-owned app packaging JSON
@@ -15,16 +22,12 @@ on:
         description: Existing non-draft GitHub Release tag; its source is built exactly
         type: string
         default: ''
-      publish:
-        description: Attach ZIP and checksum after a successful release build
+      generate-appcast:
+        description: Generate the configured signed Sparkle appcast for a release build
         type: boolean
         default: false
       runner:
         description: macOS build runner label
-        type: string
-        default: ''
-      publish-runner:
-        description: Release attachment runner label
         type: string
         default: ''
     secrets:
@@ -43,7 +46,7 @@ jobs:
       appcast: ${{ steps.config.outputs.appcast }}
     steps:
       - name: Validate release
-        if: inputs.publish || inputs.release-tag != ''
+        if: inputs.generate-appcast || inputs.release-tag != ''
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
@@ -72,7 +75,7 @@ jobs:
           UV_MANAGED_PYTHON: 'true'
         run: python3 .shared/package-macos-app.py package --config "$APP_CONFIG" --release-tag "$RELEASE_TAG" --output "$RUNNER_TEMP/macos-release"
       - name: Generate signed Sparkle appcast
-        if: inputs.publish && steps.config.outputs.appcast != ''
+        if: inputs.generate-appcast && steps.config.outputs.appcast != ''
         env:
           APP_CONFIG: ${{ inputs.config-path }}
           RELEASE_TAG: ${{ inputs.release-tag }}
@@ -92,36 +95,3 @@ jobs:
           path: ${{ runner.temp }}/macos-release/*
           if-no-files-found: error
           retention-days: 14
-
-  publish:
-    if: inputs.publish
-    needs: package
-    runs-on: ${{ inputs.publish-runner || fromJSON(vars.RUNNER_PROFILES)[vars.RUNNER_PROFILE].default }}
-    timeout-minutes: 5
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/download-artifact@v8
-        with:
-          name: ${{ needs.package.outputs.artifact }}
-          path: ${{ runner.temp }}/macos-release
-      - name: Verify transfer and attach release assets
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-          RELEASE_TAG: ${{ inputs.release-tag }}
-          ARTIFACT: ${{ needs.package.outputs.artifact }}
-          APPCAST: ${{ needs.package.outputs.appcast }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          [[ "$ARTIFACT" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$ ]]
-          cd "$RUNNER_TEMP/macos-release"
-          shasum -a 256 -c "$ARTIFACT.zip.sha256"
-          assets=("$ARTIFACT.zip" "$ARTIFACT.zip.sha256")
-          if [[ -n "$APPCAST" ]]; then
-            [[ "$APPCAST" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,79}\.xml$ ]]
-            test -s "$APPCAST" && test ! -L "$APPCAST"
-            assets+=("$APPCAST")
-          fi
-          gh release upload "$RELEASE_TAG" "${assets[@]}"

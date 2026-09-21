@@ -104,10 +104,17 @@ class PackagingTest(unittest.TestCase):
         sync = ["bash", str(ROOT / "consumers/scripts/sync-shared")]
         subprocess.run(sync, check=True, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         caller = Path(".github/workflows/macos-app.yaml")
+        publisher = Path(".github/workflows/publish-macos-app.yaml")
         self.assertEqual(caller.read_bytes(), (ROOT / "consumers/workflows/macos-app.yaml").read_bytes())
+        self.assertEqual(publisher.read_bytes(), (ROOT / "consumers/workflows/publish-macos-app.yaml").read_bytes())
         self.assertEqual(Path(".shared/package-macos-app.py").read_bytes(), SCRIPT.read_bytes())
-        caller_data = subprocess.check_output(["yq", "-r", ".jobs.app.secrets.SPARKLE_EDDSA_PRIVATE_KEY", str(caller)], text=True).strip()
-        self.assertEqual(caller_data, "${{ secrets.SPARKLE_EDDSA_PRIVATE_KEY }}")
+        caller_data = subprocess.check_output(["yq", "-o=json", ".", str(caller)], text=True)
+        self.assertNotIn("repository_dispatch", caller_data)
+        self.assertNotIn("SPARKLE_EDDSA_PRIVATE_KEY", caller_data)
+        publisher_secret = subprocess.check_output(
+            ["yq", "-r", ".jobs.app.secrets.SPARKLE_EDDSA_PRIVATE_KEY", str(publisher)], text=True
+        ).strip()
+        self.assertEqual(publisher_secret, "${{ secrets.SPARKLE_EDDSA_PRIVATE_KEY }}")
         subprocess.run(sync + ["--check"], check=True, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         Path(".shared/package-macos-app.py").write_text("drift")
         self.assertNotEqual(subprocess.run(sync + ["--check"], env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE).returncode, 0)
@@ -120,7 +127,7 @@ class PackagingTest(unittest.TestCase):
         gh.write_text('#!/bin/sh\nprintf "%s\\n" "$@" > "$RUNNER_TEMP/upload-args"\n')
         gh.chmod(0o755)
         step = subprocess.check_output(["yq", "-r", ".jobs.publish.steps[-1].run",
-                                        str(ROOT / ".github/workflows/build_macos_app.yaml")], text=True)
+                                        str(ROOT / ".github/workflows/publish_macos_app.yaml")], text=True)
         env = dict(os.environ, RUNNER_TEMP=str(Path.cwd()), ARTIFACT="example-macos", APPCAST="", RELEASE_TAG="v1.2.3",
                    PATH=str(Path("bin").resolve()) + os.pathsep + os.environ["PATH"])
         subprocess.run(["bash", "-c", step], check=True, env=env, stdout=subprocess.PIPE)
@@ -143,13 +150,21 @@ class PackagingTest(unittest.TestCase):
             text=True,
         )
         step = json.loads(appcast_step)
-        self.assertEqual(step["if"], "inputs.publish && steps.config.outputs.appcast != ''")
+        self.assertEqual(step["if"], "inputs.generate-appcast && steps.config.outputs.appcast != ''")
         self.assertEqual(step["env"]["SPARKLE_EDDSA_PRIVATE_KEY"], "${{ secrets.SPARKLE_EDDSA_PRIVATE_KEY }}")
         build_step = subprocess.check_output(
             ["yq", "-o=json", ".jobs.package.steps[] | select(.name == \"Build, verify and archive\")", str(workflow)],
             text=True,
         )
         self.assertNotIn("SPARKLE_EDDSA_PRIVATE_KEY", build_step)
+
+    def test_ci_and_release_workflows_are_separate(self):
+        build = ROOT / ".github/workflows/build_macos_app.yaml"
+        publish = ROOT / ".github/workflows/publish_macos_app.yaml"
+        build_jobs = json.loads(subprocess.check_output(["yq", "-o=json", ".jobs", str(build)], text=True))
+        publish_jobs = json.loads(subprocess.check_output(["yq", "-o=json", ".jobs", str(publish)], text=True))
+        self.assertEqual(list(build_jobs), ["package"])
+        self.assertEqual(list(publish_jobs), ["package", "publish"])
 
 
 if __name__ == "__main__":

@@ -1,0 +1,31 @@
+# GENERATED/SHARED WORKFLOW: copied into consuming repos by sync-shared.
+# Do not edit in consuming repos; change jr200-labs/github-action-templates and sync.
+name: publish-macos-app
+run-name: ${{ github.event.client_payload['release-tag'] || github.event.inputs.release-tag }}
+
+on:
+  repository_dispatch:
+    types: [release-published]
+  workflow_dispatch:
+    inputs:
+      release-tag:
+        description: Existing GitHub Release tag to publish
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: publish-macos-app-${{ github.event.client_payload['release-tag'] || github.event.inputs.release-tag }}
+  cancel-in-progress: false
+
+jobs:
+  app:
+    uses: jr200-labs/github-action-templates/.github/workflows/publish_macos_app.yaml@master
+    with:
+      release-tag: ${{ github.event.client_payload['release-tag'] || github.event.inputs.release-tag }}
+      runner: ${{ fromJSON(vars.RUNNER_PROFILES)[vars.RUNNER_PROFILE].macos }}
+      publish-runner: ${{ fromJSON(vars.RUNNER_PROFILES)[vars.RUNNER_PROFILE].default }}
+    secrets:
+      SPARKLE_EDDSA_PRIVATE_KEY: ${{ secrets.SPARKLE_EDDSA_PRIVATE_KEY }}

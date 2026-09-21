@@ -1,0 +1,68 @@
+name: template-publish-macos-app
+
+on:
+  workflow_call:
+    inputs:
+      config-path:
+        description: Repository-owned app packaging JSON
+        type: string
+        default: .github/macos-app.json
+      release-tag:
+        description: Existing non-draft GitHub Release tag to build and publish
+        type: string
+        required: true
+      runner:
+        description: macOS build runner label
+        type: string
+        default: ''
+      publish-runner:
+        description: Release attachment runner label
+        type: string
+        default: ''
+    secrets:
+      SPARKLE_EDDSA_PRIVATE_KEY:
+        description: Optional private key used by a configured Sparkle appcast generator
+        required: false
+
+jobs:
+  package:
+    uses: jr200-labs/github-action-templates/.github/workflows/build_macos_app.yaml@master
+    with:
+      config-path: ${{ inputs.config-path }}
+      release-tag: ${{ inputs.release-tag }}
+      generate-appcast: true
+      runner: ${{ inputs.runner }}
+    secrets:
+      SPARKLE_EDDSA_PRIVATE_KEY: ${{ secrets.SPARKLE_EDDSA_PRIVATE_KEY }}
+
+  publish:
+    needs: package
+    runs-on: ${{ inputs.publish-runner || fromJSON(vars.RUNNER_PROFILES)[vars.RUNNER_PROFILE].default }}
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: ${{ needs.package.outputs.artifact }}
+          path: ${{ runner.temp }}/macos-release
+      - name: Verify transfer and attach release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ inputs.release-tag }}
+          ARTIFACT: ${{ needs.package.outputs.artifact }}
+          APPCAST: ${{ needs.package.outputs.appcast }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$ARTIFACT" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$ ]]
+          cd "$RUNNER_TEMP/macos-release"
+          shasum -a 256 -c "$ARTIFACT.zip.sha256"
+          assets=("$ARTIFACT.zip" "$ARTIFACT.zip.sha256")
+          if [[ -n "$APPCAST" ]]; then
+            [[ "$APPCAST" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,79}\.xml$ ]]
+            test -s "$APPCAST" && test ! -L "$APPCAST"
+            assets+=("$APPCAST")
+          fi
+          gh release upload "$RELEASE_TAG" "${assets[@]}"

@@ -5,23 +5,16 @@ name: macos-app
 on:
   pull_request:
   workflow_dispatch:
-  repository_dispatch:
-    types: [release-published]
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
-  group: macos-app-${{ github.event.pull_request.number || github.event.client_payload['release-tag'] || github.ref }}
+  group: macos-app-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: false
 
 jobs:
   app:
     uses: jr200-labs/github-action-templates/.github/workflows/build_macos_app.yaml@master
     with:
-      release-tag: ${{ github.event.client_payload['release-tag'] || '' }}
-      publish: ${{ github.event_name == 'repository_dispatch' }}
       runner: ${{ fromJSON(vars.RUNNER_PROFILES)[vars.RUNNER_PROFILE].macos }}
-      publish-runner: ${{ fromJSON(vars.RUNNER_PROFILES)[vars.RUNNER_PROFILE].default }}
-    secrets:
-      SPARKLE_EDDSA_PRIVATE_KEY: ${{ secrets.SPARKLE_EDDSA_PRIVATE_KEY }}
