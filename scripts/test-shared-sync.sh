@@ -277,6 +277,8 @@ YAML
     test -f cog.toml
     test -f release-please-config.json
     test "$(jq -r '.["separate-pull-requests"]' release-please-config.json)" = 'true'
+    test "$(jq -r 'has("draft")' release-please-config.json)" = 'false'
+    test "$(jq -r 'has("force-tag-creation")' release-please-config.json)" = 'false'
     test "$(jq -r '.["group-pull-request-title-pattern"]' release-please-config.json)" = 'chore${scope}: release${component} ${version}'
     test "$(jq -r '.["pull-request-title-pattern"]' release-please-config.json)" = 'chore${scope}: release${component} ${version}'
     test -f .syncpackrc.yaml

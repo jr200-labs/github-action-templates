@@ -8,7 +8,7 @@ on:
         type: string
         default: .github/macos-app.json
       release-tag:
-        description: Existing non-draft GitHub Release tag to build and publish
+        description: Existing draft GitHub Release tag to build, complete and publish
         type: string
         required: true
       runner:
@@ -57,6 +57,12 @@ jobs:
         run: |
           set -euo pipefail
           [[ "$ARTIFACT" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$ ]]
+          release_api="repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}"
+          release=$(gh api "$release_api")
+          if [ "$(jq -r '.draft' <<<"$release")" != "true" ]; then
+            echo "::error title=Unsafe release state::${RELEASE_TAG} must remain a draft until every macOS update asset is attached."
+            exit 1
+          fi
           cd "$RUNNER_TEMP/macos-release"
           shasum -a 256 -c "$ARTIFACT.zip.sha256"
           assets=("$ARTIFACT.zip" "$ARTIFACT.zip.sha256")
@@ -66,3 +72,13 @@ jobs:
             assets+=("$APPCAST")
           fi
           gh release upload "$RELEASE_TAG" "${assets[@]}"
+
+          expected=$(printf '%s\n' "${assets[@]}" | jq -Rsc 'split("\n") | map(select(length > 0)) | sort')
+          release=$(gh api "$release_api")
+          actual=$(jq -c '[.assets[] | select(.state == "uploaded") | .name] | sort' <<<"$release")
+          if [ "$actual" != "$expected" ]; then
+            echo "::error title=Incomplete release assets::${RELEASE_TAG} remains a draft because its uploaded assets do not exactly match the verified publication set."
+            exit 1
+          fi
+
+          gh release edit "$RELEASE_TAG" --draft=false --latest

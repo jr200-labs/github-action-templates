@@ -1,4 +1,5 @@
-# Check app packaging in CI and publish verified assets after Release Please creates a release.
+# Check app packaging in CI. Release Please creates a draft; the publisher
+# exposes it only after every verified update asset has been attached.
 includes:
   - macos-app
   - publish-macos-app
