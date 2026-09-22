@@ -126,6 +126,26 @@ ensure_pnpm_workspace_defaults() {
     fi
 }
 
+ensure_atomic_macos_release_config() {
+    local release_config="release-please-config.json"
+
+    [ -f "$CONFIG" ] || return 0
+    yq -e '.workflows[] == "macos-app"' "$CONFIG" >/dev/null 2>&1 || return 0
+    [ -f "$release_config" ] || {
+        warn "${release_config} missing — skipped macOS draft-release policy"
+        return 0
+    }
+
+    if yq -o=json '.draft = true | .["force-tag-creation"] = true' \
+        "$release_config" > "${release_config}.tmp" 2>/dev/null; then
+        mv "${release_config}.tmp" "$release_config"
+        echo "updated: ${release_config} macOS releases remain drafts until assets are complete"
+    else
+        rm -f "${release_config}.tmp"
+        warn "failed to apply macOS draft-release policy to ${release_config}"
+    fi
+}
+
 ensure_git_hooks_path() {
     if ! command -v git >/dev/null 2>&1; then
         warn "git not found — skipped core.hooksPath=.githooks"
@@ -241,6 +261,13 @@ for section in common $LANGS; do
         merge_entry "$src" "$loc" "$tgt" || true
     done < <(get_merged_entries "$section")
 done
+
+# GitHub exposes a normal release through /releases/latest before a separately
+# dispatched publisher can attach its assets. macOS app releases therefore stay
+# drafts until publish_macos_app verifies the complete asset set and publishes
+# them. force-tag-creation lets Release Please retain correct release history
+# while the GitHub Release is still a draft.
+ensure_atomic_macos_release_config
 
 # Refresh self for future syncs (best-effort)
 download_to "sync.sh" "${SHARED_DIR}/sync.sh" || true

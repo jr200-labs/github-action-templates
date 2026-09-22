@@ -84,6 +84,17 @@ if [ "$(jq -r '.["separate-pull-requests"] // false' "$config")" != "true" ]; th
   fail=1
 fi
 
+if [ -f ".github/macos-app.json" ]; then
+  if [ "$(jq -r '.draft // false' "$config")" != "true" ]; then
+    echo "::error file=${config}::macOS app releases must be created as drafts so incomplete update assets never become the latest release. Run './.shared/sync.sh' and commit the generated config."
+    fail=1
+  fi
+  if [ "$(jq -r '.["force-tag-creation"] // false' "$config")" != "true" ]; then
+    echo "::error file=${config}::macOS draft releases must force tag creation so Release Please retains correct release history. Run './.shared/sync.sh' and commit the generated config."
+    fail=1
+  fi
+fi
+
 while IFS=$'\t' read -r pkg_dir release_type; do
   pkg_label="$pkg_dir"
   [ "$pkg_dir" = "." ] && pkg_label="<root>"
