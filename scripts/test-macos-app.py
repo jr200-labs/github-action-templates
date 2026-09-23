@@ -100,6 +100,7 @@ class PackagingTest(unittest.TestCase):
     def test_group_sync_and_drift(self):
         Path(".github").mkdir()
         Path(".github/.shared-config.yaml").write_text("ref: shared-v0.1.0\nworkflows:\n  - macos-app\n")
+        Path("release-please-config.json").write_bytes((ROOT / "shared/release-please-config.base.json").read_bytes())
         env = dict(os.environ, STRICT="1", SYNC_BASE_URL=(ROOT / "consumers").as_uri())
         sync = ["bash", str(ROOT / "consumers/scripts/sync-shared")]
         subprocess.run(sync, check=True, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -115,13 +116,16 @@ class PackagingTest(unittest.TestCase):
             ["yq", "-r", ".jobs.app.secrets.SPARKLE_EDDSA_PRIVATE_KEY", str(publisher)], text=True
         ).strip()
         self.assertEqual(publisher_secret, "${{ secrets.SPARKLE_EDDSA_PRIVATE_KEY }}")
-        subprocess.run(sync + ["--check"], check=True, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        shared_env = dict(os.environ, SYNC_BASE_URL=(ROOT / "shared").as_uri())
-        subprocess.run(["bash", str(ROOT / "shared/sync.sh"), "python"], check=True,
-                       env=shared_env, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         release_config = json.loads(Path("release-please-config.json").read_text())
         self.assertIs(release_config["draft"], True)
         self.assertIs(release_config["force-tag-creation"], True)
+        subprocess.run(sync + ["--check"], check=True, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        release_config.pop("draft")
+        Path("release-please-config.json").write_text(json.dumps(release_config))
+        drift = subprocess.run(sync + ["--check"], env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        self.assertNotEqual(drift.returncode, 0)
+        self.assertIn("must set draft and force-tag-creation", drift.stdout)
+        subprocess.run(sync, check=True, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         Path(".shared/package-macos-app.py").write_text("drift")
         self.assertNotEqual(subprocess.run(sync + ["--check"], env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE).returncode, 0)
 

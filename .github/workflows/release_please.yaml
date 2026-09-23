@@ -109,6 +109,17 @@ jobs:
           chmod +x .shared/sync.sh
           .shared/sync.sh
 
+      - name: Verify generated release config is committed
+        shell: bash
+        run: |
+          set -euo pipefail
+          config="${{ inputs.config-file }}"
+          if [ -n "$(git status --porcelain -- "${config}")" ]; then
+            echo "::error file=${config}::Shared synchronization changed the release configuration. Run ./scripts/sync-shared and commit the generated result before releasing."
+            git diff -- "${config}" || true
+            exit 1
+          fi
+
       - name: Validate release-please-config.json
         # Fail fast on common misconfigurations — release-please defaults
         # release-type to `node` when omitted, which silently breaks

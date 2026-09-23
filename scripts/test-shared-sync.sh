@@ -20,6 +20,9 @@ if grep -Fq 'github-action-templates/master/shared/lint-release-please-config.sh
     exit 1
 fi
 
+grep -Fq 'Verify generated release config is committed' "$ROOT/.github/workflows/release_please.yaml"
+grep -Fq 'git status --porcelain' "$ROOT/.github/workflows/release_please.yaml"
+
 invalid_release_config="$TMPDIR/invalid-release-please-config.json"
 jq '
   .["release-type"] = "go"

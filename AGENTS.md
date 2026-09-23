@@ -14,6 +14,11 @@ Reusable GitHub Actions workflows + canonical caller workflows for jr200-labs / 
 2. Run `./scripts/sync-shared` (or first-run `--bootstrap`) — fetches the canonical caller workflows for each declared group and writes them to `.github/workflows/`.
 3. Commit. The `drift-check` workflow runs on every PR thereafter and fails CI if the on-disk files diverge from the canonical.
 
+Normal syncs also refresh the two `scripts/sync-shared*` entrypoints from the
+pinned ref and re-execute the refreshed implementation before applying changes.
+Check mode verifies those entrypoints, so a ref bump cannot pass with migration
+logic from the previous shared version.
+
 ```yaml
 # .github/.shared-config.yaml
 ref: shared-v0.1.0
@@ -272,3 +277,7 @@ Rules:
 - Do not hand-edit `release-please-config.json` in a consumer repo; update `.release-please.local.json` and re-run `./.shared/sync.sh`
 - Commit both `.release-please.local.json` and the refreshed `release-please-config.json`
 - Release-related CI should run `sync.sh` before linting so the checked-in merged config stays aligned with the committed overlay
+- `sync-shared --check` also enforces group-owned release invariants, including
+  draft and forced-tag creation for `macos-app` consumers
+- The release workflow refuses to invoke Release Please if runtime synchronization
+  changes the committed release config; generated drift must be repaired in a PR
