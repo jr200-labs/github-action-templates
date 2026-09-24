@@ -271,6 +271,8 @@ printf '[[{"id":123,"tag_name":"v1.2.3","draft":true,"upload_url":"https://uploa
         publish_jobs = json.loads(subprocess.check_output(["yq", "-o=json", ".jobs", str(publish)], text=True))
         self.assertEqual(list(build_jobs), ["package"])
         self.assertEqual(list(publish_jobs), ["resolve", "package", "publish"])
+        self.assertEqual(publish_jobs["resolve"]["permissions"], {"contents": "write"})
+        self.assertEqual(publish_jobs["publish"]["permissions"], {"contents": "write"})
         publish_text = publish.read_text()
         self.assertNotIn("/releases/tags/", publish_text)
         self.assertNotIn("gh release ", publish_text)
