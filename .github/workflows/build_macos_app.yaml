@@ -43,8 +43,11 @@ jobs:
   package:
     runs-on: ${{ inputs.runner || fromJSON(vars.RUNNER_PROFILES)[vars.RUNNER_PROFILE].macos }}
     timeout-minutes: 30
+    # Release builds verify an unpublished draft by immutable ID. The caller
+    # limits ordinary CI invocations to contents:read, while the release caller
+    # grants the contents:write access GitHub requires to expose drafts.
     permissions:
-      contents: read
+      contents: write
     outputs:
       artifact: ${{ steps.config.outputs.artifact }}
       appcast: ${{ steps.config.outputs.appcast }}
