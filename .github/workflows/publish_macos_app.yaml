@@ -11,6 +11,10 @@ on:
         description: Existing draft GitHub Release tag to build, complete and publish
         type: string
         required: true
+      release-id:
+        description: Immutable ID of the draft GitHub Release
+        type: string
+        default: ''
       runner:
         description: macOS build runner label
         type: string
@@ -25,18 +29,64 @@ on:
         required: false
 
 jobs:
+  resolve:
+    runs-on: ${{ inputs.publish-runner || fromJSON(vars.RUNNER_PROFILES)[vars.RUNNER_PROFILE].default }}
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      release-id: ${{ steps.release.outputs.release-id }}
+    steps:
+      - name: Resolve immutable draft release identity
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ inputs.release-tag }}
+          RELEASE_ID: ${{ inputs.release-id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -n "$RELEASE_ID" ]]; then
+            [[ "$RELEASE_ID" =~ ^[1-9][0-9]*$ ]]
+            release=$(gh api "repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}")
+          else
+            releases=$(gh api --paginate --slurp "repos/${GITHUB_REPOSITORY}/releases?per_page=100")
+            matches=$(jq -c --arg tag "$RELEASE_TAG" '[.[][] | select(.tag_name == $tag)]' <<<"$releases")
+            if [ "$(jq 'length' <<<"$matches")" -ne 1 ]; then
+              echo "::error title=Ambiguous release identity::Expected exactly one release named ${RELEASE_TAG}."
+              exit 1
+            fi
+            release=$(jq -c '.[0]' <<<"$matches")
+            RELEASE_ID=$(jq -r '.id' <<<"$release")
+          fi
+          if ! jq -e --arg tag "$RELEASE_TAG" --argjson id "$RELEASE_ID" \
+              '.id == $id and .tag_name == $tag and .draft == true' <<<"$release" >/dev/null; then
+            echo "::error title=Unsafe release state::${RELEASE_TAG} must be the expected draft release."
+            exit 1
+          fi
+          upload_url=$(jq -r '.upload_url | sub("\\{.*$"; "")' <<<"$release")
+          expected_upload_url="https://uploads.github.com/repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}/assets"
+          if [ "$upload_url" != "$expected_upload_url" ]; then
+            echo "::error title=Unsafe upload endpoint::The draft release returned an unexpected asset upload URL."
+            exit 1
+          fi
+          echo "release-id=${RELEASE_ID}" >> "$GITHUB_OUTPUT"
+
   package:
+    needs: resolve
     uses: jr200-labs/github-action-templates/.github/workflows/build_macos_app.yaml@master
     with:
       config-path: ${{ inputs.config-path }}
       release-tag: ${{ inputs.release-tag }}
+      release-id: ${{ needs.resolve.outputs.release-id }}
       generate-appcast: true
       runner: ${{ inputs.runner }}
     secrets:
       SPARKLE_EDDSA_PRIVATE_KEY: ${{ secrets.SPARKLE_EDDSA_PRIVATE_KEY }}
 
   publish:
-    needs: package
+    needs: [resolve, package]
     runs-on: ${{ inputs.publish-runner || fromJSON(vars.RUNNER_PROFILES)[vars.RUNNER_PROFILE].default }}
     timeout-minutes: 5
     permissions:
@@ -51,16 +101,25 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           RELEASE_TAG: ${{ inputs.release-tag }}
+          RELEASE_ID: ${{ needs.resolve.outputs.release-id }}
           ARTIFACT: ${{ needs.package.outputs.artifact }}
           APPCAST: ${{ needs.package.outputs.appcast }}
         shell: bash
         run: |
           set -euo pipefail
           [[ "$ARTIFACT" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$ ]]
-          release_api="repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}"
+          [[ "$RELEASE_ID" =~ ^[1-9][0-9]*$ ]]
+          release_api="repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}"
           release=$(gh api "$release_api")
-          if [ "$(jq -r '.draft' <<<"$release")" != "true" ]; then
+          if ! jq -e --arg tag "$RELEASE_TAG" --argjson id "$RELEASE_ID" \
+              '.id == $id and .tag_name == $tag and .draft == true' <<<"$release" >/dev/null; then
             echo "::error title=Unsafe release state::${RELEASE_TAG} must remain a draft until every macOS update asset is attached."
+            exit 1
+          fi
+          upload_url=$(jq -r '.upload_url | sub("\\{.*$"; "")' <<<"$release")
+          expected_upload_url="https://uploads.github.com/repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}/assets"
+          if [ "$upload_url" != "$expected_upload_url" ]; then
+            echo "::error title=Unsafe upload endpoint::The draft release returned an unexpected asset upload URL."
             exit 1
           fi
           cd "$RUNNER_TEMP/macos-release"
@@ -71,14 +130,52 @@ jobs:
             test -s "$APPCAST" && test ! -L "$APPCAST"
             assets+=("$APPCAST")
           fi
-          gh release upload "$RELEASE_TAG" "${assets[@]}"
-
           expected=$(printf '%s\n' "${assets[@]}" | jq -Rsc 'split("\n") | map(select(length > 0)) | sort')
+
+          actual=$(jq -c '[.assets[].name] | sort' <<<"$release")
+          unexpected=$(jq -cn --argjson actual "$actual" --argjson expected "$expected" '$actual - $expected')
+          if [ "$(jq 'length' <<<"$unexpected")" -ne 0 ]; then
+            echo "::error title=Unexpected release assets::${RELEASE_TAG} contains assets outside the verified publication set: ${unexpected}"
+            exit 1
+          fi
+          for asset in "${assets[@]}"; do
+            release=$(gh api "$release_api")
+            matches=$(jq -c --arg name "$asset" '[.assets[] | select(.name == $name)]' <<<"$release")
+            count=$(jq 'length' <<<"$matches")
+            digest="sha256:$(shasum -a 256 "$asset" | awk '{print $1}')"
+            if [ "$count" -eq 1 ]; then
+              if jq -e --arg digest "$digest" '.[0].state == "uploaded" and .[0].digest == $digest' \
+                  <<<"$matches" >/dev/null; then
+                continue
+              fi
+              echo "::error title=Conflicting release asset::${asset} already exists but does not match the verified local file."
+              exit 1
+            elif [ "$count" -ne 0 ]; then
+              echo "::error title=Duplicate release asset::${asset} appears more than once on the draft release."
+              exit 1
+            fi
+            encoded_name=$(jq -rn --arg value "$asset" '$value | @uri')
+            curl --fail-with-body --location --request POST \
+              --header 'Accept: application/vnd.github+json' \
+              --header "Authorization: Bearer ${GH_TOKEN}" \
+              --header 'Content-Type: application/octet-stream' \
+              --data-binary "@${asset}" "${upload_url}?name=${encoded_name}" >/dev/null
+          done
+
           release=$(gh api "$release_api")
           actual=$(jq -c '[.assets[] | select(.state == "uploaded") | .name] | sort' <<<"$release")
-          if [ "$actual" != "$expected" ]; then
+          valid_digests=true
+          for asset in "${assets[@]}"; do
+            digest="sha256:$(shasum -a 256 "$asset" | awk '{print $1}')"
+            if ! jq -e --arg name "$asset" --arg digest "$digest" \
+                '[.assets[] | select(.name == $name and .state == "uploaded" and .digest == $digest)] | length == 1' \
+                <<<"$release" >/dev/null; then
+              valid_digests=false
+            fi
+          done
+          if [ "$actual" != "$expected" ] || [ "$valid_digests" != true ]; then
             echo "::error title=Incomplete release assets::${RELEASE_TAG} remains a draft because its uploaded assets do not exactly match the verified publication set."
             exit 1
           fi
 
-          gh release edit "$RELEASE_TAG" --draft=false --latest
+          gh api --method PATCH "$release_api" -F draft=false -f make_latest=true >/dev/null

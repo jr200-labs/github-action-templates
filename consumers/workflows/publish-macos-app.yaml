@@ -12,6 +12,10 @@ on:
         description: Existing GitHub Release tag to publish
         required: true
         type: string
+      release-id:
+        description: Immutable GitHub Release ID to publish (resolved from the tag when omitted)
+        required: false
+        type: string
 
 permissions:
   contents: write
@@ -25,6 +29,7 @@ jobs:
     uses: jr200-labs/github-action-templates/.github/workflows/publish_macos_app.yaml@master
     with:
       release-tag: ${{ github.event.client_payload['release-tag'] || github.event.inputs.release-tag }}
+      release-id: ${{ github.event.client_payload['release-id'] || github.event.inputs.release-id }}
       runner: ${{ fromJSON(vars.RUNNER_PROFILES)[vars.RUNNER_PROFILE].macos }}
       publish-runner: ${{ fromJSON(vars.RUNNER_PROFILES)[vars.RUNNER_PROFILE].default }}
     secrets:
