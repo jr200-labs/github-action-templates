@@ -63,16 +63,23 @@ done < <(grep -rlF \
   consumers/workflows)
 
 mint_line="$(grep -n 'name: Mint App installation token' "$workflow" | head -n1 | cut -d: -f1 || true)"
+readiness_line="$(grep -n 'name: Wait for App token repository access' "$workflow" | head -n1 | cut -d: -f1 || true)"
 checkout_line="$(grep -n 'name: Checkout$' "$workflow" | head -n1 | cut -d: -f1 || true)"
 checkout_token_line="$(grep -n 'token: \${{ steps.app-token.outputs.token }}' "$workflow" | head -n1 | cut -d: -f1 || true)"
 
-if [ -z "$mint_line" ] || [ -z "$checkout_line" ]; then
-  echo "lint-renovate-workflow-token: expected both app token mint and initial checkout steps" >&2
+if [ -z "$mint_line" ] || [ -z "$readiness_line" ] || [ -z "$checkout_line" ]; then
+  echo "lint-renovate-workflow-token: expected app token mint, repository readiness, and initial checkout steps" >&2
   exit 1
 fi
 
-if [ "$mint_line" -ge "$checkout_line" ]; then
-  echo "lint-renovate-workflow-token: app token must be minted before checkout so persisted git credentials can push workflow changes" >&2
+if [ "$mint_line" -ge "$readiness_line" ] || [ "$readiness_line" -ge "$checkout_line" ]; then
+  echo "lint-renovate-workflow-token: app token repository access must be ready before checkout" >&2
+  exit 1
+fi
+
+if ! grep -q 'git .*ls-remote.*--exit-code' "$workflow" ||
+   ! grep -q 'https://github.com/\${GITHUB_REPOSITORY}.git' "$workflow"; then
+  echo "lint-renovate-workflow-token: readiness step must verify Git access to the calling repository" >&2
   exit 1
 fi
 
