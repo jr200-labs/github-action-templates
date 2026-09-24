@@ -19,7 +19,11 @@ on:
         type: string
         default: ''
       release-tag:
-        description: Existing non-draft GitHub Release tag; its source is built exactly
+        description: Existing GitHub Release tag; its source is built exactly
+        type: string
+        default: ''
+      release-id:
+        description: Immutable GitHub Release ID required for draft release builds
         type: string
         default: ''
       generate-appcast:
@@ -51,12 +55,24 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           RELEASE_TAG: ${{ inputs.release-tag }}
+          RELEASE_ID: ${{ inputs.release-id }}
         shell: bash
         run: |
           set -euo pipefail
           [[ "$RELEASE_TAG" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]]
-          gh release view "$RELEASE_TAG" --json tagName,isDraft |
-            jq -e --arg tag "$RELEASE_TAG" '.tagName == $tag and .isDraft == false'
+          if [[ -n "$RELEASE_ID" ]]; then
+            [[ "$RELEASE_ID" =~ ^[1-9][0-9]*$ ]]
+            gh api "repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}" |
+              jq -e --arg tag "$RELEASE_TAG" --argjson id "$RELEASE_ID" \
+                '.id == $id and .tag_name == $tag and .draft == true'
+          else
+            if ${{ inputs.generate-appcast }}; then
+              echo "::error::Draft release builds require an immutable release ID."
+              exit 1
+            fi
+            gh release view "$RELEASE_TAG" --json tagName,isDraft |
+              jq -e --arg tag "$RELEASE_TAG" '.tagName == $tag and .isDraft == false'
+          fi
       - uses: actions/checkout@v7
         with:
           ref: ${{ inputs.release-tag != '' && format('refs/tags/{0}', inputs.release-tag) || inputs.checkout-ref }}

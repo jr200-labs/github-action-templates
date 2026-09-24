@@ -152,57 +152,102 @@ class PackagingTest(unittest.TestCase):
 set -eu
 printf '%s\\n' "$*" >> "$RUNNER_TEMP/gh-commands"
 if [ "$1" = "api" ]; then
-  if [ -f "$RUNNER_TEMP/uploaded" ]; then
-    printf '{"id":123,"draft":true,"assets":['
+  if [ "${2:-}" = "--method" ] && [ "${3:-}" = "PATCH" ]; then
+    :
+  else
+    printf '{"id":123,"tag_name":"v1.2.3","draft":true,"upload_url":"https://uploads.github.com/repos/example/app/releases/123/assets{?name,label}","assets":['
     separator=""
-    for asset in ${RETURNED_ASSETS:-$EXPECTED_ASSETS}; do
-      printf '%s{"name":"%s","state":"uploaded"}' "$separator" "$asset"
+    assets="${PREEXISTING_ASSETS:-}"
+    if [ -f "$RUNNER_TEMP/uploaded-assets" ]; then assets="$assets $(cat "$RUNNER_TEMP/uploaded-assets")"; fi
+    for asset in $assets; do
+      if [ "$asset" = "${OMIT_ASSET:-}" ]; then continue; fi
+      asset_path="$asset"
+      if [ ! -f "$asset_path" ]; then asset_path="$RUNNER_TEMP/macos-release/$asset"; fi
+      digest=$(shasum -a 256 "$asset_path" | awk '{print $1}')
+      printf '%s{"name":"%s","state":"uploaded","digest":"sha256:%s"}' "$separator" "$asset" "$digest"
       separator=,
     done
     printf ']}\\n'
-  else
-    printf '{"id":123,"draft":true,"assets":[]}\\n'
   fi
-elif [ "$1 $2" = "release upload" ]; then
-  touch "$RUNNER_TEMP/uploaded"
 fi
 ''')
         gh.chmod(0o755)
+        curl = Path("bin/curl")
+        curl.write_text('''#!/bin/sh
+set -eu
+printf '%s\\n' "$*" >> "$RUNNER_TEMP/curl-commands"
+for argument in "$@"; do
+  case "$argument" in
+    https://uploads.github.com/*?name=*) printf '%s\\n' "${argument##*=}" >> "$RUNNER_TEMP/uploaded-assets" ;;
+  esac
+done
+''')
+        curl.chmod(0o755)
         step = subprocess.check_output(["yq", "-r", ".jobs.publish.steps[-1].run",
                                         str(ROOT / ".github/workflows/publish_macos_app.yaml")], text=True)
         env = dict(os.environ, RUNNER_TEMP=str(Path.cwd()), GITHUB_REPOSITORY="example/app",
-                   ARTIFACT="example-macos", APPCAST="", RELEASE_TAG="v1.2.3",
+                   ARTIFACT="example-macos", APPCAST="", RELEASE_TAG="v1.2.3", RELEASE_ID="123",
+                   GH_TOKEN="test-token",
                    EXPECTED_ASSETS="example-macos.zip example-macos.zip.sha256",
                    PATH=str(Path("bin").resolve()) + os.pathsep + os.environ["PATH"])
         subprocess.run(["bash", "-c", step], check=True, env=env, stdout=subprocess.PIPE)
         self.assertEqual(Path("gh-commands").read_text().splitlines(), [
-            "api repos/example/app/releases/tags/v1.2.3",
-            "release upload v1.2.3 example-macos.zip example-macos.zip.sha256",
-            "api repos/example/app/releases/tags/v1.2.3",
-            "release edit v1.2.3 --draft=false --latest",
+            "api repos/example/app/releases/123",
+            "api repos/example/app/releases/123",
+            "api repos/example/app/releases/123",
+            "api repos/example/app/releases/123",
+            "api --method PATCH repos/example/app/releases/123 -F draft=false -f make_latest=true",
         ])
+        self.assertEqual(len(Path("curl-commands").read_text().splitlines()), 2)
         Path("macos-release/appcast.xml").write_text("<rss/>")
         Path("gh-commands").unlink()
-        Path("uploaded").unlink()
+        Path("curl-commands").unlink()
+        Path("uploaded-assets").unlink()
         sparkle_env = dict(env, APPCAST="appcast.xml",
                            EXPECTED_ASSETS="example-macos.zip example-macos.zip.sha256 appcast.xml")
         subprocess.run(["bash", "-c", step], check=True, env=sparkle_env, stdout=subprocess.PIPE)
-        self.assertIn("release upload v1.2.3 example-macos.zip example-macos.zip.sha256 appcast.xml",
-                      Path("gh-commands").read_text().splitlines())
+        self.assertTrue(any(command.endswith("assets?name=appcast.xml")
+                            for command in Path("curl-commands").read_text().splitlines()))
         Path("gh-commands").unlink()
-        Path("uploaded").unlink()
-        incomplete_env = dict(env, RETURNED_ASSETS="example-macos.zip")
+        Path("curl-commands").unlink()
+        Path("uploaded-assets").unlink()
+        retry_env = dict(env, PREEXISTING_ASSETS="example-macos.zip example-macos.zip.sha256")
+        subprocess.run(["bash", "-c", step], check=True, env=retry_env, stdout=subprocess.PIPE)
+        self.assertFalse(Path("curl-commands").exists())
+        Path("gh-commands").unlink()
+        incomplete_env = dict(env, OMIT_ASSET="example-macos.zip.sha256")
         incomplete = subprocess.run(["bash", "-c", step], env=incomplete_env,
                                     stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         self.assertNotEqual(incomplete.returncode, 0)
-        self.assertNotIn("release edit", Path("gh-commands").read_text())
+        self.assertNotIn("--method PATCH", Path("gh-commands").read_text())
         Path("gh-commands").unlink()
-        Path("uploaded").unlink()
+        Path("uploaded-assets").unlink()
         Path("macos-release/example-macos.zip").write_bytes(b"corrupt")
         result = subprocess.run(["bash", "-c", step], env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         self.assertNotEqual(result.returncode, 0)
         self.assertEqual(Path("gh-commands").read_text().splitlines(),
-                         ["api repos/example/app/releases/tags/v1.2.3"])
+                         ["api repos/example/app/releases/123"])
+
+    def test_publish_resolves_legacy_tag_input_to_one_draft_release_id(self):
+        Path("bin").mkdir()
+        gh = Path("bin/gh")
+        gh.write_text('''#!/bin/sh
+set -eu
+printf '%s\\n' "$*" >> "$RUNNER_TEMP/gh-commands"
+printf '[[{"id":123,"tag_name":"v1.2.3","draft":true,"upload_url":"https://uploads.github.com/repos/example/app/releases/123/assets{?name,label}"}]]\\n'
+''')
+        gh.chmod(0o755)
+        step = subprocess.check_output(
+            ["yq", "-r", ".jobs.resolve.steps[-1].run", str(ROOT / ".github/workflows/publish_macos_app.yaml")],
+            text=True,
+        )
+        env = dict(os.environ, RUNNER_TEMP=str(Path.cwd()), GITHUB_REPOSITORY="example/app",
+                   GITHUB_OUTPUT=str(Path("output").resolve()), RELEASE_TAG="v1.2.3", RELEASE_ID="",
+                   PATH=str(Path("bin").resolve()) + os.pathsep + os.environ["PATH"])
+        subprocess.run(["bash", "-c", step], check=True, env=env, stdout=subprocess.PIPE)
+        self.assertEqual(Path("output").read_text(), "release-id=123\n")
+        self.assertEqual(Path("gh-commands").read_text().strip(),
+                         "api --paginate --slurp repos/example/app/releases?per_page=100")
 
     def test_signing_secret_is_limited_to_release_appcast_step(self):
         workflow = ROOT / ".github/workflows/build_macos_app.yaml"
@@ -225,7 +270,10 @@ fi
         build_jobs = json.loads(subprocess.check_output(["yq", "-o=json", ".jobs", str(build)], text=True))
         publish_jobs = json.loads(subprocess.check_output(["yq", "-o=json", ".jobs", str(publish)], text=True))
         self.assertEqual(list(build_jobs), ["package"])
-        self.assertEqual(list(publish_jobs), ["package", "publish"])
+        self.assertEqual(list(publish_jobs), ["resolve", "package", "publish"])
+        publish_text = publish.read_text()
+        self.assertNotIn("/releases/tags/", publish_text)
+        self.assertNotIn("gh release ", publish_text)
 
 
 if __name__ == "__main__":

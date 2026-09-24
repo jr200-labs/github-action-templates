@@ -105,14 +105,17 @@ command must write the new nonempty XML file named by `appcast`. The canonical
 caller forwards the repository secret under that fixed name. Pull requests and
 manual build-only runs never receive the signing key or invoke the generator.
 
-The reusable workflow accepts config path, checkout ref, release tag, publish flag,
-and separate build/publish runner inputs. Canonical callers use configured runner
+The reusable workflow accepts config path, checkout ref, release tag, immutable
+GitHub release ID, publish flag, and separate build/publish runner inputs.
+Canonical callers use configured runner
 profiles. PR/manual runs build and upload artifacts only. For a `macos-app`
 consumer, shared config synchronization makes Release Please create a draft and
 force the tag. The `release-published` lane builds that exact tag, verifies its app
-version, attaches the ZIP, checksum, and configured signed appcast, verifies the
-complete uploaded asset set, and only then publishes the release. A failure leaves
-the release as an inspectable draft. Publishing never replaces existing assets.
+version, resolves and addresses the draft by immutable release ID, attaches the
+ZIP, checksum, and configured signed appcast, verifies the complete uploaded
+asset set and its SHA-256 digests, and only then publishes the release. A
+failure leaves the release as an inspectable draft. Publishing never replaces
+existing assets.
 The build job has read-only contents permission; only the publish job gets write.
 The script verifies signatures but does not provide signing identities, Developer
 ID signing or notarization. Repository scripts own signing policy and credentials.

@@ -8,8 +8,8 @@ first_paths="${FIRST_PATHS:-}"
 first_outputs="${FIRST_OUTPUTS:-}"
 retry_paths="${RETRY_PATHS:-}"
 retry_outputs="${RETRY_OUTPUTS:-}"
-before_tags="${BEFORE_TAGS:-}"
-after_tags="${AFTER_TAGS:-}"
+before_releases="${BEFORE_RELEASES:-}"
+after_releases="${AFTER_RELEASES:-}"
 release_sha="${RELEASE_SHA:-}"
 replay_tag="${REPLAY_TAG:-}"
 
@@ -17,8 +17,8 @@ replay_tag="${REPLAY_TAG:-}"
 [ -n "$first_outputs" ] || first_outputs='{}'
 [ -n "$retry_paths" ] || retry_paths='[]'
 [ -n "$retry_outputs" ] || retry_outputs='{}'
-[ -n "$before_tags" ] || before_tags='[]'
-[ -n "$after_tags" ] || after_tags='[]'
+[ -n "$before_releases" ] || before_releases='[]'
+[ -n "$after_releases" ] || after_releases='[]'
 
 jq -cn \
   --slurpfile config "$CONFIG_FILE" \
@@ -27,8 +27,8 @@ jq -cn \
   --argjson first_outputs "$first_outputs" \
   --argjson retry_paths "$retry_paths" \
   --argjson retry_outputs "$retry_outputs" \
-  --argjson before_tags "$before_tags" \
-  --argjson after_tags "$after_tags" \
+  --argjson before_releases "$before_releases" \
+  --argjson after_releases "$after_releases" \
   --arg release_sha "$release_sha" \
   --arg replay_tag "$replay_tag" '
     def configured($package; $name; $default):
@@ -71,7 +71,26 @@ jq -cn \
           }
       ];
 
-    ($after_tags - $before_tags | unique) as $new_tags
+    def valid_catalog:
+      type == "array" and all(.[ ];
+        (.id | type) == "number" and .id > 0
+        and (.tag_name | type) == "string" and (.tag_name | length) > 0
+        and (.draft | type) == "boolean");
+
+    def with_release_identity($release):
+      ([$after_releases[] | select(.tag_name == $release.tag_name)]) as $matches
+      | if ($matches | length) != 1 then
+          error("expected exactly one GitHub release for tag " + $release.tag_name)
+        else
+          $release + {release_id: $matches[0].id}
+        end;
+
+    if (($before_releases | valid_catalog) and ($after_releases | valid_catalog)) | not then
+      error("release catalogs must contain id, tag_name, and draft")
+    else . end
+    | ($before_releases | map(.id)) as $before_ids
+    | ([$after_releases[] | select(.id as $id | $before_ids | index($id) | not) | .tag_name] | unique) as $new_tags
+    | ($after_releases | map(.tag_name) | unique) as $after_tags
     | (if $replay_tag == "" then []
        elif $after_tags | index($replay_tag) then [$replay_tag]
        else error("requested replay tag is not a GitHub release: " + $replay_tag)
@@ -89,6 +108,7 @@ jq -cn \
         error("new GitHub release tag(s) do not match the release manifest: " + ($unmatched | join(", ")))
       else
         ($reported + $recovered
-          | unique_by(.tag_name))
+          | unique_by(.tag_name)
+          | map(with_release_identity(.)))
       end
   '
