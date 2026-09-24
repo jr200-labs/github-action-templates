@@ -150,6 +150,44 @@ jobs:
           permission-statuses: write
           permission-workflows: write
 
+      - name: Wait for App token repository access
+        if: steps.app-token.outputs.token != ''
+        shell: bash
+        env:
+          APP_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          set -euo pipefail
+          max_attempts=8
+          askpass="${RUNNER_TEMP}/renovate-app-token-askpass.sh"
+          trap 'rm -f "$askpass"' EXIT
+          cat > "$askpass" <<'EOF'
+          #!/usr/bin/env bash
+          case "$1" in
+            *Username*) printf '%s\n' x-access-token ;;
+            *) printf '%s\n' "$APP_TOKEN" ;;
+          esac
+          EOF
+          chmod 0700 "$askpass"
+          export GIT_ASKPASS="$askpass"
+          export GIT_TERMINAL_PROMPT=0
+          export GIT_CONFIG_GLOBAL=/dev/null
+          export GIT_CONFIG_NOSYSTEM=1
+
+          for attempt in $(seq 1 "$max_attempts"); do
+            if git -c credential.helper= ls-remote --exit-code \
+              "https://github.com/${GITHUB_REPOSITORY}.git" HEAD >/dev/null 2>&1; then
+              exit 0
+            fi
+
+            if [ "$attempt" -eq "$max_attempts" ]; then
+              echo "::error title=App token unavailable::The minted token cannot read ${GITHUB_REPOSITORY} through Git after ${max_attempts} attempts."
+              exit 1
+            fi
+
+            echo "App token Git access is not ready yet (attempt ${attempt}/${max_attempts}); retrying in 3s."
+            sleep 3
+          done
+
       - name: Checkout
         uses: actions/checkout@v7
         with:
