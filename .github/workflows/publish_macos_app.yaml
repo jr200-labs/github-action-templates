@@ -32,8 +32,10 @@ jobs:
   resolve:
     runs-on: ${{ inputs.publish-runner || fromJSON(vars.RUNNER_PROFILES)[vars.RUNNER_PROFILE].default }}
     timeout-minutes: 5
+    # GitHub does not expose draft releases to this workflow token with
+    # contents:read, even when the immutable release ID is already known.
     permissions:
-      contents: read
+      contents: write
     outputs:
       release-id: ${{ steps.release.outputs.release-id }}
     steps:
