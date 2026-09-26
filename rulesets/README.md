@@ -20,6 +20,7 @@ scripts/apply-rulesets.sh --dry-run   # show what would change
 scripts/apply-rulesets.sh --org jr200-labs --dry-run
 scripts/apply-rulesets.sh --repo jr200-labs/example-repository --ruleset trunk-protect
 scripts/apply-rulesets.sh --targets-file ../consumer/ruleset-targets.yaml --org example-org
+scripts/apply-rulesets.sh --targets-file ../consumer/ruleset-targets.yaml --rulesets-dir ../consumer/rulesets --org example-org
 ```
 
 Requires `gh`, `jq`, `yq` and a `gh auth login` with admin on every targeted org. `gh` token plan must support requested scope — org-level rulesets need GitHub Team; free orgs fall back to per-repo. Private repositories on plans without branch protection/rulesets support will fail with GitHub's "Upgrade to GitHub Pro or make this repository public" error until the repo is public or the org has a paid plan.
@@ -27,7 +28,10 @@ Requires `gh`, `jq`, `yq` and a `gh auth login` with admin on every targeted org
 The generated drift workflow reads its target map from
 `.github/ruleset-targets.yaml` in the consumer repository. Set the
 `RULESET_TARGETS_FILE` repository or organization variable to use another
-path. An optional `.github/ruleset-automerge.json` supplies consumer-owned App
+path. If `.github/rulesets/` exists beside that target map, its JSON bodies
+replace the shared defaults. This lets an organization keep its exact policy
+in its own IaC repository. `--rulesets-dir` selects another directory.
+An optional `.github/ruleset-automerge.json` supplies consumer-owned App
 identities and path policy; override its path with
 `RULESET_AUTOMERGE_CONFIG_FILE`.
 
@@ -38,6 +42,8 @@ identities and path policy; override its path with
 - `required_linear_history`: aligns with squash-only merge policy.
 - `non_fast_forward`: blocks force-push.
 - `deletion`: blocks branch deletion.
+- Required checks do not apply to the commit that creates a branch, allowing
+  an empty repository to receive its initial commit before CI exists.
 - `bypass_actors: []` — no admin override.
 
 Adjacent repo settings are also reconciled on every targeted repo:

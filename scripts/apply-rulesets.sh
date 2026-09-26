@@ -19,6 +19,7 @@
 # Usage:
 #   scripts/apply-rulesets.sh [--dry-run] [--org ORG] [--repo ORG/REPO]
 #                             [--ruleset NAME] [--targets-file PATH]
+#                             [--rulesets-dir PATH]
 #                             [--automerge-config PATH] [--skip-auto-merge]
 #
 # Requires: gh, jq, yq. Env: gh authenticated as a token with admin on the
@@ -37,6 +38,7 @@ declare -a REPO_FILTERS=()
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 TARGETS="$REPO_ROOT/rulesets/targets.yaml"
 RULESETS_DIR="$REPO_ROOT/rulesets"
+RULESETS_DIR_EXPLICIT=0
 SHARED_REF_AUTOMERGE_CONFIG="$RULESETS_DIR/shared-workflow-ref-automerge.json"
 
 usage() {
@@ -53,6 +55,9 @@ Options:
   --repo <org/repo>    Limit repo-scope reconciliation to one or more repos.
                        Repeat flag to target multiple repos.
   --targets-file <p>   Read ruleset targets from this YAML file.
+  --rulesets-dir <p>   Read canonical ruleset JSON files from this directory.
+                       When omitted, a sibling rulesets/ directory beside an
+                       external targets file is preferred when present.
   --automerge-config <p>
                        Read shared-ref auto-merge policy from this JSON file.
   --skip-auto-merge    Skip PATCH allow_auto_merge enforcement and shared
@@ -143,6 +148,8 @@ while [ $# -gt 0 ]; do
         --repo=*)    REPO_FILTERS+=("${1#--repo=}") ;;
         --targets-file) shift; TARGETS="$1" ;;
         --targets-file=*) TARGETS="${1#--targets-file=}" ;;
+        --rulesets-dir) shift; RULESETS_DIR="$1"; RULESETS_DIR_EXPLICIT=1 ;;
+        --rulesets-dir=*) RULESETS_DIR="${1#--rulesets-dir=}"; RULESETS_DIR_EXPLICIT=1 ;;
         --automerge-config) shift; SHARED_REF_AUTOMERGE_CONFIG="$1" ;;
         --automerge-config=*) SHARED_REF_AUTOMERGE_CONFIG="${1#--automerge-config=}" ;;
         --skip-auto-merge) SKIP_AUTO_MERGE=1 ;;
@@ -151,6 +158,13 @@ while [ $# -gt 0 ]; do
     esac
     shift
 done
+
+if [ "$RULESETS_DIR_EXPLICIT" = 0 ]; then
+    consumer_rulesets_dir="$(dirname "$TARGETS")/rulesets"
+    if [ -d "$consumer_rulesets_dir" ]; then
+        RULESETS_DIR="$consumer_rulesets_dir"
+    fi
+fi
 
 for cmd in gh jq yq; do
     command -v "$cmd" >/dev/null 2>&1 || { echo "missing: $cmd" >&2; exit 1; }
