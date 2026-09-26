@@ -290,6 +290,20 @@ esac
 GH
 chmod +x "$bin/gh"
 
+mkdir -p "$tmp/consumer/rulesets"
+cp "$tmp/targets.yaml" "$tmp/consumer/targets.yaml"
+if PATH="$bin:$PATH" "$root/scripts/apply-rulesets.sh" \
+    --targets-file "$tmp/consumer/targets.yaml" \
+    --automerge-config "$tmp/automerge.json" \
+    --org example-enterprise \
+    --repo example-enterprise/private-repo \
+    --ruleset trunk-protect >"$tmp/consumer.out" 2>"$tmp/consumer.err"; then
+  echo "expected consumer rulesets directory without a body to fail" >&2
+  exit 1
+fi
+grep -F "missing body file: $tmp/consumer/rulesets/trunk-protect.json" "$tmp/consumer.err" >/dev/null \
+  || { cat "$tmp/consumer.err" >&2; exit 1; }
+
 PATH="$bin:$PATH" \
 TEST_RULESET_BODY="$root/rulesets/trunk-protect.json" \
 TEST_CAPTURE_DIR="$capture" \
