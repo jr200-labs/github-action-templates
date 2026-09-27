@@ -53,7 +53,7 @@ jobs:
       - name: Ensure Metal toolchain
         shell: bash
         env:
-          SCOTTY_COMPONENT_REQUEST_KEY: github-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}
+          SCOTTY_TOOLCHAIN_REQUEST_KEY: github-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}
         run: |
           set -euo pipefail
           if xcrun metal --version >/dev/null 2>&1; then
@@ -64,10 +64,10 @@ jobs:
             scotty_cli="$HOME/Applications/Scotty.app/Contents/MacOS/scotty"
           fi
           if [ -x "$scotty_cli" ] && "$scotty_cli" status | python3 -c \
-            'import json,sys; raise SystemExit("xcode-components" not in json.load(sys.stdin).get("capabilities", []))'; then
-            "$scotty_cli" ensure-xcode-component \
-              --component metal-toolchain \
-              --request-key "$SCOTTY_COMPONENT_REQUEST_KEY" \
+            'import json,sys; raise SystemExit("toolchain-catalog" not in json.load(sys.stdin).get("capabilities", []))'; then
+            "$scotty_cli" ensure-toolchain \
+              --toolchain metal-toolchain \
+              --request-key "$SCOTTY_TOOLCHAIN_REQUEST_KEY" \
               --wait
           else
             xcodebuild -downloadComponent MetalToolchain
