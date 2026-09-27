@@ -106,17 +106,18 @@ caller forwards the repository secret under that fixed name. Pull requests and
 manual build-only runs never receive the signing key or invoke the generator.
 
 The reusable workflow accepts config path, checkout ref, release tag, immutable
-GitHub release ID, publish flag, and separate build/publish runner inputs.
-Canonical callers use configured runner
-profiles. PR/manual runs build and upload artifacts only. For a `macos-app`
+GitHub release ID, publish flag, and a macOS runner input. Canonical callers use
+configured runner profiles. PR/manual runs build and upload artifacts only. For a `macos-app`
 consumer, shared config synchronization makes Release Please create a draft and
 force the tag. The `release-published` lane builds that exact tag, verifies its app
 version, resolves and addresses the draft by immutable release ID, attaches the
 ZIP, checksum, and configured signed appcast, verifies the complete uploaded
 asset set and its SHA-256 digests, and only then publishes the release. A
 failure leaves the release as an inspectable draft. Publishing never replaces
-existing assets.
-The build job has read-only contents permission; only the publish job gets write.
+existing assets. Release packaging and publication stay in one native job so the
+archive is uploaded directly from its build workspace instead of crossing the
+workflow artifact service. The PR caller limits contents permission to read; the
+release caller grants the same reusable job write permission.
 The script verifies signatures but does not provide signing identities, Developer
 ID signing or notarization. Repository scripts own signing policy and credentials.
 
