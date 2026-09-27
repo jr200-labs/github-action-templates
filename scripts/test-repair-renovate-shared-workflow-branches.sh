@@ -83,7 +83,7 @@ git push origin renovate/generated-workflow-only >/dev/null 2>&1
 git checkout master >/dev/null
 
 shared_root="$tmp/shared-root"
-mkdir -p "$shared_root/shared-vnext/consumers/scripts"
+mkdir -p "$shared_root/shared-vnext/consumers/scripts" "$shared_root/shared-vnext/shared"
 cat > "$shared_root/shared-vnext/consumers/scripts/sync-shared" <<'SYNC'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -112,6 +112,13 @@ jq 'del(.scripts.prepare | select(. == "husky"))
 mv package.json.tmp package.json
 SYNC
 chmod +x "$shared_root/shared-vnext/consumers/scripts/sync-shared"
+
+cat > "$shared_root/shared-vnext/shared/sync.sh" <<'SYNC'
+#!/usr/bin/env bash
+set -euo pipefail
+jq -n '{"separate-pull-requests": true, "packages": {".": {}}}' > release-please-config.json
+SYNC
+chmod +x "$shared_root/shared-vnext/shared/sync.sh"
 
 fake_bin="$tmp/fake-bin"
 mkdir -p "$fake_bin"
@@ -206,13 +213,17 @@ fi
 
 git fetch origin renovate/shared-workflow-ref >/dev/null 2>&1
 shared_files="$(git diff --name-only origin/master...origin/renovate/shared-workflow-ref)"
-for expected in .github/.shared-config.yaml .githooks/commit-msg package.json pnpm-lock.yaml scripts/github-package-access-wizard scripts/sync-shared; do
+for expected in .github/.shared-config.yaml .githooks/commit-msg package.json pnpm-lock.yaml release-please-config.json scripts/github-package-access-wizard scripts/sync-shared; do
   if ! grep -qx "$expected" <<<"$shared_files"; then
     echo "expected shared workflow ref repair to include $expected" >&2
     echo "$shared_files" >&2
     exit 1
   fi
 done
+if [ "$(git show origin/renovate/shared-workflow-ref:release-please-config.json | jq -r '."separate-pull-requests"')" != true ]; then
+  echo "expected shared workflow ref repair to regenerate release-please-config.json" >&2
+  exit 1
+fi
 for removed in commitlint.config.mjs .shared/commitlint.config.mjs .husky/commit-msg; do
   if git cat-file -e "origin/renovate/shared-workflow-ref:${removed}" 2>/dev/null; then
     echo "expected shared workflow ref repair to remove $removed" >&2

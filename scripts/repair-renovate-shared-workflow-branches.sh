@@ -50,6 +50,22 @@ refresh_sync_shared() {
   fi
 }
 
+refresh_shared_config_sync() {
+  local ref
+  ref="$(shared_config_ref)"
+  [ -n "$ref" ] || return 0
+
+  mkdir -p .shared
+  if curl -sfL --max-time 10 "${repair_root_url}/${ref}/shared/sync.sh" -o .shared/sync.sh.tmp; then
+    mv .shared/sync.sh.tmp .shared/sync.sh
+    chmod +x .shared/sync.sh
+    echo "repair-renovate-shared-workflow: refreshed .shared/sync.sh from ${ref}" >&2
+  else
+    rm -f .shared/sync.sh.tmp
+    echo "repair-renovate-shared-workflow: failed to refresh .shared/sync.sh from ${ref}; using branch copy" >&2
+  fi
+}
+
 stage_path_if_present() {
   local path="$1"
   if [ -e "$path" ] || git ls-files --error-unmatch "$path" >/dev/null 2>&1; then
@@ -85,6 +101,10 @@ while IFS= read -r remote_ref; do
   before_tree="$(git rev-parse HEAD^{tree})"
   refresh_sync_shared
   ./scripts/sync-shared
+  refresh_shared_config_sync
+  if [ -x .shared/sync.sh ]; then
+    ./.shared/sync.sh
+  fi
 
   if [ -f package.json ] && [ -f pnpm-lock.yaml ] && ! git diff --quiet -- package.json; then
     pnpm install --lockfile-only
@@ -92,10 +112,16 @@ while IFS= read -r remote_ref; do
 
   stage_path_if_present .github/.shared-config.yaml
   stage_path_if_present .github/workflows
+  stage_path_if_present .gitignore
   stage_path_if_present .githooks
+  stage_path_if_present .pre-commit-config.yaml
+  stage_path_if_present .release-please.local.json
+  stage_path_if_present .syncpackrc.yaml
   stage_path_if_present cog.toml
   stage_path_if_present package.json
   stage_path_if_present pnpm-lock.yaml
+  stage_path_if_present pnpm-workspace.yaml
+  stage_path_if_present release-please-config.json
   stage_path_if_present scripts/sync-shared
   stage_path_if_present scripts/sync-shared-drift-check
   while IFS= read -r managed_file; do
