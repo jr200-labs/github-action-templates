@@ -148,7 +148,14 @@ warning.** The App token mint step silently falls back to `GITHUB_TOKEN`.
 `@v44`, `@v46` don't exist — there's no floating major tag. Pin to a
 specific patch version like `@v46.1.8`. Renovate itself can be bumped
 independently via the action's `renovate-version` input (currently
-defaults to `43`).
+defaults to `43.275.0`).
+
+The action also treats any colon in `renovate-image` as proof that the image
+already contains a tag. That includes the colon in a registry port such as
+`registry.example:5000/renovate`, so passing that image separately from
+`renovate-version` silently drops the requested version and runs `:latest`.
+The shared Renovate workflow therefore passes a complete
+`registry/image:version` value through `renovate-image` for both passes.
 
 ---
 
