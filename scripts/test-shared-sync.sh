@@ -102,6 +102,8 @@ make_consumer_repo "$consumer_repo"
     test -f .github/workflows/sync-shared-drift.yaml
     ! yq -e '.on.workflow_run' .github/workflows/sync-shared-drift.yaml >/dev/null 2>&1
     ! yq -e '.jobs."sync-shared-drift".if' .github/workflows/sync-shared-drift.yaml >/dev/null 2>&1
+    grep -q "\.allow_auto_merge" .github/workflows/sync-shared-drift.yaml
+    grep -q "repository auto-merge is disabled" .github/workflows/sync-shared-drift.yaml
     test -f .github/workflows/ci.yaml
     ! yq -e '.jobs.commitlint' .github/workflows/ci.yaml >/dev/null 2>&1
     ! yq -e '.jobs."lint-pr-metadata"' .github/workflows/ci.yaml >/dev/null 2>&1
