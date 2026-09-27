@@ -69,7 +69,10 @@ refresh_shared_config_sync() {
 stage_path_if_present() {
   local path="$1"
   if [ -e "$path" ] || git ls-files --error-unmatch "$path" >/dev/null 2>&1; then
-    git add -A -- "$path"
+    # Every caller supplies an explicitly managed path. Some consumers ignore
+    # their generated .shared directory, so repairs must override repository
+    # ignore rules when staging those canonical files.
+    git add -f -A -- "$path"
   fi
 }
 
