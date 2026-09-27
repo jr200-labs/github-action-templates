@@ -183,8 +183,11 @@ for argument in "$@"; do
 done
 ''')
         curl.chmod(0o755)
-        step = subprocess.check_output(["yq", "-r", ".jobs.publish.steps[-1].run",
-                                        str(ROOT / ".github/workflows/publish_macos_app.yaml")], text=True)
+        step = subprocess.check_output(
+            ["yq", "-r", '.jobs.package.steps[] | select(.name == "Verify and attach release assets") | .run',
+             str(ROOT / ".github/workflows/build_macos_app.yaml")],
+            text=True,
+        )
         env = dict(os.environ, RUNNER_TEMP=str(Path.cwd()), GITHUB_REPOSITORY="example/app",
                    ARTIFACT="example-macos", APPCAST="", RELEASE_TAG="v1.2.3", RELEASE_ID="123",
                    GH_TOKEN="test-token",
@@ -238,7 +241,8 @@ printf '[[{"id":123,"tag_name":"v1.2.3","draft":true,"upload_url":"https://uploa
 ''')
         gh.chmod(0o755)
         step = subprocess.check_output(
-            ["yq", "-r", ".jobs.resolve.steps[-1].run", str(ROOT / ".github/workflows/publish_macos_app.yaml")],
+            ["yq", "-r", '.jobs.package.steps[] | select(.name == "Resolve immutable draft release identity") | .run',
+             str(ROOT / ".github/workflows/build_macos_app.yaml")],
             text=True,
         )
         env = dict(os.environ, RUNNER_TEMP=str(Path.cwd()), GITHUB_REPOSITORY="example/app",
@@ -264,17 +268,36 @@ printf '[[{"id":123,"tag_name":"v1.2.3","draft":true,"upload_url":"https://uploa
         )
         self.assertNotIn("SPARKLE_EDDSA_PRIVATE_KEY", build_step)
 
-    def test_ci_and_release_workflows_are_separate(self):
+    def test_release_reuses_the_build_job_without_artifact_transfer(self):
         build = ROOT / ".github/workflows/build_macos_app.yaml"
         publish = ROOT / ".github/workflows/publish_macos_app.yaml"
+        ci_caller = ROOT / "consumers/workflows/macos-app.yaml"
+        release_caller = ROOT / "consumers/workflows/publish-macos-app.yaml"
         build_jobs = json.loads(subprocess.check_output(["yq", "-o=json", ".jobs", str(build)], text=True))
         publish_jobs = json.loads(subprocess.check_output(["yq", "-o=json", ".jobs", str(publish)], text=True))
         self.assertEqual(list(build_jobs), ["package"])
-        self.assertEqual(list(publish_jobs), ["resolve", "package", "publish"])
-        self.assertEqual(build_jobs["package"]["permissions"], {"contents": "read"})
-        self.assertEqual(publish_jobs["resolve"]["permissions"], {"contents": "write"})
-        self.assertEqual(publish_jobs["publish"]["permissions"], {"contents": "write"})
+        self.assertEqual(list(publish_jobs), ["package"])
+        self.assertEqual(build_jobs["package"]["permissions"], {"contents": "write"})
+        self.assertEqual(publish_jobs["package"]["permissions"], {"contents": "write"})
+        self.assertEqual(publish_jobs["package"]["with"]["publish-release"], True)
+        self.assertEqual(
+            publish_jobs["package"]["uses"],
+            "jr200-labs/github-action-templates/.github/workflows/build_macos_app.yaml@master",
+        )
+        upload = next(step for step in build_jobs["package"]["steps"] if step.get("uses") == "actions/upload-artifact@v7")
+        self.assertEqual(upload["if"], "${{ !inputs.publish-release }}")
+        self.assertEqual(
+            subprocess.check_output(["yq", "-r", ".permissions.contents", str(ci_caller)], text=True).strip(),
+            "read",
+        )
+        self.assertEqual(
+            subprocess.check_output(["yq", "-r", ".permissions.contents", str(release_caller)], text=True).strip(),
+            "write",
+        )
+        self.assertNotIn("publish-runner:", release_caller.read_text())
         publish_text = publish.read_text()
+        self.assertNotIn("actions/download-artifact", publish_text)
+        self.assertNotIn("actions/upload-artifact", publish_text)
         self.assertNotIn("/releases/tags/", publish_text)
         self.assertNotIn("gh release ", publish_text)
 

@@ -31,6 +31,5 @@ jobs:
       release-tag: ${{ github.event.client_payload['release-tag'] || github.event.inputs.release-tag }}
       release-id: ${{ github.event.client_payload['release-id'] || github.event.inputs.release-id }}
       runner: ${{ fromJSON(vars.RUNNER_PROFILES)[vars.RUNNER_PROFILE].macos }}
-      publish-runner: ${{ fromJSON(vars.RUNNER_PROFILES)[vars.RUNNER_PROFILE].default }}
     secrets:
       SPARKLE_EDDSA_PRIVATE_KEY: ${{ secrets.SPARKLE_EDDSA_PRIVATE_KEY }}
