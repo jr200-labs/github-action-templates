@@ -3,6 +3,7 @@
 import argparse
 import hashlib
 import json
+import os
 from pathlib import Path
 import plistlib
 import re
@@ -49,9 +50,9 @@ def configuration(path):
     return config
 
 
-def package(config, output, release_tag=""):
+def package(config, output, release_tag="", create_release_assets=True):
     app = Path(config["app"])
-    if app.exists() or app.is_symlink() or output.exists():
+    if app.exists() or app.is_symlink() or (create_release_assets and output.exists()):
         raise ValueError("Build app and output paths must be new; existing artifacts are never overwritten")
     subprocess.run(config["build"], check=True, timeout=1200)
     if app.is_symlink() or not app.is_dir() or not app.resolve().is_relative_to(Path.cwd().resolve()):
@@ -63,6 +64,9 @@ def package(config, output, release_tag=""):
     if release_tag and release_tag != config.get("tag_prefix", "v") + version:
         raise ValueError("App version does not match the requested release tag")
     subprocess.run(["/usr/bin/codesign", "--verify", "--deep", "--strict", str(app)], check=True, timeout=120)
+    if not create_release_assets:
+        print(f"Verified app version {version}")
+        return
     output.mkdir(parents=True, exist_ok=False)
     archive = output / (config["artifact"] + ".zip")
     subprocess.run(["/usr/bin/ditto", "-c", "-k", "--sequesterRsrc", "--keepParent", str(app), str(archive)], check=True, timeout=120)
@@ -114,7 +118,10 @@ def main():
     elif args.operation == "package":
         if args.output is None:
             parser.error("package requires --output")
-        package(config, args.output, args.release_tag)
+        create_release_assets = os.environ.get("MACOS_PACKAGE_RELEASE_ASSETS", "true")
+        if create_release_assets not in ("true", "false"):
+            parser.error("MACOS_PACKAGE_RELEASE_ASSETS must be true or false")
+        package(config, args.output, args.release_tag, create_release_assets == "true")
     else:
         if args.output is None:
             parser.error("appcast requires --output")

@@ -4,7 +4,7 @@ on:
   workflow_call:
     outputs:
       artifact:
-        description: Uploaded artifact name
+        description: Configured release artifact name
         value: ${{ jobs.package.outputs.artifact }}
       appcast:
         description: Optional appcast filename
@@ -74,14 +74,15 @@ jobs:
         run: python3 .shared/package-macos-app.py metadata --config "$APP_CONFIG" >> "$GITHUB_OUTPUT"
       - uses: astral-sh/setup-uv@v10.2.0
         if: steps.config.outputs.setup_uv == 'true'
-      - name: Build, verify and archive
+      - name: Build and verify
         env:
           APP_CONFIG: ${{ inputs.config-path }}
+          MACOS_PACKAGE_RELEASE_ASSETS: ${{ inputs.publish-release && 'true' || 'false' }}
           RELEASE_TAG: ${{ inputs.release-tag }}
           UV_MANAGED_PYTHON: 'true'
         run: python3 .shared/package-macos-app.py package --config "$APP_CONFIG" --release-tag "$RELEASE_TAG" --output "$RUNNER_TEMP/macos-release"
       - name: Generate signed Sparkle appcast
-        if: inputs.generate-appcast && steps.config.outputs.appcast != ''
+        if: inputs.publish-release && inputs.generate-appcast && steps.config.outputs.appcast != ''
         env:
           APP_CONFIG: ${{ inputs.config-path }}
           RELEASE_TAG: ${{ inputs.release-tag }}
@@ -95,13 +96,6 @@ jobs:
             --release-tag "$RELEASE_TAG" \
             --repository "$GITHUB_REPOSITORY" \
             --output "$RUNNER_TEMP/macos-release"
-      - uses: actions/upload-artifact@v7
-        if: ${{ !inputs.publish-release }}
-        with:
-          name: ${{ steps.config.outputs.artifact }}
-          path: ${{ runner.temp }}/macos-release/*
-          if-no-files-found: error
-          retention-days: 14
       - name: Verify and attach release assets
         if: inputs.publish-release
         uses: jr200-labs/github-action-templates/actions/macos-release@master
