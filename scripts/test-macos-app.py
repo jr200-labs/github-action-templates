@@ -52,6 +52,14 @@ class PackagingTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "never overwritten"):
             module.package(self.config, self.output)
 
+    def test_pr_build_verifies_without_creating_release_assets(self):
+        with patch.object(module.subprocess, "run", side_effect=self.run_command) as run:
+            module.package(self.config, self.output, create_release_assets=False)
+        commands = [call.args[0] for call in run.call_args_list]
+        self.assertEqual(commands[1][:4], ["/usr/bin/codesign", "--verify", "--deep", "--strict"])
+        self.assertFalse(any(command[0] == "/usr/bin/ditto" for command in commands))
+        self.assertFalse(self.output.exists())
+
     def test_sparkle_appcast_uses_verified_archive_and_bounded_generator(self):
         self.config["sparkle"] = dict(appcast="appcast.xml", generate=["sign-fixture"])
         with patch.object(module.subprocess, "run", side_effect=self.run_command):
@@ -221,13 +229,18 @@ class PackagingTest(unittest.TestCase):
             text=True,
         )
         step = json.loads(appcast_step)
-        self.assertEqual(step["if"], "inputs.generate-appcast && steps.config.outputs.appcast != ''")
+        self.assertEqual(
+            step["if"],
+            "inputs.publish-release && inputs.generate-appcast && steps.config.outputs.appcast != ''",
+        )
         self.assertEqual(step["env"]["SPARKLE_EDDSA_PRIVATE_KEY"], "${{ secrets.SPARKLE_EDDSA_PRIVATE_KEY }}")
         build_step = subprocess.check_output(
-            ["yq", "-o=json", ".jobs.package.steps[] | select(.name == \"Build, verify and archive\")", str(workflow)],
+            ["yq", "-o=json", ".jobs.package.steps[] | select(.name == \"Build and verify\")", str(workflow)],
             text=True,
         )
         self.assertNotIn("SPARKLE_EDDSA_PRIVATE_KEY", build_step)
+        self.assertEqual(json.loads(build_step)["env"]["MACOS_PACKAGE_RELEASE_ASSETS"],
+                         "${{ inputs.publish-release && 'true' || 'false' }}")
 
     def test_release_reuses_the_build_job_without_artifact_transfer(self):
         build = ROOT / ".github/workflows/build_macos_app.yaml"
@@ -245,8 +258,8 @@ class PackagingTest(unittest.TestCase):
             publish_jobs["package"]["uses"],
             "jr200-labs/github-action-templates/.github/workflows/build_macos_app.yaml@master",
         )
-        upload = next(step for step in build_jobs["package"]["steps"] if step.get("uses") == "actions/upload-artifact@v7")
-        self.assertEqual(upload["if"], "${{ !inputs.publish-release }}")
+        self.assertFalse(any("actions/upload-artifact" in step.get("uses", "")
+                             for step in build_jobs["package"]["steps"]))
         self.assertEqual(
             subprocess.check_output(["yq", "-r", ".permissions.contents", str(ci_caller)], text=True).strip(),
             "read",
