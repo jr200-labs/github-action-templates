@@ -19,9 +19,9 @@ pinned ref and re-execute the refreshed implementation before applying changes.
 Check mode verifies those entrypoints, so a ref bump cannot pass with migration
 logic from the previous shared version.
 
-Native Xcode workflows must ensure Apple-managed compiler components through
-Scotty when it is installed on the runner. Keep a command-line fallback for
-other macOS runners. The check must be idempotent and run inside the existing
+Native Xcode workflows must ensure required compiler toolchains through Scotty's
+typed catalog when it is installed on the runner. Keep a command-line fallback
+for other macOS runners. The check must be idempotent and run inside the existing
 job so dependency preparation does not allocate another GitHub runner.
 
 ```yaml

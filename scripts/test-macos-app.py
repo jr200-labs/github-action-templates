@@ -250,10 +250,12 @@ class PackagingTest(unittest.TestCase):
                 text=True,
             )
             step = json.loads(output)
-            self.assertIn("ensure-xcode-component", step["run"])
+            self.assertIn("ensure-toolchain", step["run"])
+            self.assertIn("--toolchain metal-toolchain", step["run"])
+            self.assertIn("$SCOTTY_TOOLCHAIN_REQUEST_KEY", step["run"])
             self.assertIn("xcodebuild -downloadComponent MetalToolchain", step["run"])
             self.assertIn("github-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}",
-                          step["env"]["SCOTTY_COMPONENT_REQUEST_KEY"])
+                          step["env"]["SCOTTY_TOOLCHAIN_REQUEST_KEY"])
 
     def test_release_reuses_the_build_job_without_artifact_transfer(self):
         build = ROOT / ".github/workflows/build_macos_app.yaml"
