@@ -47,10 +47,8 @@ jobs:
   package:
     runs-on: ${{ inputs.runner || fromJSON(vars.RUNNER_PROFILES)[vars.RUNNER_PROFILE].macos }}
     timeout-minutes: 30
-    # Consumer callers cap this at read for PR builds. The release caller grants
-    # write so the same native job can publish without transferring its archive.
-    permissions:
-      contents: write
+    # Inherit the caller's token ceiling: read for PR builds and write for the
+    # release caller that publishes directly from this native build workspace.
     outputs:
       artifact: ${{ steps.config.outputs.artifact }}
       appcast: ${{ steps.config.outputs.appcast }}
