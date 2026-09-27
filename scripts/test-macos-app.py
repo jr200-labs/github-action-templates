@@ -16,6 +16,10 @@ SCRIPT = ROOT / "consumers/files/.shared/package-macos-app.py"
 spec = importlib.util.spec_from_file_location("macos_package", SCRIPT)
 module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
+RELEASE_SCRIPT = ROOT / "actions/macos-release/release.py"
+release_spec = importlib.util.spec_from_file_location("macos_release", RELEASE_SCRIPT)
+release_module = importlib.util.module_from_spec(release_spec)
+release_spec.loader.exec_module(release_module)
 
 
 class PackagingTest(unittest.TestCase):
@@ -143,115 +147,72 @@ class PackagingTest(unittest.TestCase):
         Path("release-please-config.json").write_text(json.dumps(config))
         subprocess.run(lint, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
+    def release_api(self, release):
+        calls = []
+
+        def request(repository, token, path, method="GET", body=None, upload=False):
+            calls.append((method, path, upload))
+            if method == "POST":
+                name = path.split("?name=", 1)[1]
+                release["assets"].append({
+                    "name": name, "state": "uploaded",
+                    "digest": "sha256:" + hashlib.sha256(body).hexdigest(),
+                })
+                return release["assets"][-1]
+            if method == "PATCH":
+                self.assertEqual(body, {"draft": False, "make_latest": "true"})
+                release["draft"] = False
+                return release
+            return dict(release, assets=[dict(asset) for asset in release["assets"]])
+
+        return request, calls
+
     def test_publish_checks_checksum_before_upload_and_never_clobbers(self):
         with patch.object(module.subprocess, "run", side_effect=self.run_command):
             module.package(self.config, Path("macos-release"), "v1.2.3")
-        Path("bin").mkdir()
-        gh = Path("bin/gh")
-        gh.write_text('''#!/bin/sh
-set -eu
-printf '%s\\n' "$*" >> "$RUNNER_TEMP/gh-commands"
-if [ "$1" = "api" ]; then
-  if [ "${2:-}" = "--method" ] && [ "${3:-}" = "PATCH" ]; then
-    :
-  else
-    printf '{"id":123,"tag_name":"v1.2.3","draft":true,"upload_url":"https://uploads.github.com/repos/example/app/releases/123/assets{?name,label}","assets":['
-    separator=""
-    assets="${PREEXISTING_ASSETS:-}"
-    if [ -f "$RUNNER_TEMP/uploaded-assets" ]; then assets="$assets $(cat "$RUNNER_TEMP/uploaded-assets")"; fi
-    for asset in $assets; do
-      if [ "$asset" = "${OMIT_ASSET:-}" ]; then continue; fi
-      asset_path="$asset"
-      if [ ! -f "$asset_path" ]; then asset_path="$RUNNER_TEMP/macos-release/$asset"; fi
-      digest=$(shasum -a 256 "$asset_path" | awk '{print $1}')
-      printf '%s{"name":"%s","state":"uploaded","digest":"sha256:%s"}' "$separator" "$asset" "$digest"
-      separator=,
-    done
-    printf ']}\\n'
-  fi
-fi
-''')
-        gh.chmod(0o755)
-        curl = Path("bin/curl")
-        curl.write_text('''#!/bin/sh
-set -eu
-printf '%s\\n' "$*" >> "$RUNNER_TEMP/curl-commands"
-for argument in "$@"; do
-  case "$argument" in
-    https://uploads.github.com/*?name=*) printf '%s\\n' "${argument##*=}" >> "$RUNNER_TEMP/uploaded-assets" ;;
-  esac
-done
-''')
-        curl.chmod(0o755)
-        step = subprocess.check_output(
-            ["yq", "-r", '.jobs.package.steps[] | select(.name == "Verify and attach release assets") | .run',
-             str(ROOT / ".github/workflows/build_macos_app.yaml")],
-            text=True,
-        )
-        env = dict(os.environ, RUNNER_TEMP=str(Path.cwd()), GITHUB_REPOSITORY="example/app",
-                   ARTIFACT="example-macos", APPCAST="", RELEASE_TAG="v1.2.3", RELEASE_ID="123",
-                   GH_TOKEN="test-token",
-                   EXPECTED_ASSETS="example-macos.zip example-macos.zip.sha256",
-                   PATH=str(Path("bin").resolve()) + os.pathsep + os.environ["PATH"])
-        subprocess.run(["bash", "-c", step], check=True, env=env, stdout=subprocess.PIPE)
-        self.assertEqual(Path("gh-commands").read_text().splitlines(), [
-            "api repos/example/app/releases/123",
-            "api repos/example/app/releases/123",
-            "api repos/example/app/releases/123",
-            "api repos/example/app/releases/123",
-            "api --method PATCH repos/example/app/releases/123 -F draft=false -f make_latest=true",
-        ])
-        self.assertEqual(len(Path("curl-commands").read_text().splitlines()), 2)
-        Path("macos-release/appcast.xml").write_text("<rss/>")
-        Path("gh-commands").unlink()
-        Path("curl-commands").unlink()
-        Path("uploaded-assets").unlink()
-        sparkle_env = dict(env, APPCAST="appcast.xml",
-                           EXPECTED_ASSETS="example-macos.zip example-macos.zip.sha256 appcast.xml")
-        subprocess.run(["bash", "-c", step], check=True, env=sparkle_env, stdout=subprocess.PIPE)
-        self.assertTrue(any(command.endswith("assets?name=appcast.xml")
-                            for command in Path("curl-commands").read_text().splitlines()))
-        Path("gh-commands").unlink()
-        Path("curl-commands").unlink()
-        Path("uploaded-assets").unlink()
-        retry_env = dict(env, PREEXISTING_ASSETS="example-macos.zip example-macos.zip.sha256")
-        subprocess.run(["bash", "-c", step], check=True, env=retry_env, stdout=subprocess.PIPE)
-        self.assertFalse(Path("curl-commands").exists())
-        Path("gh-commands").unlink()
-        incomplete_env = dict(env, OMIT_ASSET="example-macos.zip.sha256")
-        incomplete = subprocess.run(["bash", "-c", step], env=incomplete_env,
-                                    stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        self.assertNotEqual(incomplete.returncode, 0)
-        self.assertNotIn("--method PATCH", Path("gh-commands").read_text())
-        Path("gh-commands").unlink()
-        Path("uploaded-assets").unlink()
-        Path("macos-release/example-macos.zip").write_bytes(b"corrupt")
-        result = subprocess.run(["bash", "-c", step], env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        self.assertNotEqual(result.returncode, 0)
-        self.assertEqual(Path("gh-commands").read_text().splitlines(),
-                         ["api repos/example/app/releases/123"])
+        release = {
+            "id": 123, "tag_name": "v1.2.3", "draft": True,
+            "upload_url": "https://uploads.github.com/repos/example/app/releases/123/assets{?name,label}",
+            "assets": [],
+        }
+        api, calls = self.release_api(release)
+        with patch.object(release_module, "api_request", side_effect=api):
+            release_module.publish_release("example/app", "v1.2.3", 123, "test-token-which-is-long", Path("macos-release"), "example-macos")
+        self.assertFalse(release["draft"])
+        self.assertEqual(sorted(asset["name"] for asset in release["assets"]),
+                         ["example-macos.zip", "example-macos.zip.sha256"])
+        self.assertEqual(sum(method == "POST" for method, _, _ in calls), 2)
+        self.assertEqual(calls[-1][0], "PATCH")
 
-    def test_publish_resolves_legacy_tag_input_to_one_draft_release_id(self):
-        Path("bin").mkdir()
-        gh = Path("bin/gh")
-        gh.write_text('''#!/bin/sh
-set -eu
-printf '%s\\n' "$*" >> "$RUNNER_TEMP/gh-commands"
-printf '[[{"id":123,"tag_name":"v1.2.3","draft":true,"upload_url":"https://uploads.github.com/repos/example/app/releases/123/assets{?name,label}"}]]\\n'
-''')
-        gh.chmod(0o755)
-        step = subprocess.check_output(
-            ["yq", "-r", '.jobs.package.steps[] | select(.name == "Resolve immutable draft release identity") | .run',
-             str(ROOT / ".github/workflows/build_macos_app.yaml")],
-            text=True,
-        )
-        env = dict(os.environ, RUNNER_TEMP=str(Path.cwd()), GITHUB_REPOSITORY="example/app",
-                   GITHUB_OUTPUT=str(Path("output").resolve()), RELEASE_TAG="v1.2.3", RELEASE_ID="",
-                   PATH=str(Path("bin").resolve()) + os.pathsep + os.environ["PATH"])
-        subprocess.run(["bash", "-c", step], check=True, env=env, stdout=subprocess.PIPE)
-        self.assertEqual(Path("output").read_text(), "release-id=123\n")
-        self.assertEqual(Path("gh-commands").read_text().strip(),
-                         "api --paginate --slurp repos/example/app/releases?per_page=100")
+        release["draft"] = True
+        calls.clear()
+        with patch.object(release_module, "api_request", side_effect=api):
+            release_module.publish_release("example/app", "v1.2.3", 123, "test-token-which-is-long", Path("macos-release"), "example-macos")
+        self.assertEqual(sum(method == "POST" for method, _, _ in calls), 0)
+
+        release["draft"] = True
+        release["assets"].append({"name": "unverified.zip", "state": "uploaded", "digest": "sha256:bad"})
+        with patch.object(release_module, "api_request", side_effect=api), self.assertRaisesRegex(ValueError, "outside"):
+            release_module.publish_release("example/app", "v1.2.3", 123, "test-token-which-is-long", Path("macos-release"), "example-macos")
+
+        release["assets"].pop()
+        Path("macos-release/example-macos.zip").write_bytes(b"corrupt")
+        with patch.object(release_module, "api_request", side_effect=api), self.assertRaisesRegex(ValueError, "checksum"):
+            release_module.publish_release("example/app", "v1.2.3", 123, "test-token-which-is-long", Path("macos-release"), "example-macos")
+
+    def test_publish_resolves_release_identity_without_host_cli(self):
+        release = {
+            "id": 123, "tag_name": "v1.2.3", "draft": True,
+            "upload_url": "https://uploads.github.com/repos/example/app/releases/123/assets{?name,label}",
+            "assets": [],
+        }
+        with patch.object(release_module, "api_request", return_value=[release]) as request:
+            self.assertEqual(release_module.resolve_release("example/app", "v1.2.3", "", "test-token-which-is-long"), 123)
+        request.assert_called_once_with("example/app", "test-token-which-is-long",
+                                        "/repos/example/app/releases?per_page=100&page=1")
+        with patch.object(release_module, "api_request", return_value=release) as request:
+            self.assertEqual(release_module.resolve_release("example/app", "v1.2.3", "123", "test-token-which-is-long"), 123)
+        request.assert_called_once_with("example/app", "test-token-which-is-long", "/repos/example/app/releases/123")
 
     def test_signing_secret_is_limited_to_release_appcast_step(self):
         workflow = ROOT / ".github/workflows/build_macos_app.yaml"
@@ -300,6 +261,13 @@ printf '[[{"id":123,"tag_name":"v1.2.3","draft":true,"upload_url":"https://uploa
         self.assertNotIn("actions/upload-artifact", publish_text)
         self.assertNotIn("/releases/tags/", publish_text)
         self.assertNotIn("gh release ", publish_text)
+        build_text = build.read_text()
+        self.assertEqual(build_text.count("uses: jr200-labs/github-action-templates/actions/macos-release@master"), 2)
+        self.assertNotIn("gh api", build_text)
+        self.assertNotIn("jq ", build_text)
+        self.assertNotIn("curl ", build_text)
+        action = (ROOT / "actions/macos-release/action.yml").read_text()
+        self.assertIn('python3 "$GITHUB_ACTION_PATH/release.py"', action)
 
 
 if __name__ == "__main__":

@@ -1,0 +1,50 @@
+name: Secure macOS release publication
+description: Resolve, verify, upload and publish an exact draft release without host-installed GitHub tools
+inputs:
+  mode:
+    description: resolve or publish
+    required: true
+  repository:
+    description: GitHub owner/repository
+    required: true
+  token:
+    description: Repository-scoped GitHub token
+    required: true
+  release-tag:
+    description: Expected release tag
+    required: true
+  release-id:
+    description: Immutable release ID; optional only in resolve mode
+    required: false
+    default: ''
+  output:
+    description: Directory containing verified release assets
+    required: false
+    default: ''
+  artifact:
+    description: Artifact basename
+    required: false
+    default: ''
+  appcast:
+    description: Optional appcast filename
+    required: false
+    default: ''
+outputs:
+  release-id:
+    description: Validated immutable release ID
+    value: ${{ steps.release.outputs.release-id }}
+runs:
+  using: composite
+  steps:
+    - id: release
+      shell: bash
+      env:
+        RELEASE_MODE: ${{ inputs.mode }}
+        RELEASE_REPOSITORY: ${{ inputs.repository }}
+        RELEASE_TOKEN: ${{ inputs.token }}
+        RELEASE_TAG: ${{ inputs.release-tag }}
+        RELEASE_ID: ${{ inputs.release-id }}
+        RELEASE_OUTPUT: ${{ inputs.output }}
+        RELEASE_ARTIFACT: ${{ inputs.artifact }}
+        RELEASE_APPCAST: ${{ inputs.appcast }}
+      run: python3 "$GITHUB_ACTION_PATH/release.py"
