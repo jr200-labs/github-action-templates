@@ -100,10 +100,15 @@ on:
         type: boolean
         default: false
       renovate-image:
-        description: Optional Renovate image reference for self-hosted runners
+        description: Optional Renovate image repository without a tag for self-hosted runners
         required: false
         type: string
         default: ''
+      renovate-version:
+        description: Renovate image version
+        required: false
+        type: string
+        default: 43.275.0
     secrets:
       # The App private key is declared as an explicit named secret input
       # because GitHub Actions has a quirk: variables inherited via
@@ -266,7 +271,7 @@ jobs:
           # An ARC-only registry override cannot resolve from GitHub-hosted
           # runners. Use the public image whenever GitHub hosts the job.
           RENOVATE_IMAGE: ${{ runner.environment == 'self-hosted' && inputs.renovate-image || 'ghcr.io/renovatebot/renovate' }}
-          RENOVATE_VERSION: 43.275.0
+          RENOVATE_VERSION: ${{ inputs.renovate-version }}
         run: |
           set -euo pipefail
           image="${RENOVATE_IMAGE}:${RENOVATE_VERSION}"
@@ -290,14 +295,13 @@ jobs:
 
       - name: Renovate (pass 1)
         # renovatebot/github-action only publishes specific patch tags, no
-        # floating majors. Pin to a known-good release; Renovate itself can
-        # be updated independently of this action via the `renovate-version`
-        # input below if needed.
+        # floating majors. Pass a complete image reference because the action
+        # mistakes a registry port (for example :5000) for an image tag and
+        # otherwise ignores renovate-version.
         uses: renovatebot/github-action@v46.3.4
         with:
           token: ${{ steps.app-token.outputs.token || secrets.GITHUB_TOKEN }}
-          renovate-image: ${{ runner.environment == 'self-hosted' && inputs.renovate-image || 'ghcr.io/renovatebot/renovate' }}
-          renovate-version: 43.275.0
+          renovate-image: ${{ format('{0}:{1}', runner.environment == 'self-hosted' && inputs.renovate-image || 'ghcr.io/renovatebot/renovate', inputs.renovate-version) }}
           # Use host networking so the Renovate container shares the
           # runner pod's network. Dind's default bridge network has
           # routing issues that cause ETIMEDOUT on api.github.com.
@@ -387,8 +391,7 @@ jobs:
         uses: renovatebot/github-action@v46.3.4
         with:
           token: ${{ steps.app-token.outputs.token || secrets.GITHUB_TOKEN }}
-          renovate-image: ${{ runner.environment == 'self-hosted' && inputs.renovate-image || 'ghcr.io/renovatebot/renovate' }}
-          renovate-version: 43.275.0
+          renovate-image: ${{ format('{0}:{1}', runner.environment == 'self-hosted' && inputs.renovate-image || 'ghcr.io/renovatebot/renovate', inputs.renovate-version) }}
           docker-network: host
           docker-volumes: |
             ${{ github.workspace }}/.renovate-out:/out

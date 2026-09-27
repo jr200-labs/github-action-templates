@@ -53,6 +53,17 @@ if [ "$(grep -Fc "$hosted_image_guard" "$workflow")" -ne 3 ]; then
   exit 1
 fi
 
+versioned_image_guard="format('{0}:{1}', $hosted_image_guard, inputs.renovate-version)"
+if [ "$(grep -Fc "renovate-image: \${{ $versioned_image_guard }}" "$workflow")" -ne 2 ]; then
+  echo "lint-renovate-workflow-token: both Renovate passes must receive a fully versioned image reference" >&2
+  exit 1
+fi
+
+if [ "$(grep -Fc 'RENOVATE_VERSION: ${{ inputs.renovate-version }}' "$workflow")" -ne 1 ]; then
+  echo "lint-renovate-workflow-token: pre-pull must use the same Renovate version as both action passes" >&2
+  exit 1
+fi
+
 while IFS= read -r caller; do
   if ! grep -q '^  packages: read$' "$caller"; then
     echo "lint-renovate-workflow-token: Renovate caller must grant packages:read: $caller" >&2
