@@ -242,6 +242,19 @@ class PackagingTest(unittest.TestCase):
         self.assertEqual(json.loads(build_step)["env"]["MACOS_PACKAGE_RELEASE_ASSETS"],
                          "${{ inputs.publish-release && 'true' || 'false' }}")
 
+    def test_native_workflows_prepare_metal_inside_the_existing_job(self):
+        for path in (ROOT / ".github/workflows/build_macos_app.yaml",
+                     ROOT / ".github/workflows/ci_swift.yaml"):
+            output = subprocess.check_output(
+                ["yq", "-o=json", '.jobs[].steps[] | select(.name == "Ensure Metal toolchain")', str(path)],
+                text=True,
+            )
+            step = json.loads(output)
+            self.assertIn("ensure-xcode-component", step["run"])
+            self.assertIn("xcodebuild -downloadComponent MetalToolchain", step["run"])
+            self.assertIn("github-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}",
+                          step["env"]["SCOTTY_COMPONENT_REQUEST_KEY"])
+
     def test_release_reuses_the_build_job_without_artifact_transfer(self):
         build = ROOT / ".github/workflows/build_macos_app.yaml"
         publish = ROOT / ".github/workflows/publish_macos_app.yaml"
