@@ -434,9 +434,11 @@ jobs:
           TARGET_BRANCH: ${{ inputs.target-branch }}
           RELEASE_SHA: ${{ steps.normalize-releases.outputs.sha }}
           RELEASE_TAG: ${{ steps.normalize-releases.outputs.tag_name }}
+          RELEASE_VERSION: ${{ steps.normalize-releases.outputs.version }}
         shell: bash
         run: |
           head_ref="release-please--branches--${TARGET_BRANCH}"
+          expected_title="chore(${TARGET_BRANCH}): release ${RELEASE_VERSION}"
           gh pr list \
             --repo "${GITHUB_REPOSITORY}" \
             --state open \
@@ -449,13 +451,10 @@ jobs:
               pr_title=$(jq -r '.title' <<<"${pr_json}")
               pr_head_oid=$(jq -r '.headRefOid' <<<"${pr_json}")
 
-              case "${pr_title}" in
-                "chore(${TARGET_BRANCH}): release "*) ;;
-                *)
-                  echo "leaving PR #${pr_number} open (title does not match release PR pattern)"
-                  continue
-                  ;;
-              esac
+              if [ "${pr_title}" != "${expected_title}" ]; then
+                echo "leaving PR #${pr_number} open (title does not match published version ${RELEASE_VERSION})"
+                continue
+              fi
 
               if [ "${pr_head_oid}" = "${RELEASE_SHA}" ]; then
                 echo "leaving PR #${pr_number} open (head matches published release commit)"
