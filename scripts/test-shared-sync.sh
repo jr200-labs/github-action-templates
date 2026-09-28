@@ -43,6 +43,29 @@ if "$ROOT/shared/lint-release-please-config.sh" "$grouped_release_config" >"$TMP
 fi
 grep -Fq 'separate-pull-requests must be true' "$TMPDIR/grouped-release-config.log"
 
+# Native Xcode-only and other repositories without a Python, Go, Node, or
+# Docker marker still need the common release validator and commit tooling.
+common_only_repo="$TMPDIR/common-only-consumer"
+mkdir -p "$common_only_repo/.github"
+cp "$ROOT/shared/sync.sh" "$common_only_repo/sync.sh"
+cat > "$common_only_repo/.github/.shared-config.yaml" <<'YAML'
+ref: shared-v0.1.0
+workflows:
+  - hygiene
+  - release
+YAML
+(
+    cd "$common_only_repo"
+    git init -q
+    SYNC_BASE_URL="file://$ROOT/shared" ./sync.sh
+    test -x .shared/lint-release-please-config.sh
+    test -x .githooks/commit-msg
+    test -x .githooks/lint-message-text.sh
+    test -f cog.toml
+    test -f release-please-config.json
+    test "$(git config --get core.hooksPath)" = ".githooks"
+)
+
 make_consumer_repo() {
     local repo_dir="$1"
     mkdir -p "$repo_dir/.github" "$repo_dir/scripts" "$repo_dir/.husky" "$repo_dir/.shared"

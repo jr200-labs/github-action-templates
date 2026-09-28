@@ -6,11 +6,13 @@
 #   ./sync.sh [python|go|node|docker] # single-language override
 #   ./sync.sh "python node"           # explicit multi-language override
 #   ./sync.sh all                     # sync every language in MANIFEST
-#   ./sync.sh                         # auto-detect from present marker files
+#   ./sync.sh                         # sync common files plus detected languages
 #
 # Auto-detect iterates every marker file (pyproject.toml, go.mod,
 # package.json, Dockerfile / docker/Dockerfile / images/*/Dockerfile)
-# and syncs each language's configs — polyglot-safe.
+# and syncs each language's configs — polyglot-safe. Repositories without one
+# of those markers still receive the common files required by release and
+# commit validation (for example, a native Xcode-only repository).
 # Use `all` when you want every language regardless of markers (e.g. a
 # tooling repo that doesn't check in any marker file).
 #
@@ -186,8 +188,7 @@ if [ "$LANGS" = "all" ]; then
     LANGS=$(echo "$MANIFEST_JSON" | jq -r 'keys[] | select(. != "common" and (startswith("$") or startswith("_") | not))' | tr '\n' ' ')
 fi
 if [ -z "$LANGS" ]; then
-    warn "cannot detect project language(s) — pass python, go, node, or docker as argument; skipping"
-    exit 0
+    warn "cannot detect project language(s) — syncing common files only"
 fi
 
 get_files() {
