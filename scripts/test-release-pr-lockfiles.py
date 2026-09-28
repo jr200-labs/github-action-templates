@@ -7,6 +7,10 @@ import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
+DETECTION_STEP = subprocess.check_output([
+    "yq", "-r", '.jobs."release-please".steps[] | select(.name == "Detect uv lockfiles") | .run',
+    str(ROOT / ".github/workflows/release_please.yaml"),
+], text=True)
 STEP = subprocess.check_output([
     "yq", "-r", '.jobs."release-please".steps[] | select(.name == "Refresh uv.lock on release PR") | .run',
     str(ROOT / ".github/workflows/release_please.yaml"),
@@ -42,6 +46,43 @@ def pr(number, component=None):
 
 
 class LockfileRefreshTest(unittest.TestCase):
+    def detect_lockfiles(self, files):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+            for name in files:
+                path = root / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.touch()
+            if files:
+                subprocess.run(["git", "add", "--", *files], cwd=root, check=True)
+            output = root / "github-output"
+            result = subprocess.run(
+                ["bash", "-c", DETECTION_STEP],
+                cwd=root,
+                env=dict(os.environ, GITHUB_OUTPUT=str(output)),
+                text=True,
+                capture_output=True,
+            )
+            return result, output.read_text()
+
+    def test_uv_setup_is_skipped_without_a_tracked_lock_project(self):
+        for files in ([], ["pyproject.toml"], ["uv.lock"]):
+            with self.subTest(files=files):
+                result, output = self.detect_lockfiles(files)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(output, "present=false\n")
+
+    def test_uv_setup_is_enabled_for_root_and_nested_lock_projects(self):
+        for files in (
+            ["pyproject.toml", "uv.lock"],
+            ["packages/example/pyproject.toml", "packages/example/uv.lock"],
+        ):
+            with self.subTest(files=files):
+                result, output = self.detect_lockfiles(files)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(output, "present=true\n")
+
     def run_refresh(self, first, retry=(), *, missing=False, uv_failure=0):
         live = [dict(number=p["number"], headRefName=p["headBranchName"],
                      baseRefName="master", state="OPEN", isCrossRepository=False)

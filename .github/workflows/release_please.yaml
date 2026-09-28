@@ -359,12 +359,27 @@ jobs:
           echo "::error title=release-please failed::release-please failed and no duplicate existing release tag was detected."
           exit 1
 
-      - name: Set up uv for release PR lockfiles
+      - name: Detect uv lockfiles
+        id: uv-lockfiles
         if: steps.release.outcome == 'success' || steps.release-retry.outcome == 'success'
+        shell: bash
+        run: |
+          present=false
+          while IFS= read -r lock; do
+            [ -n "$lock" ] || continue
+            if [ -f "$(dirname "$lock")/pyproject.toml" ]; then
+              present=true
+              break
+            fi
+          done < <(git ls-files -- uv.lock ':(glob)**/uv.lock')
+          echo "present=${present}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up uv for release PR lockfiles
+        if: (steps.release.outcome == 'success' || steps.release-retry.outcome == 'success') && steps.uv-lockfiles.outputs.present == 'true'
         uses: astral-sh/setup-uv@v10.2.0
 
       - name: Refresh uv.lock on release PR
-        if: steps.release.outcome == 'success' || steps.release-retry.outcome == 'success'
+        if: (steps.release.outcome == 'success' || steps.release-retry.outcome == 'success') && steps.uv-lockfiles.outputs.present == 'true'
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           TARGET_BRANCH: ${{ inputs.target-branch }}
