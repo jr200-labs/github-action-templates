@@ -109,6 +109,11 @@ the shared workflow passes it `--archive`, `--output`, and
 command must write the new nonempty XML file named by `appcast`. The canonical
 caller forwards the repository secret under that fixed name. Pull requests and
 manual build-only runs never receive the signing key or invoke the generator.
+The `macos-app` group installs a pinned, checksum-verified default generator at
+`.shared/generate-sparkle-appcast.py`; new macOS projects should configure that
+command and treat `SPARKLE_EDDSA_PRIVATE_KEY` plus the matching tracked
+`SUPublicEDKey` as required release setup. A repository may keep a project-owned
+generator when it needs different feed behavior.
 
 The reusable workflow accepts config path, checkout ref, release tag, immutable
 GitHub release ID, publish flag, and a macOS runner input. Canonical callers use

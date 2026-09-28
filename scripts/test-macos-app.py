@@ -121,6 +121,11 @@ class PackagingTest(unittest.TestCase):
         self.assertEqual(caller.read_bytes(), (ROOT / "consumers/workflows/macos-app.yaml").read_bytes())
         self.assertEqual(publisher.read_bytes(), (ROOT / "consumers/workflows/publish-macos-app.yaml").read_bytes())
         self.assertEqual(Path(".shared/package-macos-app.py").read_bytes(), SCRIPT.read_bytes())
+        for helper in ("fetch-sparkle.py", "generate-sparkle-appcast.py", "sparkle.json"):
+            self.assertEqual(
+                Path(".shared", helper).read_bytes(),
+                (ROOT / "consumers/files/.shared" / helper).read_bytes(),
+            )
         caller_data = subprocess.check_output(["yq", "-o=json", ".", str(caller)], text=True)
         self.assertNotIn("repository_dispatch", caller_data)
         self.assertNotIn("SPARKLE_EDDSA_PRIVATE_KEY", caller_data)

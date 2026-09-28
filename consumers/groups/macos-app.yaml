@@ -5,3 +5,6 @@ includes:
   - publish-macos-app
 files:
   - .shared/package-macos-app.py
+  - .shared/fetch-sparkle.py
+  - .shared/generate-sparkle-appcast.py
+  - .shared/sparkle.json
