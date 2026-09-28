@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import plistlib
 import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -16,6 +17,10 @@ SCRIPT = ROOT / "consumers/files/.shared/package-macos-app.py"
 spec = importlib.util.spec_from_file_location("macos_package", SCRIPT)
 module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
+APPCAST_SCRIPT = ROOT / "consumers/files/.shared/generate-sparkle-appcast.py"
+appcast_spec = importlib.util.spec_from_file_location("sparkle_appcast", APPCAST_SCRIPT)
+appcast_module = importlib.util.module_from_spec(appcast_spec)
+appcast_spec.loader.exec_module(appcast_module)
 RELEASE_SCRIPT = ROOT / "actions/macos-release/release.py"
 release_spec = importlib.util.spec_from_file_location("macos_release", RELEASE_SCRIPT)
 release_module = importlib.util.module_from_spec(release_spec)
@@ -80,6 +85,26 @@ class PackagingTest(unittest.TestCase):
         self.assertEqual((self.output / "appcast.xml").read_text(), "<rss/>")
         with self.assertRaisesRegex(ValueError, "new output"):
             module.appcast(self.config, self.output, "v1.2.3", "example/app")
+
+    def test_default_sparkle_generator_rejects_malformed_private_keys(self):
+        Path("archive.zip").write_bytes(b"archive")
+        arguments = [
+            "generate-sparkle-appcast.py",
+            "--archive",
+            "archive.zip",
+            "--output",
+            "appcast.xml",
+            "--download-url-prefix",
+            "https://github.com/example/app/releases/download/v1.2.3/",
+        ]
+        for private_key in ("not-base64", "YWJj"):
+            with (
+                self.subTest(private_key=private_key),
+                patch.object(sys, "argv", arguments),
+                patch.dict(os.environ, {"SPARKLE_EDDSA_PRIVATE_KEY": private_key}),
+                self.assertRaises(SystemExit),
+            ):
+                appcast_module.main()
 
     def test_failed_build_signature_or_version_cannot_produce_assets(self):
         for failure in ("build", "signature", "version"):

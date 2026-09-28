@@ -112,7 +112,9 @@ manual build-only runs never receive the signing key or invoke the generator.
 The `macos-app` group installs a pinned, checksum-verified default generator at
 `.shared/generate-sparkle-appcast.py`; new macOS projects should configure that
 command and treat `SPARKLE_EDDSA_PRIVATE_KEY` plus the matching tracked
-`SUPublicEDKey` as required release setup. A repository may keep a project-owned
+`SUPublicEDKey` as required release setup. The helper validates the exported
+Sparkle private key's base64 encoding and decoded length before invoking Sparkle.
+A repository may keep a project-owned
 generator when it needs different feed behavior.
 
 The reusable workflow accepts config path, checkout ref, release tag, immutable

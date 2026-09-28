@@ -1,6 +1,8 @@
 """Generate a signed Sparkle appcast for one verified release archive."""
 
 import argparse
+import base64
+import binascii
 import importlib.util
 import os
 from pathlib import Path
@@ -38,6 +40,12 @@ def main():
     private_key = os.environ.get("SPARKLE_EDDSA_PRIVATE_KEY", "")
     if not private_key or any(character.isspace() for character in private_key):
         parser.error("SPARKLE_EDDSA_PRIVATE_KEY must contain the signing key")
+    try:
+        decoded_private_key = base64.b64decode(private_key, validate=True)
+    except (binascii.Error, ValueError):
+        parser.error("SPARKLE_EDDSA_PRIVATE_KEY must be valid base64")
+    if len(decoded_private_key) != 96:
+        parser.error("SPARKLE_EDDSA_PRIVATE_KEY must decode to a 96-byte Sparkle EdDSA key")
     with tempfile.TemporaryDirectory() as directory:
         temporary = Path(directory)
         distribution = temporary / "sparkle"
