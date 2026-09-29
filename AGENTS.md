@@ -65,6 +65,7 @@ Current groups:
 | `go` | ci-go | repo has `go.mod` |
 | `swift` | ci-swift | repo is a native Swift/Xcode app, including macOS app development |
 | `macos-app` | macos-app + shared packaging script | repo builds a signed app bundle and publishes ZIP/checksum release assets |
+| `sparkle-development` | shared `.sparkle-public-key` | internal macOS app uses the common development-only Sparkle identity |
 | `docker` | build-docker-image | repo publishes a docker image to ghcr.io |
 | `quarto-docs` | publish-quarto-docs | repo publishes a Quarto site from `docs` to `gh-pages` |
 | `helm-chart` | build-helm-chart | repo publishes a Helm chart (needs `vars.HELM_CHART_REPO` + `secrets.CHARTS_WRITE_TOKEN`) |
@@ -112,7 +113,11 @@ manual build-only runs never receive the signing key or invoke the generator.
 The `macos-app` group installs a pinned, checksum-verified default generator at
 `.shared/generate-sparkle-appcast.py`; new macOS projects should configure that
 command and treat `SPARKLE_EDDSA_PRIVATE_KEY` plus the matching tracked
-`SUPublicEDKey` as required release setup. The helper validates the exported
+`SUPublicEDKey` as required release setup. Internal projects may also opt into
+the `sparkle-development` group, which synchronizes the canonical shared public
+key into `.sparkle-public-key`; consumer builds embed that committed copy so
+historical tags remain reproducible. Its private half is an organization-level
+secret limited to selected repositories. The helper validates the exported
 Sparkle private key's base64 encoding and decoded length before invoking Sparkle.
 A repository may keep a project-owned
 generator when it needs different feed behavior.

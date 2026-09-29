@@ -1,0 +1,5 @@
+# Opt internal macOS applications into the shared development signing identity.
+# Publicly distributed applications should own a dedicated Sparkle key instead.
+includes: []
+files:
+  - .sparkle-public-key

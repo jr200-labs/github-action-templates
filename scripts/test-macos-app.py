@@ -1,5 +1,6 @@
 """Offline contract tests for configurable app packaging and canonical adoption."""
 
+import base64
 import hashlib
 import importlib.util
 import json
@@ -136,7 +137,9 @@ class PackagingTest(unittest.TestCase):
 
     def test_group_sync_and_drift(self):
         Path(".github").mkdir()
-        Path(".github/.shared-config.yaml").write_text("ref: shared-v0.1.0\nworkflows:\n  - macos-app\n")
+        Path(".github/.shared-config.yaml").write_text(
+            "ref: shared-v0.1.0\nworkflows:\n  - macos-app\n  - sparkle-development\n"
+        )
         Path("release-please-config.json").write_bytes((ROOT / "shared/release-please-config.base.json").read_bytes())
         env = dict(os.environ, STRICT="1", SYNC_BASE_URL=(ROOT / "consumers").as_uri())
         sync = ["bash", str(ROOT / "consumers/scripts/sync-shared")]
@@ -146,6 +149,11 @@ class PackagingTest(unittest.TestCase):
         self.assertEqual(caller.read_bytes(), (ROOT / "consumers/workflows/macos-app.yaml").read_bytes())
         self.assertEqual(publisher.read_bytes(), (ROOT / "consumers/workflows/publish-macos-app.yaml").read_bytes())
         self.assertEqual(Path(".shared/package-macos-app.py").read_bytes(), SCRIPT.read_bytes())
+        self.assertEqual(
+            Path(".sparkle-public-key").read_bytes(),
+            (ROOT / "consumers/files/.sparkle-public-key").read_bytes(),
+        )
+        self.assertEqual(len(base64.b64decode(Path(".sparkle-public-key").read_text().strip(), validate=True)), 32)
         for helper in ("fetch-sparkle.py", "generate-sparkle-appcast.py", "sparkle.json"):
             self.assertEqual(
                 Path(".shared", helper).read_bytes(),
@@ -162,6 +170,13 @@ class PackagingTest(unittest.TestCase):
         self.assertIs(release_config["draft"], True)
         self.assertIs(release_config["force-tag-creation"], True)
         subprocess.run(sync + ["--check"], check=True, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        Path(".sparkle-public-key").write_text("different\n")
+        public_drift = subprocess.run(
+            sync + ["--check"], env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
+        )
+        self.assertNotEqual(public_drift.returncode, 0)
+        self.assertIn(".sparkle-public-key differs from canonical", public_drift.stdout)
+        subprocess.run(sync, check=True, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         release_config.pop("draft")
         Path("release-please-config.json").write_text(json.dumps(release_config))
         drift = subprocess.run(sync + ["--check"], env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
