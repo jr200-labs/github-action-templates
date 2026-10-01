@@ -302,6 +302,24 @@ class PackagingTest(unittest.TestCase):
             self.assertIn("github-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}",
                           step["env"]["SCOTTY_TOOLCHAIN_REQUEST_KEY"])
 
+    def test_swift_ci_resolves_and_reuses_a_test_destination(self):
+        workflow = ROOT / ".github/workflows/ci_swift.yaml"
+        resolve_step = json.loads(subprocess.check_output(
+            ["yq", "-o=json", '.jobs.build-and-test.steps[] | select(.id == "xcode")', str(workflow)],
+            text=True,
+        ))
+        self.assertIn("SUPPORTED_PLATFORMS", resolve_step["run"])
+        self.assertIn("xcrun simctl list devices available --json", resolve_step["run"])
+        self.assertIn("destination=$destination", resolve_step["run"])
+
+        steps = json.loads(subprocess.check_output(
+            ["yq", "-o=json", ".jobs.build-and-test.steps", str(workflow)],
+            text=True,
+        ))
+        for name in ("Build", "Test"):
+            run = next(step["run"] for step in steps if step.get("name") == name)
+            self.assertIn('-destination "${{ steps.xcode.outputs.destination }}"', run)
+
     def test_release_reuses_the_build_job_without_artifact_transfer(self):
         build = ROOT / ".github/workflows/build_macos_app.yaml"
         publish = ROOT / ".github/workflows/publish_macos_app.yaml"
