@@ -18,6 +18,11 @@ on:
         required: false
         type: string
         default: ""
+      destination:
+        description: "xcodebuild destination. Leave empty to auto-detect macOS or an available iOS Simulator."
+        required: false
+        type: string
+        default: ""
       configuration:
         description: "Xcode build configuration"
         required: false
@@ -74,7 +79,7 @@ jobs:
           fi
           xcrun metal --version
 
-      - name: Resolve Xcode project and scheme
+      - name: Resolve Xcode project, scheme, and destination
         id: xcode
         shell: bash
         run: |
@@ -122,19 +127,66 @@ jobs:
             fi
           fi
 
+          destination="${{ inputs.destination }}"
+          if [ -z "$destination" ]; then
+            build_settings="$(xcodebuild \
+                -project "$project" \
+                -scheme "$scheme" \
+                -configuration "${{ inputs.configuration }}" \
+                -showBuildSettings)"
+            supported_platforms="$(/usr/bin/awk '
+              /^[[:space:]]*SUPPORTED_PLATFORMS = / {
+                sub(/^[[:space:]]*SUPPORTED_PLATFORMS = /, "")
+                print
+                exit
+              }
+            ' <<< "$build_settings")"
+
+            if [[ " $supported_platforms " == *" iphonesimulator "* ]]; then
+              simulator_id="$(xcrun simctl list devices available --json | /usr/bin/python3 -c '
+          import json
+          import re
+          import sys
+
+          devices = json.load(sys.stdin).get("devices", {})
+          candidates = []
+          for runtime, runtime_devices in devices.items():
+              if ".SimRuntime.iOS-" not in runtime:
+                  continue
+              version = tuple(int(part) for part in re.findall(r"\d+", runtime))
+              for device in runtime_devices:
+                  if device.get("isAvailable", True):
+                      candidates.append((version, device.get("state") == "Booted", device["udid"]))
+          if not candidates:
+              raise SystemExit("No available iOS Simulator found")
+          print(max(candidates)[2])
+          ')"
+              destination="id=$simulator_id"
+            elif [[ " $supported_platforms " == *" macosx "* ]]; then
+              destination="platform=macOS"
+            else
+              echo "Could not auto-detect a supported test destination from: $supported_platforms" >&2
+              echo "Pass the reusable workflow destination input explicitly." >&2
+              exit 1
+            fi
+          fi
+
           {
             echo "project=$project"
             echo "scheme=$scheme"
+            echo "destination=$destination"
           } >> "$GITHUB_OUTPUT"
 
           echo "Resolved Xcode project: $project"
           echo "Resolved Xcode scheme: $scheme"
+          echo "Resolved Xcode destination: $destination"
 
       - name: Build
         run: >
           xcodebuild
           -project "${{ steps.xcode.outputs.project }}"
           -scheme "${{ steps.xcode.outputs.scheme }}"
+          -destination "${{ steps.xcode.outputs.destination }}"
           -configuration "${{ inputs.configuration }}"
           -derivedDataPath "${{ inputs.derived-data-path }}"
           CODE_SIGNING_ALLOWED=NO
@@ -147,6 +199,7 @@ jobs:
           xcodebuild
           -project "${{ steps.xcode.outputs.project }}"
           -scheme "${{ steps.xcode.outputs.scheme }}"
+          -destination "${{ steps.xcode.outputs.destination }}"
           -configuration "${{ inputs.configuration }}"
           -derivedDataPath "${{ inputs.derived-data-path }}"
           CODE_SIGNING_ALLOWED=NO
