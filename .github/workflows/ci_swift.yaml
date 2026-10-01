@@ -46,6 +46,7 @@ on:
 jobs:
   build-and-test:
     runs-on: ${{ inputs.runner }}
+    timeout-minutes: 20
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
@@ -128,6 +129,7 @@ jobs:
           fi
 
           destination="${{ inputs.destination }}"
+          simulator_id=""
           if [ -z "$destination" ]; then
             build_settings="$(xcodebuild \
                 -project "$project" \
@@ -143,7 +145,8 @@ jobs:
             ' <<< "$build_settings")"
 
             if [[ " $supported_platforms " == *" iphonesimulator "* ]]; then
-              simulator_id="$(xcrun simctl list devices available --json | /usr/bin/python3 -c '
+              read -r simulator_device_type simulator_runtime < <(
+                xcrun simctl list devices available --json | /usr/bin/python3 -c '
           import json
           import re
           import sys
@@ -156,11 +159,17 @@ jobs:
               version = tuple(int(part) for part in re.findall(r"\d+", runtime))
               for device in runtime_devices:
                   if device.get("isAvailable", True):
-                      candidates.append((version, device.get("state") == "Booted", device["udid"]))
+                      device_type = device.get("deviceTypeIdentifier", "")
+                      if device_type:
+                          candidates.append((version, "iPhone" in device_type, device_type, runtime))
           if not candidates:
               raise SystemExit("No available iOS Simulator found")
-          print(max(candidates)[2])
-          ')"
+          _, _, device_type, runtime = max(candidates)
+          print(device_type, runtime)
+          '
+              )
+              simulator_name="ci-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}"
+              simulator_id="$(xcrun simctl create "$simulator_name" "$simulator_device_type" "$simulator_runtime")"
               destination="id=$simulator_id"
             elif [[ " $supported_platforms " == *" macosx "* ]]; then
               destination="platform=macOS"
@@ -175,6 +184,7 @@ jobs:
             echo "project=$project"
             echo "scheme=$scheme"
             echo "destination=$destination"
+            echo "simulator-id=$simulator_id"
           } >> "$GITHUB_OUTPUT"
 
           echo "Resolved Xcode project: $project"
@@ -205,3 +215,7 @@ jobs:
           CODE_SIGNING_ALLOWED=NO
           CODE_SIGNING_REQUIRED=NO
           test
+
+      - name: Delete ephemeral iOS Simulator
+        if: always() && steps.xcode.outputs.simulator-id != ''
+        run: xcrun simctl delete "${{ steps.xcode.outputs.simulator-id }}"

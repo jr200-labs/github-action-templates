@@ -310,6 +310,7 @@ class PackagingTest(unittest.TestCase):
         ))
         self.assertIn("SUPPORTED_PLATFORMS", resolve_step["run"])
         self.assertIn("xcrun simctl list devices available --json", resolve_step["run"])
+        self.assertIn("xcrun simctl create", resolve_step["run"])
         self.assertIn("destination=$destination", resolve_step["run"])
 
         steps = json.loads(subprocess.check_output(
@@ -319,6 +320,15 @@ class PackagingTest(unittest.TestCase):
         for name in ("Build", "Test"):
             run = next(step["run"] for step in steps if step.get("name") == name)
             self.assertIn('-destination "${{ steps.xcode.outputs.destination }}"', run)
+        cleanup = next(step for step in steps if step.get("name") == "Delete ephemeral iOS Simulator")
+        self.assertEqual(cleanup["if"], "always() && steps.xcode.outputs.simulator-id != ''")
+        self.assertIn("xcrun simctl delete", cleanup["run"])
+
+        job = json.loads(subprocess.check_output(
+            ["yq", "-o=json", ".jobs.build-and-test", str(workflow)],
+            text=True,
+        ))
+        self.assertEqual(job["timeout-minutes"], 20)
 
     def test_release_reuses_the_build_job_without_artifact_transfer(self):
         build = ROOT / ".github/workflows/build_macos_app.yaml"
