@@ -87,6 +87,10 @@ on:
 
 env:
   IMAGE_NAME: ${{ inputs.image_name }}
+  # Buildx uploads one diagnostic .dockerbuild artifact per platform by
+  # default. Keep five days of release diagnostics without accumulating the
+  # default 90 days of artifacts across consumers.
+  DOCKER_BUILD_RECORD_RETENTION_DAYS: 5
   # Honor inputs.image_name when set (monorepo image-variant layouts need
   # different package paths under one repository). Falls back to
   # github.repository so existing single-image callers keep working.
