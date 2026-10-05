@@ -298,7 +298,7 @@ jobs:
         # floating majors. Pass a complete image reference because the action
         # mistakes a registry port (for example :5000) for an image tag and
         # otherwise ignores renovate-version.
-        uses: renovatebot/github-action@v46.3.5
+        uses: renovatebot/github-action@v46.3.7
         with:
           token: ${{ steps.app-token.outputs.token || secrets.GITHUB_TOKEN }}
           renovate-image: ${{ format('{0}:{1}', runner.environment == 'self-hosted' && inputs.renovate-image || 'ghcr.io/renovatebot/renovate', inputs.renovate-version) }}
@@ -388,7 +388,7 @@ jobs:
         # and rewrite the closed PR title/body to a newer available version
         # without changing the already-merged commit.
         if: success() && inputs.dry-run == '' && steps.renovate-pass2.outputs.run == 'true'
-        uses: renovatebot/github-action@v46.3.5
+        uses: renovatebot/github-action@v46.3.7
         with:
           token: ${{ steps.app-token.outputs.token || secrets.GITHUB_TOKEN }}
           renovate-image: ${{ format('{0}:{1}', runner.environment == 'self-hosted' && inputs.renovate-image || 'ghcr.io/renovatebot/renovate', inputs.renovate-version) }}
