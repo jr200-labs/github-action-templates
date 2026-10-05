@@ -125,11 +125,15 @@ jobs:
     # Ensures Python dependency PRs regenerate uv.lock through Renovate
     # postUpgradeTasks. A file-scoped rule failed to attach to grouped
     # pyproject.toml updates, so Renovate produced PRs that CI rejected.
+    # Exercise commands in root and nested projects to catch cwd regressions.
     runs-on: ${{ fromJSON(vars.RUNNER_PROFILES)[vars.RUNNER_PROFILE].default }}
     steps:
       - uses: actions/checkout@v7
       - name: Lint Renovate uv.lock post-upgrade task
         run: ./scripts/lint-renovate-uv-lock-task.sh
+      - uses: astral-sh/setup-uv@v10.2.0
+      - name: Exercise root and nested Python lockfile tasks
+        run: python3 scripts/test-renovate-uv-lock-tasks.py
 
   validate-renovate-shared-ref-rollout:
     # Shared ref updates now sync hooks/config in addition to workflows.

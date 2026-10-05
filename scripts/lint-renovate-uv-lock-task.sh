@@ -31,7 +31,7 @@ pep621_rule_count=$(jq '
     .packageRules[]?
     | select((.postUpgradeTasks.commands // []) == ["uv lock --refresh"])
     | select((.postUpgradeTasks.installTools // {}) == {"python": {}, "uv": {}})
-    | select((.postUpgradeTasks.fileFilters // []) == ["uv.lock"])
+    | select((.postUpgradeTasks.fileFilters // []) == ["**/uv.lock"])
     | select((.matchManagers // []) | index("pep621"))
   ]
   | length
@@ -54,6 +54,21 @@ python_custom_rule_count=$(jq '
 
 if [[ "$python_custom_rule_count" != "1" ]]; then
   echo "FAIL: expected exactly one uv.lock postUpgradeTasks rule scoped to Python custom-manager dependencies; found ${python_custom_rule_count}" >&2
+  exit 1
+fi
+
+project_scoped_count=$(jq '
+  [
+    .packageRules[]?
+    | select((.postUpgradeTasks.commands // []) == ["uv lock --refresh"])
+    | select(.postUpgradeTasks.executionMode == "update")
+    | select(.postUpgradeTasks.workingDirTemplate == "{{{packageFileDir}}}")
+    | select(.postUpgradeTasks.fileFilters == ["**/uv.lock"])
+  ] | length
+' "$file")
+
+if [[ "$project_scoped_count" != "2" ]]; then
+  echo "FAIL: both Python tasks must run per update in packageFileDir and include nested uv.lock files" >&2
   exit 1
 fi
 
