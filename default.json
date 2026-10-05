@@ -125,7 +125,7 @@
       "skipArtifactsUpdate": true
     },
     {
-      "description": "Regenerate uv.lock with fresh package metadata whenever Renovate's pep621 manager changes Python dependencies in pyproject.toml.",
+      "description": "Regenerate each project's uv.lock in its package directory whenever Renovate's pep621 manager changes Python dependencies. Update-level tasks preserve packageFileDir for grouped monorepo PRs.",
       "matchManagers": ["pep621"],
       "matchPackageNames": ["!jr200-labs/github-action-templates"],
       "postUpgradeTasks": {
@@ -134,12 +134,13 @@
           "python": {},
           "uv": {}
         },
-        "fileFilters": ["uv.lock"],
-        "executionMode": "branch"
+        "fileFilters": ["**/uv.lock"],
+        "executionMode": "update",
+        "workingDirTemplate": "{{{packageFileDir}}}"
       }
     },
     {
-      "description": "Regenerate uv.lock when a Python-specific custom regex manager changes a dependency.",
+      "description": "Regenerate uv.lock in the changed package directory when a Python-specific custom regex manager changes a dependency, including nested projects.",
       "matchManagers": ["custom.regex"],
       "matchDepTypes": ["python"],
       "matchPackageNames": ["!jr200-labs/github-action-templates"],
@@ -149,8 +150,9 @@
           "python": {},
           "uv": {}
         },
-        "fileFilters": ["uv.lock"],
-        "executionMode": "branch"
+        "fileFilters": ["**/uv.lock"],
+        "executionMode": "update",
+        "workingDirTemplate": "{{{packageFileDir}}}"
       }
     }
   ],
