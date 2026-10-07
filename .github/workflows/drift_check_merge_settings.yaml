@@ -46,6 +46,11 @@ name: template-drift-check-merge-settings
 on:
   workflow_call:
     inputs:
+      runner:
+        description: Runner selected by the caller profile
+        required: false
+        type: string
+        default: ''
       orgs:
         description: Space-separated list of orgs to scan
         required: true
@@ -71,7 +76,7 @@ on:
 
 jobs:
   drift-check:
-    runs-on: ${{ fromJSON(vars.RUNNER_PROFILES)[vars.RUNNER_PROFILE].default }}
+    runs-on: ${{ inputs.runner || fromJSON(vars.RUNNER_PROFILES)[vars.RUNNER_PROFILE].default }}
     steps:
       - name: Checkout reusable-workflow repo (for scripts/)
         uses: actions/checkout@v7
