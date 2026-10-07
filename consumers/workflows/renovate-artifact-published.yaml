@@ -39,6 +39,7 @@ jobs:
     # an otherwise empty ARC runner transition on the publication path.
     uses: jr200-labs/github-action-templates/.github/workflows/renovate.yaml@master
     with:
+      runner: ${{ fromJSON(vars.RUNNER_PROFILES)[vars.RUNNER_PROFILE].default }}
       dependency-names: ${{ github.event_name == 'repository_dispatch' && toJSON(github.event.client_payload.dependencies) || inputs.dependencies }}
       repair-branches: false
       renovate-image: ${{ vars.RENOVATE_IMAGE }}

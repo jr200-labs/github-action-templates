@@ -42,6 +42,9 @@
         "required_status_checks": [
           {
             "context": "commitlint / commitlint"
+          },
+          {
+            "context": "lint-workflow-runners / lint-workflow-runners"
           }
         ]
       }
