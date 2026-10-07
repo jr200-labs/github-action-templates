@@ -172,3 +172,15 @@ jobs:
       - uses: actions/checkout@v7
       - name: Lint shared ref release token
         run: ./scripts/lint-release-shared-ref-token.sh
+
+  validate-workflow-runners:
+    runs-on: ${{ fromJSON(vars.RUNNER_PROFILES)[vars.RUNNER_PROFILE].default }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.2.0
+      - name: Test runner policy regressions
+        run: uv run --with PyYAML==6.0.3 python scripts/test-workflow-runners.py
+      - name: Enforce policy on reusable and consumer workflows
+        run: |
+          ./scripts/lint-workflow-runners.sh .github/workflows
+          ./scripts/lint-workflow-runners.sh consumers/workflows

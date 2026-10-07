@@ -248,7 +248,7 @@ The canonical caller workflows encode invariants that are easy to break by hand 
 
 - **Top-level `permissions:`** — only the caller's *top-level* permissions cascade into reusable workflows. Job-level permissions on the caller are silently ignored when the caller invokes a reusable. Missing this on a Docker caller can cause a silent build failure.
 - **Secret name match** — the reusable declares a secret name; the caller must pass it under exactly that name. `app_private_key` vs `INTEGRATION_APP_PRIVATE_KEY` is a one-character bug that fails the run at startup.
-- **Runner forwarding** — every reusable that runs jobs takes a `runner:` input parameterised via `vars.RUNNER_PROFILES[vars.RUNNER_PROFILE].<role>`. Linux CI generally uses `default`; native Swift/Xcode macOS app CI uses `macos`. Hard-coded labels such as `ubuntu-latest` or `macos-latest` are forbidden.
+- **Runner selection** — select `${{ fromJSON(vars.RUNNER_PROFILES)[vars.RUNNER_PROFILE].<role> }}` in direct jobs and reusable callers. Linux CI generally uses `default`; native Swift/Xcode CI uses `macos`. Reusable primitives may forward an empty-default `workflow_call` runner input supplied by a checked caller. Manual runner overrides, fixed profile keys, literal labels, and arbitrary runner expressions are forbidden. Run `./scripts/lint-workflow-runners.sh` against both `.github/workflows` and `consumers/workflows` when changing workflows. The hygiene group installs `lint-workflow-runners` on every PR, including bespoke workflows. Consumer-owned `.github/runner-policy.json` can declare the required profile and role labels; CI compares it to effective GitHub variables to detect repository overrides.
 
 ## Tests: unit vs integration
 
@@ -265,7 +265,7 @@ Repos with infra-dependent tests that can't (yet) be split: stay on a fully besp
 When you write a repo's `integration-tests.yaml`, follow these structural rules so it shares the load-bearing properties of the canonical callers even though the content is bespoke:
 
 - **Top-level `permissions:`** — minimum `contents: read`. Add `pull-requests: read` if any reusable inside needs it. Job-level perms on the caller don't cascade into reusables.
-- **`runs-on:`** — always `${{ fromJSON(vars.RUNNER_PROFILES)[vars.RUNNER_PROFILE].default }}`. Never hard-code `ubuntu-latest`.
+- **`runs-on:`** — always `${{ fromJSON(vars.RUNNER_PROFILES)[vars.RUNNER_PROFILE].default }}` (or `.macos` for Apple jobs).
 - **Private git deps** — mint an installation token via `actions/create-github-app-token@v3.1.1` with `client-id: ${{ vars.INTEGRATION_CLIENT_ID }}` and `private-key: ${{ secrets.INTEGRATION_APP_PRIVATE_KEY }}`, then write `~/.netrc` for `uv sync` / `go mod download` to use.
 - **Test selection** — invoke the marked subset only (`pytest -m integration`, `go test -tags integration`, `vitest --include 'tests/integration/**'`). Don't re-run unit tests; canonical CI already does.
 - **Service containers** — declared at job level via `services:` with healthchecks. Connect via `localhost:<host-port>` from the runner.
@@ -277,6 +277,38 @@ Use neutral fictitious identifiers in reusable workflows, tests, comments, and
 documentation. Consumer organization, repository, package, and application
 names belong in consumer-owned configuration or explicit workflow/script
 parameters.
+
+## Runner policy rollout
+
+The hygiene group runs `lint-workflow-runners` on every PR without path filters.
+Before adopting a new workflow, run `./scripts/lint-workflow-runners.sh` locally.
+Use `uv` to run the pinned YAML parser; literal labels, fixed profile keys,
+manual overrides, unverifiable dynamic matrices, and arbitrary fallback labels
+fail validation. Remote reusable callers must forward `with.runner` from the
+configured profile. The check audits repository YAML; external reusable workflow
+implementations remain a trust boundary and must themselves follow this policy.
+
+A consumer that requires a particular runner fleet should commit
+`.github/runner-policy.json`, for example:
+
+```json
+{"profile":"self-hosted","roles":{"default":"example-linux","macos":"example-macos"}}
+```
+
+The CI guard compares this policy to effective `vars.RUNNER_PROFILE` and
+`vars.RUNNER_PROFILES`, including any repository overrides. Remove repository
+runner overrides so organization variables remain authoritative.
+
+Roll out in this order: merge and release the shared changes; update consumer
+shared refs and sync callers; verify the guard passes; then require the check
+`lint-workflow-runners / lint-workflow-runners` in branch rulesets. Requiring it
+before callers are installed blocks merges. A PR check protects merges but
+cannot prevent another PR job from being scheduled first. The trunk-protect ruleset template requires this check; reconcile that
+ruleset only after consumers install it. An organization that forbids hosted
+execution also needs platform-level controls. A zero-dollar Actions budget with
+usage stopped at the limit blocks paid usage beyond the included quota; it does
+not block consumption of the included minutes. Agent instructions alone do not
+enforce runner selection.
 
 ## Lint configs
 

@@ -10,3 +10,4 @@ includes:
   - renovate
   - lint-no-auto-merge
   - lint-version-downgrades
+  - lint-workflow-runners

@@ -1,42 +1,44 @@
 name: template-lint-workflow-runners
 
-# Reusable workflow: fails if any .github/workflows/*.yaml in the caller
-# repo uses a hardcoded `runs-on: ubuntu-latest` (or macos-*/windows-*)
-# literal. Enforces the `fromJSON(vars.RUNNER_PROFILES)[vars.RUNNER_PROFILE]`
-# pattern so the org can flip runner pools via a single var without
-# grepping every repo for stragglers.
-#
-# Consumer usage (.github/workflows/ci.yaml):
-#
-#     jobs:
-#       lint-workflow-runners:
-#         uses: jr200-labs/github-action-templates/.github/workflows/lint_workflow_runners.yaml@master
-#
-# No inputs. No secrets. Runs the canonical lint-workflow-runners.sh
-# script from this repo against the caller's .github/workflows/ dir.
-
 on:
   workflow_call:
     inputs:
+      runner:
+        description: Runner selected by the caller profile
+        required: false
+        type: string
+        default: ""
       workflows-dir:
-        description: Path to workflows directory (default .github/workflows)
+        description: Directory containing caller workflows
         required: false
         type: string
         default: .github/workflows
 
+permissions:
+  contents: read
+
 jobs:
   lint-workflow-runners:
-    runs-on: ${{ fromJSON(vars.RUNNER_PROFILES)[vars.RUNNER_PROFILE].default }}
+    runs-on: ${{ inputs.runner || fromJSON(vars.RUNNER_PROFILES)[vars.RUNNER_PROFILE].default }}
+    timeout-minutes: 5
     steps:
       - name: Checkout caller repo
         uses: actions/checkout@v7
-
       - name: Checkout template scripts
         uses: actions/checkout@v7
         with:
           repository: jr200-labs/github-action-templates
-          ref: master
+          ref: ${{ github.repository == 'jr200-labs/github-action-templates' && github.sha || 'master' }}
           path: _gha_templates
-
-      - name: Run lint-workflow-runners.sh
-        run: ./_gha_templates/scripts/lint-workflow-runners.sh "${{ inputs.workflows-dir }}"
+      - uses: astral-sh/setup-uv@v10.2.0
+      - name: Validate workflow runner selection and effective variables
+        env:
+          WORKFLOWS_DIR: ${{ inputs.workflows-dir }}
+          RUNNER_PROFILE: ${{ vars.RUNNER_PROFILE }}
+          RUNNER_PROFILES: ${{ vars.RUNNER_PROFILES }}
+        run: |
+          args=("$WORKFLOWS_DIR")
+          if [ -f .github/runner-policy.json ]; then
+            args+=(--policy .github/runner-policy.json)
+          fi
+          ./_gha_templates/scripts/lint-workflow-runners.sh "${args[@]}"

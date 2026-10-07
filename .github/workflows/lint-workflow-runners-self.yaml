@@ -1,4 +1,4 @@
-name: commitlint
+name: lint-workflow-runners
 
 on:
   pull_request:
@@ -6,10 +6,9 @@ on:
 
 permissions:
   contents: read
-  pull-requests: read
 
 jobs:
-  commitlint:
-    uses: jr200-labs/github-action-templates/.github/workflows/lint_commits.yaml@master
+  lint-workflow-runners:
+    uses: ./.github/workflows/lint_workflow_runners.yaml
     with:
       runner: ${{ fromJSON(vars.RUNNER_PROFILES)[vars.RUNNER_PROFILE].default }}
