@@ -38,6 +38,16 @@ on:
         required: false
         type: boolean
         default: true
+      scotty-unattended:
+        description: "Opt into the installed Scotty fixed unsigned Xcode contract; fail if unavailable."
+        required: false
+        type: boolean
+        default: false
+      scotty-platform:
+        description: "Platform for Scotty unattended execution: ios (approved runtime) or macos."
+        required: false
+        type: string
+        default: "ios"
       runner:
         description: "Runner label for macOS/Xcode builds"
         required: true
@@ -82,11 +92,18 @@ jobs:
 
       - name: Resolve Xcode project, scheme, and destination
         id: xcode
+        timeout-minutes: 3
         shell: bash
+        env:
+          SCOTTY_UNATTENDED: ${{ inputs.scotty-unattended }}
+          XCODE_PROJECT: ${{ inputs.project }}
+          XCODE_SCHEME: ${{ inputs.scheme }}
+          XCODE_DESTINATION: ${{ inputs.destination }}
+          XCODE_CONFIGURATION: ${{ inputs.configuration }}
         run: |
           set -euo pipefail
 
-          project="${{ inputs.project }}"
+          project="$XCODE_PROJECT"
           if [ -z "$project" ]; then
             projects=()
             while IFS= read -r found_project; do
@@ -105,7 +122,7 @@ jobs:
             exit 1
           fi
 
-          scheme="${{ inputs.scheme }}"
+          scheme="$XCODE_SCHEME"
           if [ -z "$scheme" ]; then
             project_basename="$(basename "$project" .xcodeproj)"
             schemes=()
@@ -128,13 +145,13 @@ jobs:
             fi
           fi
 
-          destination="${{ inputs.destination }}"
+          destination="$XCODE_DESTINATION"
           simulator_id=""
           if [ -z "$destination" ]; then
             build_settings="$(xcodebuild \
                 -project "$project" \
                 -scheme "$scheme" \
-                -configuration "${{ inputs.configuration }}" \
+                -configuration "$XCODE_CONFIGURATION" \
                 -showBuildSettings)"
             supported_platforms="$(/usr/bin/awk '
               /^[[:space:]]*SUPPORTED_PLATFORMS = / {
@@ -145,6 +162,9 @@ jobs:
             ' <<< "$build_settings")"
 
             if [[ " $supported_platforms " == *" iphonesimulator "* ]]; then
+              if [ "$SCOTTY_UNATTENDED" = "true" ]; then
+                destination="platform=iOS Simulator"
+              else
               read -r simulator_device_type simulator_runtime < <(
                 xcrun simctl list devices available --json | /usr/bin/python3 -c '
           import json
@@ -171,6 +191,7 @@ jobs:
               simulator_name="ci-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}"
               simulator_id="$(xcrun simctl create "$simulator_name" "$simulator_device_type" "$simulator_runtime")"
               destination="id=$simulator_id"
+              fi
             elif [[ " $supported_platforms " == *" macosx "* ]]; then
               destination="platform=macOS"
             else
@@ -191,7 +212,33 @@ jobs:
           echo "Resolved Xcode scheme: $scheme"
           echo "Resolved Xcode destination: $destination"
 
+      - name: Run Scotty unattended verification
+        if: inputs.scotty-unattended
+        timeout-minutes: 18
+        shell: bash
+        env:
+          XCODE_PROJECT: ${{ steps.xcode.outputs.project }}
+          XCODE_SCHEME: ${{ steps.xcode.outputs.scheme }}
+          XCODE_CONFIGURATION: ${{ inputs.configuration }}
+          SCOTTY_PLATFORM: ${{ inputs.scotty-platform }}
+          RUN_TESTS: ${{ inputs.run-tests }}
+        run: |
+          set -euo pipefail
+          scotty_cli="/Applications/Scotty.app/Contents/MacOS/scotty"
+          if [ ! -x "$scotty_cli" ]; then
+            scotty_cli="$HOME/Applications/Scotty.app/Contents/MacOS/scotty"
+          fi
+          if [ ! -x "$scotty_cli" ]; then
+            echo "Scotty unattended execution requires the installed executor." >&2
+            exit 1
+          fi
+          arguments=(verify-action --project "$XCODE_PROJECT" --scheme "$XCODE_SCHEME"
+                     --platform "$SCOTTY_PLATFORM" --configuration "$XCODE_CONFIGURATION")
+          if [ "$RUN_TESTS" != "true" ]; then arguments+=(--no-tests); fi
+          "$scotty_cli" "${arguments[@]}"
+
       - name: Build
+        if: ${{ !inputs.scotty-unattended }}
         run: >
           xcodebuild
           -project "${{ steps.xcode.outputs.project }}"
@@ -204,7 +251,7 @@ jobs:
           build
 
       - name: Test
-        if: inputs.run-tests
+        if: inputs.run-tests && !inputs.scotty-unattended
         run: >
           xcodebuild
           -project "${{ steps.xcode.outputs.project }}"

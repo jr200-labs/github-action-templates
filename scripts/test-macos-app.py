@@ -302,6 +302,19 @@ class PackagingTest(unittest.TestCase):
             self.assertIn("github-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}",
                           step["env"]["SCOTTY_TOOLCHAIN_REQUEST_KEY"])
 
+    def test_unattended_swift_lane_is_explicit_and_passes_values_as_arguments(self):
+        workflow = ROOT / ".github/workflows/ci_swift.yaml"
+        steps = json.loads(subprocess.check_output(
+            ["yq", "-o=json", ".jobs.build-and-test.steps", str(workflow)], text=True))
+        lane = next(step for step in steps if step.get("name") == "Run Scotty unattended verification")
+        self.assertEqual(lane["if"], "inputs.scotty-unattended")
+        self.assertIn('arguments=(verify-action --project "$XCODE_PROJECT"', lane["run"])
+        self.assertIn('"${arguments[@]}"', lane["run"])
+        self.assertNotIn("${{ inputs.", lane["run"])
+        self.assertEqual(lane["timeout-minutes"], 18)
+        for name in ("Build", "Test"):
+            self.assertIn("!inputs.scotty-unattended", next(step for step in steps if step.get("name") == name)["if"])
+
     def test_swift_ci_resolves_and_reuses_a_test_destination(self):
         workflow = ROOT / ".github/workflows/ci_swift.yaml"
         resolve_step = json.loads(subprocess.check_output(
