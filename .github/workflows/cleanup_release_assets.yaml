@@ -23,5 +23,5 @@ jobs:
           APPLY: ${{ inputs.apply }}
         run: |
           args=()
-          if [ "$APPLY" = true ]; then args+=(--apply); fi
+          if [ "$APPLY" = true ]; then args+=(--apply --yes); fi
           python3 .shared/cleanup-release-assets.py "${args[@]}"
