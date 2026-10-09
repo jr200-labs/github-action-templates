@@ -37,6 +37,22 @@ def heartbeat(stop, started, label):
         log(f"{label}: waiting for GitHub ({time.monotonic() - started:.1f}s elapsed; socket timeout 30s)")
 
 
+def confirm_plan(plan, auto_confirm=False):
+    log("Deletion plan: " + json.dumps(plan, sort_keys=True))
+    if auto_confirm:
+        log("Confirmation: yes (--yes supplied)")
+        return True
+    if not sys.stdin.isatty():
+        raise RuntimeError("Confirmation requires an interactive terminal; use --apply --yes for automation")
+    log("Proceed with this deletion plan? Type yes to confirm [default: no]:")
+    try:
+        approved = sys.stdin.readline().strip().lower() == "yes"
+    except (EOFError, KeyboardInterrupt):
+        approved = False
+    log("Confirmation: " + ("yes" if approved else "no; cancelled without deleting anything"))
+    return approved
+
+
 class GitHub:
     def __init__(self, repository, token):
         if not re.fullmatch(r'[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+', repository):
@@ -101,7 +117,7 @@ def protected_releases(releases, latest, protected_tags):
     return protected
 
 
-def prune(api, now, protected_tags=(), apply=False):
+def prune(api, now, protected_tags=(), apply=False, confirm=None):
     cutoff = now - timedelta(days=RETENTION_DAYS)
     log(f"Starting release asset cleanup: mode={'APPLY' if apply else 'DRY RUN'}; cutoff={cutoff.isoformat()}")
     releases = api.inventory('/releases')
@@ -122,6 +138,9 @@ def prune(api, now, protected_tags=(), apply=False):
             else:
                 log(f"Keep asset {asset['id']}: recent or not fully uploaded")
     log(f"Candidate review complete: {len(candidates)} assets; {sum(asset['size'] for _, asset in candidates)} bytes eligible")
+    plan = {"operation": "delete superseded release assets older than 14 days", "cutoff": cutoff.isoformat(), "items": [{"id": asset["id"], "name": asset["name"], "tag": release["tag_name"], "size_bytes": asset["size"]} for release, asset in candidates], "total_bytes": sum(asset["size"] for _, asset in candidates)}
+    if apply and candidates and confirm is not None and not confirm(plan):
+        return {"apply": True, "cancelled": True, "retention_days": RETENTION_DAYS, "candidates": len(candidates), "deleted_asset_ids": [], "reclaimed_bytes": 0, "immutable_release_ids": [r["id"] for r in releases if r.get("immutable")]}
     deleted, reclaimed = [], 0
     for index, (release, asset) in enumerate(candidates, 1):
         log(f"Verifying candidate {index}/{len(candidates)}: asset {asset['id']} {json.dumps(asset['name'])}; refreshing current release protection")
@@ -158,13 +177,14 @@ def prune(api, now, protected_tags=(), apply=False):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--apply', action='store_true')
+    parser.add_argument('--yes', action='store_true', help='Confirm the printed deletion plan automatically')
     args = parser.parse_args()
     policy_path = Path('.github/release-asset-retention.json')
     policy = json.loads(policy_path.read_text()) if policy_path.exists() else {'protected_tags': []}
     if set(policy) != {'protected_tags'} or not isinstance(policy['protected_tags'], list) or any(not isinstance(tag, str) or not tag for tag in policy['protected_tags']):
         raise ValueError('release-asset-retention.json must contain a protected_tags string array')
     log(f"Target repository: {os.environ['GITHUB_REPOSITORY']}; explicitly protected tags: {json.dumps(policy['protected_tags'])}")
-    result = prune(GitHub(os.environ['GITHUB_REPOSITORY'], os.environ['GH_TOKEN']), datetime.now(timezone.utc), policy['protected_tags'], args.apply)
+    result = prune(GitHub(os.environ['GITHUB_REPOSITORY'], os.environ['GH_TOKEN']), datetime.now(timezone.utc), policy['protected_tags'], args.apply, confirm=lambda plan: confirm_plan(plan, args.yes))
     print(json.dumps(result, sort_keys=True), flush=True)
     if summary := os.environ.get('GITHUB_STEP_SUMMARY'):
         with open(summary, 'a') as output:

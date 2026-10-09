@@ -170,5 +170,59 @@ class ProgressTests(unittest.TestCase):
         self.assertNotIn('SECRET_TEST_TOKEN', output.getvalue())
 
 
+
+class ConfirmationTests(unittest.TestCase):
+    def run_cli(self, args, answer='', interactive=True):
+        import io
+        import json
+        from contextlib import redirect_stderr, redirect_stdout
+        from unittest.mock import patch
+        class Terminal(io.StringIO):
+            def isatty(self):
+                return interactive
+        class Clock(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return NOW
+        self.api = API()
+        stdout, stderr = io.StringIO(), io.StringIO()
+        with redirect_stdout(stdout), redirect_stderr(stderr), patch.object(cleanup, 'GitHub', return_value=self.api), patch.object(cleanup, 'datetime', Clock), patch.object(cleanup.sys, 'argv', ['cleanup'] + args), patch.object(cleanup.sys, 'stdin', Terminal(answer)), patch.dict(cleanup.os.environ, {'GITHUB_REPOSITORY': 'example/project', 'GH_TOKEN': 'SECRET_TEST_TOKEN'}, clear=True):
+            cleanup.main()
+        return json.loads(stdout.getvalue()), stderr.getvalue()
+
+    def test_manual_no_and_eof_cancel_without_deletion(self):
+        for answer in ['no\n', '', '\n']:
+            receipt, logs = self.run_cli(['--apply'], answer)
+            self.assertTrue(receipt['cancelled'])
+            self.assertEqual(0, receipt['reclaimed_bytes'])
+            self.assertEqual([], self.api.deleted)
+            self.assertLess(logs.index('Deletion plan:'), logs.index('Proceed with this deletion plan?'))
+            self.assertIn('"total_bytes": 60', logs)
+
+    def test_manual_yes_confirms_before_first_deletion(self):
+        receipt, logs = self.run_cli(['--apply'], 'yes\n')
+        self.assertEqual([1], self.api.deleted)
+        self.assertEqual(60, receipt['reclaimed_bytes'])
+        self.assertLess(logs.index('Deletion plan:'), logs.index('Confirmation: yes'))
+        self.assertLess(logs.index('Confirmation: yes'), logs.index('Deleting '))
+
+    def test_automation_explicit_yes_does_not_prompt(self):
+        receipt, logs = self.run_cli(['--apply', '--yes'], interactive=False)
+        self.assertEqual([1], self.api.deleted)
+        self.assertIn('Confirmation: yes (--yes supplied)', logs)
+        self.assertNotIn('Proceed with this deletion plan?', logs)
+
+    def test_noninteractive_apply_without_yes_fails_before_deletion(self):
+        with self.assertRaisesRegex(RuntimeError, 'interactive terminal'):
+            self.run_cli(['--apply'], 'yes\n', interactive=False)
+        self.assertEqual([], self.api.deleted)
+
+    def test_yes_alone_is_still_a_dry_run(self):
+        receipt, logs = self.run_cli(['--yes'], interactive=False)
+        self.assertFalse(receipt['apply'])
+        self.assertEqual([], self.api.deleted)
+        self.assertNotIn('Proceed with this deletion plan?', logs)
+
+
 if __name__ == '__main__':
     unittest.main()

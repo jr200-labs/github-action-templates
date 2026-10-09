@@ -24,6 +24,22 @@ def heartbeat(stop, started, label):
         log(f"{label}: waiting for GitHub ({time.monotonic() - started:.1f}s elapsed; socket timeout 30s)")
 
 
+def confirm_plan(plan, auto_confirm=False):
+    log("Deletion plan: " + json.dumps(plan, sort_keys=True))
+    if auto_confirm:
+        log("Confirmation: yes (--yes supplied)")
+        return True
+    if not sys.stdin.isatty():
+        raise RuntimeError("Confirmation requires an interactive terminal; use --apply --yes for automation")
+    log("Proceed with this deletion plan? Type yes to confirm [default: no]:")
+    try:
+        approved = sys.stdin.readline().strip().lower() == "yes"
+    except (EOFError, KeyboardInterrupt):
+        approved = False
+    log("Confirmation: " + ("yes" if approved else "no; cancelled without deleting anything"))
+    return approved
+
+
 class GitHub:
     def __init__(self, repository, token):
         if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repository):
@@ -73,7 +89,7 @@ class GitHub:
         raise RuntimeError("artifact inventory exceeded page limit; no deletion performed")
 
 
-def prune(api, now, apply=False):
+def prune(api, now, apply=False, confirm=None):
     cutoff = now - timedelta(days=5)
     log(f"Starting Actions cleanup: mode={'APPLY' if apply else 'DRY RUN'}; cutoff={cutoff.isoformat()}")
     candidates = []
@@ -97,6 +113,9 @@ def prune(api, now, apply=False):
         else:
             log(f"Keep {label}: source run unavailable or not completed")
     log(f"Candidate review complete: {len(candidates)} artifacts; {sum(item['size_in_bytes'] for item in candidates)} bytes eligible")
+    plan = {"operation": "delete Actions artifacts older than five days from completed runs", "cutoff": cutoff.isoformat(), "items": [{"id": item["id"], "name": item["name"], "size_bytes": item["size_in_bytes"]} for item in candidates], "total_bytes": sum(item["size_in_bytes"] for item in candidates)}
+    if apply and candidates and confirm is not None and not confirm(plan):
+        return {"apply": True, "cancelled": True, "candidates": len(candidates), "deleted": 0, "reclaimed_bytes": 0}
     deleted, reclaimed = 0, 0
     for index, item in enumerate(candidates, 1):
         log(f"Verifying candidate {index}/{len(candidates)}: artifact {item['id']} {json.dumps(item['name'])}")
@@ -124,10 +143,11 @@ def prune(api, now, apply=False):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--apply", action="store_true")
+    parser.add_argument("--yes", action="store_true", help="Confirm the printed deletion plan automatically")
     args = parser.parse_args()
     log(f"Target repository: {os.environ['GITHUB_REPOSITORY']}")
     api = GitHub(os.environ["GITHUB_REPOSITORY"], os.environ["GH_TOKEN"])
-    result = prune(api, datetime.now(timezone.utc), args.apply)
+    result = prune(api, datetime.now(timezone.utc), args.apply, confirm=lambda plan: confirm_plan(plan, args.yes))
     print(json.dumps(result, sort_keys=True), flush=True)
     if summary := os.environ.get("GITHUB_STEP_SUMMARY"):
         with open(summary, "a") as output:
