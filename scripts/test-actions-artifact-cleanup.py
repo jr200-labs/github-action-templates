@@ -181,5 +181,65 @@ class ConfirmationTests(unittest.TestCase):
         self.assertNotIn('Proceed with this deletion plan?', logs)
 
 
+
+class AuthenticationTests(unittest.TestCase):
+    def resolve(self, environment, interactive=True, result=None, error=None):
+        import io
+        from contextlib import redirect_stderr
+        from unittest.mock import Mock, patch
+        output = io.StringIO()
+        terminal = Mock()
+        terminal.isatty.return_value = interactive
+        with redirect_stderr(output), patch.dict(cleanup.os.environ, environment, clear=True), patch.object(cleanup.sys, 'stdin', terminal), patch.object(cleanup.subprocess, 'run', return_value=result, side_effect=error) as command:
+            try:
+                token = cleanup.resolve_token()
+                return token, output.getvalue(), command
+            finally:
+                self.command = command
+                self.logs = output.getvalue()
+
+    def test_explicit_environment_token_takes_precedence_over_local_login(self):
+        token, logs, command = self.resolve({'GH_TOKEN': 'ENV_SECRET', 'GITHUB_TOKEN': 'OTHER_SECRET'}, interactive=False)
+        self.assertEqual('ENV_SECRET', token)
+        command.assert_not_called()
+        self.assertNotIn('ENV_SECRET', logs)
+        token, _, command = self.resolve({'GITHUB_TOKEN': 'WORKFLOW_SECRET'}, interactive=False)
+        self.assertEqual('WORKFLOW_SECRET', token)
+        command.assert_not_called()
+
+    def test_interactive_manual_run_reuses_existing_cli_login_without_disclosure(self):
+        from types import SimpleNamespace
+        token, logs, command = self.resolve({}, result=SimpleNamespace(returncode=0, stdout='LOCAL_SECRET\n', stderr='PRIVATE_DIAGNOSTIC'))
+        self.assertEqual('LOCAL_SECRET', token)
+        self.assertEqual(['gh', 'auth', 'token', '--hostname', 'github.com'], command.call_args.args[0])
+        self.assertEqual(cleanup.subprocess.DEVNULL, command.call_args.kwargs['stdin'])
+        self.assertEqual(15, command.call_args.kwargs['timeout'])
+        self.assertNotIn('LOCAL_SECRET', logs)
+        self.assertNotIn('PRIVATE_DIAGNOSTIC', logs)
+
+    def test_ci_and_noninteractive_runs_never_consult_local_login(self):
+        for environment, interactive in [({}, False), ({'CI': 'true'}, True), ({'GITHUB_ACTIONS': 'true'}, True)]:
+            with self.assertRaisesRegex(RuntimeError, 'Set GH_TOKEN'):
+                self.resolve(environment, interactive=interactive)
+            self.command.assert_not_called()
+
+    def test_missing_failed_or_empty_cli_login_has_clear_sanitized_error(self):
+        from types import SimpleNamespace
+        for result in [SimpleNamespace(returncode=1, stdout='PRIVATE_OUTPUT', stderr='PRIVATE_ERROR'), SimpleNamespace(returncode=0, stdout='', stderr='')]:
+            with self.assertRaisesRegex(RuntimeError, 'No usable local GitHub CLI login') as caught:
+                self.resolve({}, result=result)
+            self.assertNotIn('PRIVATE_', str(caught.exception) + self.logs)
+        with self.assertRaisesRegex(RuntimeError, 'authentication unavailable'):
+            self.resolve({}, error=FileNotFoundError('PRIVATE_PATH'))
+        self.assertNotIn('PRIVATE_PATH', self.logs)
+
+    def test_cli_timeout_cannot_disclose_captured_credentials(self):
+        error = cleanup.subprocess.TimeoutExpired('gh', 15, output='LOCAL_SECRET', stderr='PRIVATE_ERROR')
+        with self.assertRaisesRegex(RuntimeError, 'authentication unavailable') as caught:
+            self.resolve({}, error=error)
+        self.assertNotIn('LOCAL_SECRET', str(caught.exception) + self.logs)
+        self.assertNotIn('PRIVATE_ERROR', str(caught.exception) + self.logs)
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import re
 import sys
+import subprocess
 import threading
 import time
 import urllib.error
@@ -51,6 +52,29 @@ def confirm_plan(plan, auto_confirm=False):
         approved = False
     log("Confirmation: " + ("yes" if approved else "no; cancelled without deleting anything"))
     return approved
+
+
+def resolve_token():
+    for name in ("GH_TOKEN", "GITHUB_TOKEN"):
+        token = os.environ.get(name, "").strip()
+        if token:
+            log(f"Authentication: {name} environment variable")
+            return token
+    in_ci = os.environ.get("GITHUB_ACTIONS", "").lower() == "true" or os.environ.get("CI", "").lower() not in ("", "false", "0")
+    if in_ci or not sys.stdin.isatty():
+        raise RuntimeError("Set GH_TOKEN or GITHUB_TOKEN for automated/noninteractive runs; SSH keys cannot authenticate the GitHub REST API")
+    log("Authentication: using existing local GitHub CLI login for github.com")
+    try:
+        result = subprocess.run(
+            ["gh", "auth", "token", "--hostname", "github.com"],
+            stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            text=True, timeout=15, check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        raise RuntimeError("Local GitHub CLI authentication unavailable; sign in to GitHub CLI or set GH_TOKEN. SSH keys alone cannot authenticate the REST API") from None
+    if result.returncode != 0 or not result.stdout.strip():
+        raise RuntimeError("No usable local GitHub CLI login for github.com; sign in locally or set GH_TOKEN")
+    return result.stdout.strip()
 
 
 class GitHub:
@@ -184,7 +208,7 @@ def main():
     if set(policy) != {'protected_tags'} or not isinstance(policy['protected_tags'], list) or any(not isinstance(tag, str) or not tag for tag in policy['protected_tags']):
         raise ValueError('release-asset-retention.json must contain a protected_tags string array')
     log(f"Target repository: {os.environ['GITHUB_REPOSITORY']}; explicitly protected tags: {json.dumps(policy['protected_tags'])}")
-    result = prune(GitHub(os.environ['GITHUB_REPOSITORY'], os.environ['GH_TOKEN']), datetime.now(timezone.utc), policy['protected_tags'], args.apply, confirm=lambda plan: confirm_plan(plan, args.yes))
+    result = prune(GitHub(os.environ['GITHUB_REPOSITORY'], resolve_token()), datetime.now(timezone.utc), policy['protected_tags'], args.apply, confirm=lambda plan: confirm_plan(plan, args.yes))
     print(json.dumps(result, sort_keys=True), flush=True)
     if summary := os.environ.get('GITHUB_STEP_SUMMARY'):
         with open(summary, 'a') as output:
