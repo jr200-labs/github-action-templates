@@ -38,6 +38,16 @@ on:
         required: false
         type: boolean
         default: true
+      runner-verifier:
+        description: "Use the runner-provisioned fixed Xcode verifier; fail if unavailable."
+        required: false
+        type: boolean
+        default: false
+      platform:
+        description: "Platform for runner verification: ios or macos."
+        required: false
+        type: string
+        default: "ios"
       runner:
         description: "Runner label for macOS/Xcode builds"
         required: true
@@ -57,36 +67,30 @@ jobs:
         run: xcodebuild -version
 
       - name: Ensure Metal toolchain
+        if: ${{ !inputs.runner-verifier }}
+        timeout-minutes: 3
         shell: bash
-        env:
-          SCOTTY_TOOLCHAIN_REQUEST_KEY: github-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}
         run: |
           set -euo pipefail
-          if xcrun metal --version >/dev/null 2>&1; then
-            exit 0
-          fi
-          scotty_cli="/Applications/Scotty.app/Contents/MacOS/scotty"
-          if [ ! -x "$scotty_cli" ]; then
-            scotty_cli="$HOME/Applications/Scotty.app/Contents/MacOS/scotty"
-          fi
-          if [ -x "$scotty_cli" ] && "$scotty_cli" status | python3 -c \
-            'import json,sys; raise SystemExit("toolchain-catalog" not in json.load(sys.stdin).get("capabilities", []))'; then
-            "$scotty_cli" ensure-toolchain \
-              --toolchain metal-toolchain \
-              --request-key "$SCOTTY_TOOLCHAIN_REQUEST_KEY" \
-              --wait
-          else
+          if ! xcrun metal --version >/dev/null 2>&1; then
             xcodebuild -downloadComponent MetalToolchain
           fi
           xcrun metal --version
 
       - name: Resolve Xcode project, scheme, and destination
         id: xcode
+        timeout-minutes: 3
         shell: bash
+        env:
+          RUNNER_VERIFIER: ${{ inputs.runner-verifier }}
+          XCODE_PROJECT: ${{ inputs.project }}
+          XCODE_SCHEME: ${{ inputs.scheme }}
+          XCODE_DESTINATION: ${{ inputs.destination }}
+          XCODE_CONFIGURATION: ${{ inputs.configuration }}
         run: |
           set -euo pipefail
 
-          project="${{ inputs.project }}"
+          project="$XCODE_PROJECT"
           if [ -z "$project" ]; then
             projects=()
             while IFS= read -r found_project; do
@@ -105,7 +109,7 @@ jobs:
             exit 1
           fi
 
-          scheme="${{ inputs.scheme }}"
+          scheme="$XCODE_SCHEME"
           if [ -z "$scheme" ]; then
             project_basename="$(basename "$project" .xcodeproj)"
             schemes=()
@@ -128,13 +132,17 @@ jobs:
             fi
           fi
 
-          destination="${{ inputs.destination }}"
+          if [ "$RUNNER_VERIFIER" = "true" ] && [ -n "$XCODE_DESTINATION" ]; then
+            echo "Runner verification owns the destination; leave destination empty." >&2
+            exit 1
+          fi
+          destination="$XCODE_DESTINATION"
           simulator_id=""
           if [ -z "$destination" ]; then
             build_settings="$(xcodebuild \
                 -project "$project" \
                 -scheme "$scheme" \
-                -configuration "${{ inputs.configuration }}" \
+                -configuration "$XCODE_CONFIGURATION" \
                 -showBuildSettings)"
             supported_platforms="$(/usr/bin/awk '
               /^[[:space:]]*SUPPORTED_PLATFORMS = / {
@@ -145,6 +153,9 @@ jobs:
             ' <<< "$build_settings")"
 
             if [[ " $supported_platforms " == *" iphonesimulator "* ]]; then
+              if [ "$RUNNER_VERIFIER" = "true" ]; then
+                destination="platform=iOS Simulator"
+              else
               read -r simulator_device_type simulator_runtime < <(
                 xcrun simctl list devices available --json | /usr/bin/python3 -c '
           import json
@@ -171,6 +182,7 @@ jobs:
               simulator_name="ci-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}"
               simulator_id="$(xcrun simctl create "$simulator_name" "$simulator_device_type" "$simulator_runtime")"
               destination="id=$simulator_id"
+              fi
             elif [[ " $supported_platforms " == *" macosx "* ]]; then
               destination="platform=macOS"
             else
@@ -180,6 +192,12 @@ jobs:
             fi
           fi
 
+          for value in "$project" "$scheme" "$destination"; do
+            if [[ "$value" == *$'\n'* || "$value" == *$'\r'* ]]; then
+              echo "Xcode inputs must be single-line values." >&2
+              exit 1
+            fi
+          done
           {
             echo "project=$project"
             echo "scheme=$scheme"
@@ -191,31 +209,84 @@ jobs:
           echo "Resolved Xcode scheme: $scheme"
           echo "Resolved Xcode destination: $destination"
 
+      - name: Run runner-provisioned Xcode verification
+        if: inputs.runner-verifier
+        timeout-minutes: 18
+        shell: bash
+        env:
+          XCODE_PROJECT: ${{ steps.xcode.outputs.project }}
+          XCODE_SCHEME: ${{ steps.xcode.outputs.scheme }}
+          XCODE_CONFIGURATION: ${{ inputs.configuration }}
+          XCODE_PLATFORM: ${{ inputs.platform }}
+          RUN_TESTS: ${{ inputs.run-tests }}
+        run: |
+          set -euo pipefail
+          if [[ "${XCODE_VERIFIER:-}" != /* ]] || [ ! -x "$XCODE_VERIFIER" ]; then
+            echo "Runner Xcode verification requires a provisioned absolute executable path." >&2
+            exit 1
+          fi
+          if ! /usr/bin/python3 -c 'import os,pathlib,sys; sys.exit(pathlib.Path(os.environ["XCODE_VERIFIER"]).resolve().is_relative_to(pathlib.Path.cwd().resolve()))'; then
+            echo "The Xcode verifier must be provisioned outside the checkout." >&2
+            exit 1
+          fi
+          arguments=(--project "$XCODE_PROJECT" --scheme "$XCODE_SCHEME"
+                     --platform "$XCODE_PLATFORM" --configuration "$XCODE_CONFIGURATION")
+          if [ "$RUN_TESTS" != "true" ]; then arguments+=(--no-tests); fi
+          "$XCODE_VERIFIER" "${arguments[@]}"
+
       - name: Build
+        if: ${{ !inputs.runner-verifier }}
+        shell: bash
+        env:
+          XCODE_PROJECT: ${{ steps.xcode.outputs.project }}
+          XCODE_SCHEME: ${{ steps.xcode.outputs.scheme }}
+          XCODE_DESTINATION: ${{ steps.xcode.outputs.destination }}
+          XCODE_CONFIGURATION: ${{ inputs.configuration }}
+          XCODE_DERIVED_DATA: ${{ inputs.derived-data-path }}
         run: >
           xcodebuild
-          -project "${{ steps.xcode.outputs.project }}"
-          -scheme "${{ steps.xcode.outputs.scheme }}"
-          -destination "${{ steps.xcode.outputs.destination }}"
-          -configuration "${{ inputs.configuration }}"
-          -derivedDataPath "${{ inputs.derived-data-path }}"
+          -project "$XCODE_PROJECT"
+          -scheme "$XCODE_SCHEME"
+          -destination "$XCODE_DESTINATION"
+          -configuration "$XCODE_CONFIGURATION"
+          -derivedDataPath "$XCODE_DERIVED_DATA"
           CODE_SIGNING_ALLOWED=NO
           CODE_SIGNING_REQUIRED=NO
           build
 
       - name: Test
-        if: inputs.run-tests
+        if: inputs.run-tests && !inputs.runner-verifier
+        shell: bash
+        env:
+          XCODE_PROJECT: ${{ steps.xcode.outputs.project }}
+          XCODE_SCHEME: ${{ steps.xcode.outputs.scheme }}
+          XCODE_DESTINATION: ${{ steps.xcode.outputs.destination }}
+          XCODE_CONFIGURATION: ${{ inputs.configuration }}
+          XCODE_DERIVED_DATA: ${{ inputs.derived-data-path }}
         run: >
           xcodebuild
-          -project "${{ steps.xcode.outputs.project }}"
-          -scheme "${{ steps.xcode.outputs.scheme }}"
-          -destination "${{ steps.xcode.outputs.destination }}"
-          -configuration "${{ inputs.configuration }}"
-          -derivedDataPath "${{ inputs.derived-data-path }}"
+          -project "$XCODE_PROJECT"
+          -scheme "$XCODE_SCHEME"
+          -destination "$XCODE_DESTINATION"
+          -configuration "$XCODE_CONFIGURATION"
+          -derivedDataPath "$XCODE_DERIVED_DATA"
           CODE_SIGNING_ALLOWED=NO
           CODE_SIGNING_REQUIRED=NO
           test
 
       - name: Delete ephemeral iOS Simulator
         if: always() && steps.xcode.outputs.simulator-id != ''
-        run: xcrun simctl delete "${{ steps.xcode.outputs.simulator-id }}"
+        shell: bash
+        env:
+          SIMULATOR_ID: ${{ steps.xcode.outputs.simulator-id }}
+        run: xcrun simctl delete "$SIMULATOR_ID"
+
+      - name: Retain Xcode test results
+        if: always() && inputs.runner-verifier && inputs.run-tests
+        uses: actions/upload-artifact@v7
+        with:
+          name: xcode-test-results-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}
+          path: .build/xcode-results/**/Results.xcresult
+          include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 5

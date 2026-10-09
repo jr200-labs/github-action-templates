@@ -101,6 +101,7 @@ jobs:
           python3 scripts/test-actions-artifact-cleanup.py
           python3 scripts/test-release-asset-cleanup.py
           python3 scripts/test-macos-app.py
+          python3 scripts/test-unattended-swift.py
           ./scripts/test-docker-image-platform-toggle.sh
           ./scripts/test-npm-preview-publish.sh
           ./scripts/test-artifact-renovate-config.sh
