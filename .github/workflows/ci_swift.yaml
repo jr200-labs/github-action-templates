@@ -275,4 +275,4 @@ jobs:
           path: .build/scotty-action-results/**/Results.xcresult
           include-hidden-files: true
           if-no-files-found: warn
-          retention-days: 7
+          retention-days: 5
