@@ -90,12 +90,16 @@ jobs:
     runs-on: ${{ fromJSON(vars.RUNNER_PROFILES)[vars.RUNNER_PROFILE].default }}
     steps:
       - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.2.0
       - name: Test shared sync scripts
         run: |
           ./scripts/test-message-text-policy.sh
           ./scripts/test-component-releases.sh
           python3 scripts/test-release-pr-cleanup.py
           python3 scripts/test-release-pr-lockfiles.py
+          uv run --script scripts/test-artifact-retention.py
+          python3 scripts/test-actions-artifact-cleanup.py
+          python3 scripts/test-release-asset-cleanup.py
           python3 scripts/test-macos-app.py
           ./scripts/test-docker-image-platform-toggle.sh
           ./scripts/test-npm-preview-publish.sh

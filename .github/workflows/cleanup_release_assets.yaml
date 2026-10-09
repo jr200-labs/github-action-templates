@@ -1,0 +1,27 @@
+name: template-cleanup-release-assets
+on:
+  workflow_call:
+    inputs:
+      apply:
+        description: Delete superseded release assets older than 14 days
+        type: boolean
+        default: false
+      runner:
+        type: string
+        default: ""
+permissions:
+  contents: write
+jobs:
+  cleanup:
+    runs-on: ${{ inputs.runner || fromJSON(vars.RUNNER_PROFILES)[vars.RUNNER_PROFILE].default }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - name: Enforce 14-day superseded release asset retention
+        env:
+          GH_TOKEN: ${{ github.token }}
+          APPLY: ${{ inputs.apply }}
+        run: |
+          args=()
+          if [ "$APPLY" = true ]; then args+=(--apply --yes); fi
+          python3 .shared/cleanup-release-assets.py "${args[@]}"

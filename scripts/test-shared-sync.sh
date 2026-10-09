@@ -196,7 +196,14 @@ YAML
     test -f "$workflow"
     test -x scripts/github-package-access-wizard
     cmp "$ROOT/consumers/files/scripts/github-package-access-wizard" scripts/github-package-access-wizard
-    test "$(SYNC_BASE_URL="file://$ROOT/consumers" ./scripts/sync-shared --list-supporting-files)" = "scripts/github-package-access-wizard"
+    expected_supporting_files=$(printf '%s\n' '.shared/cleanup-actions-artifacts.py' 'scripts/github-package-access-wizard')
+    actual_supporting_files=$(SYNC_BASE_URL="file://$ROOT/consumers" ./scripts/sync-shared --list-supporting-files)
+    if [ "$actual_supporting_files" != "$expected_supporting_files" ]; then
+        printf 'unexpected supporting files:\n%s\n' "$actual_supporting_files" >&2
+        exit 1
+    fi
+    cmp "$ROOT/consumers/files/.shared/cleanup-actions-artifacts.py" .shared/cleanup-actions-artifacts.py
+    test -f .github/workflows/actions-storage.yaml
     yq -e '.permissions.packages == "read"' "$workflow" >/dev/null
     yq -e '.jobs."package-access-drift".uses == "jr200-labs/github-action-templates/.github/workflows/check_package_access.yaml@master"' "$workflow" >/dev/null
     mv .github/workflows/ci.yaml .github/workflows/bespoke_ci.yaml
@@ -206,6 +213,14 @@ YAML
         exit 1
     fi
     grep -q 'drift: scripts/github-package-access-wizard differs from canonical' wizard-drift.log
+    SYNC_BASE_URL="file://$ROOT/consumers" ./scripts/sync-shared
+    STRICT=1 SYNC_BASE_URL="file://$ROOT/consumers" ./scripts/sync-shared --check
+    printf '\n# drift\n' >> .shared/cleanup-actions-artifacts.py
+    if STRICT=1 SYNC_BASE_URL="file://$ROOT/consumers" ./scripts/sync-shared --check >cleanup-drift.log 2>&1; then
+        echo "expected sync-shared --check to reject artifact cleanup drift" >&2
+        exit 1
+    fi
+    grep -q 'drift: .shared/cleanup-actions-artifacts.py differs from canonical' cleanup-drift.log
     SYNC_BASE_URL="file://$ROOT/consumers" ./scripts/sync-shared
     STRICT=1 SYNC_BASE_URL="file://$ROOT/consumers" ./scripts/sync-shared --check
 )
