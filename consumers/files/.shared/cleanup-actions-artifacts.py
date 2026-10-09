@@ -5,8 +5,23 @@ from datetime import datetime, timedelta, timezone
 import json
 import os
 import re
+import sys
+import threading
+import time
 import urllib.error
 import urllib.request
+
+
+HEARTBEAT_SECONDS = 10
+
+
+def log(message):
+    print(f"[{datetime.now(timezone.utc).isoformat(timespec='seconds')}] {message}", file=sys.stderr, flush=True)
+
+
+def heartbeat(stop, started, label):
+    while not stop.wait(HEARTBEAT_SECONDS):
+        log(f"{label}: waiting for GitHub ({time.monotonic() - started:.1f}s elapsed; socket timeout 30s)")
 
 
 class GitHub:
@@ -22,14 +37,28 @@ class GitHub:
             "Accept": "application/vnd.github+json",
             "X-GitHub-Api-Version": "2026-03-10",
         })
+        started = time.monotonic()
+        label = f"{method} {path}"
+        log(f"{label}: requesting (socket timeout 30s)")
+        stop = threading.Event()
+        monitor = threading.Thread(target=heartbeat, args=(stop, started, label), daemon=True)
+        monitor.start()
         try:
             with urllib.request.urlopen(request, timeout=30) as response:
                 content = response.read()
+                log(f"{label}: HTTP {response.status} completed in {time.monotonic() - started:.1f}s")
                 return json.loads(content) if content else None
         except urllib.error.HTTPError as error:
+            log(f"{label}: HTTP {error.code} after {time.monotonic() - started:.1f}s")
             if error.code == 404:
                 return None
             raise RuntimeError(f"GitHub {method} {path} failed with status {error.code}") from None
+        except Exception as error:
+            log(f"{label}: failed ({type(error).__name__}) after {time.monotonic() - started:.1f}s")
+            raise
+        finally:
+            stop.set()
+            monitor.join()
 
     def artifacts(self):
         result = []
@@ -38,6 +67,7 @@ class GitHub:
             if data is None or not isinstance(data.get("artifacts"), list):
                 raise RuntimeError("artifact inventory is unavailable or incomplete")
             result.extend(data["artifacts"])
+            log(f"Artifact inventory page {page}: {len(data['artifacts'])} artifacts; {len(result)} total")
             if len(data["artifacts"]) < 100:
                 return result
         raise RuntimeError("artifact inventory exceeded page limit; no deletion performed")
@@ -45,11 +75,17 @@ class GitHub:
 
 def prune(api, now, apply=False):
     cutoff = now - timedelta(days=5)
+    log(f"Starting Actions cleanup: mode={'APPLY' if apply else 'DRY RUN'}; cutoff={cutoff.isoformat()}")
     candidates = []
     # Finish inventory and validate run states before the first mutation.
-    for item in api.artifacts():
+    artifacts = api.artifacts()
+    log(f"Inventory complete: {len(artifacts)} artifacts; checking source runs")
+    for index, item in enumerate(artifacts, 1):
+        label = f"artifact {item['id']} {json.dumps(item['name'])}"
+        log(f"Checking {index}/{len(artifacts)}: {label}; {item['size_in_bytes']} bytes")
         created = datetime.fromisoformat(item["created_at"].replace("Z", "+00:00"))
         if created > cutoff or item.get("expired"):
+            log(f"Keep/skip {label}: recent or already expired")
             continue
         run_id = item.get("workflow_run", {}).get("id")
         if not run_id:
@@ -57,20 +93,31 @@ def prune(api, now, apply=False):
         run = api.request(f"/actions/runs/{run_id}")
         if run is not None and run.get("status") == "completed":
             candidates.append(item)
+            log(f"Candidate {label}: older than five days; source run completed")
+        else:
+            log(f"Keep {label}: source run unavailable or not completed")
+    log(f"Candidate review complete: {len(candidates)} artifacts; {sum(item['size_in_bytes'] for item in candidates)} bytes eligible")
     deleted, reclaimed = 0, 0
-    for item in candidates:
+    for index, item in enumerate(candidates, 1):
+        log(f"Verifying candidate {index}/{len(candidates)}: artifact {item['id']} {json.dumps(item['name'])}")
         path = f"/actions/artifacts/{item['id']}"
         actual = api.request(path)
         if actual is None:
+            log(f"Skip artifact {item['id']}: already absent")
             continue
         if any(actual.get(key) != item.get(key) for key in ["id", "name", "size_in_bytes", "created_at"]):
             raise RuntimeError("artifact changed since inventory; deletion stopped")
         if apply:
+            log(f"Deleting artifact {item['id']}; verifying absence next")
             api.request(path, "DELETE")
             if api.request(path) is not None:
                 raise RuntimeError("artifact deletion did not converge")
             deleted += 1
             reclaimed += item["size_in_bytes"]
+            log(f"Deleted artifact {item['id']}; reclaimed {reclaimed} bytes so far")
+        else:
+            log(f"Would delete artifact {item['id']}; {item['size_in_bytes']} bytes (dry run)")
+    log(f"Finished Actions cleanup: candidates={len(candidates)}; deleted={deleted}; reclaimed_bytes={reclaimed}")
     return {"apply": apply, "candidates": len(candidates), "deleted": deleted, "reclaimed_bytes": reclaimed}
 
 
@@ -78,9 +125,10 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--apply", action="store_true")
     args = parser.parse_args()
+    log(f"Target repository: {os.environ['GITHUB_REPOSITORY']}")
     api = GitHub(os.environ["GITHUB_REPOSITORY"], os.environ["GH_TOKEN"])
     result = prune(api, datetime.now(timezone.utc), args.apply)
-    print(json.dumps(result, sort_keys=True))
+    print(json.dumps(result, sort_keys=True), flush=True)
     if summary := os.environ.get("GITHUB_STEP_SUMMARY"):
         with open(summary, "a") as output:
             output.write(f"Actions retention: {result['deleted']} old artifacts deleted; {result['reclaimed_bytes']} bytes reclaimed.\n")

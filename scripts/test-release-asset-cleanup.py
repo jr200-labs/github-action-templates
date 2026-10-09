@@ -108,5 +108,67 @@ class CleanupTests(unittest.TestCase):
         self.assertEqual(101, len(api.inventory('/releases/1/assets')))
         self.assertEqual(['/releases/1/assets?per_page=100&page=1', '/releases/1/assets?per_page=100&page=2'], calls)
 
+
+class ProgressTests(unittest.TestCase):
+    def test_request_logs_before_network_call_and_heartbeats_without_disclosing_token(self):
+        import io
+        import threading
+        from contextlib import redirect_stderr, redirect_stdout
+        from unittest.mock import patch
+
+        waiting = threading.Event()
+        class Output(io.StringIO):
+            def write(self, text):
+                if 'waiting for GitHub' in text:
+                    waiting.set()
+                return super().write(text)
+        class Response:
+            status = 200
+            def __enter__(self):
+                return self
+            def __exit__(self, *args):
+                pass
+            def read(self):
+                return b'{}'
+        output, stdout = Output(), io.StringIO()
+        def delayed_request(request, timeout):
+            self.assertIn('requesting', output.getvalue())
+            self.assertEqual(30, timeout)
+            self.assertTrue(waiting.wait(2), 'no progress heartbeat while request is waiting')
+            return Response()
+        with redirect_stderr(output), redirect_stdout(stdout), patch.object(cleanup, 'HEARTBEAT_SECONDS', 0.01), patch.object(cleanup.urllib.request, 'urlopen', side_effect=delayed_request):
+            result = cleanup.GitHub('example/project', 'SECRET_TEST_TOKEN').request('/releases')
+        self.assertEqual({}, result)
+        self.assertIn('waiting for GitHub', output.getvalue())
+        self.assertIn('HTTP 200 completed', output.getvalue())
+        self.assertNotIn('SECRET_TEST_TOKEN', output.getvalue())
+        self.assertEqual('', stdout.getvalue())
+
+    def test_cli_keeps_json_receipt_on_stdout_and_progress_on_stderr(self):
+        import io
+        import json
+        from contextlib import redirect_stderr, redirect_stdout
+        from unittest.mock import patch
+        stdout, stderr = io.StringIO(), io.StringIO()
+        with redirect_stderr(stderr), redirect_stdout(stdout), patch.object(cleanup, 'GitHub', return_value=API()), patch.object(cleanup.sys, 'argv', ['cleanup']), patch.dict(cleanup.os.environ, {'GITHUB_REPOSITORY': 'example/project', 'GH_TOKEN': 'SECRET_TEST_TOKEN'}, clear=True):
+            cleanup.main()
+        receipt = json.loads(stdout.getvalue())
+        self.assertFalse(receipt['apply'])
+        self.assertIn('Target repository: example/project', stderr.getvalue())
+        self.assertIn('DRY RUN', stderr.getvalue())
+        self.assertNotIn('SECRET_TEST_TOKEN', stdout.getvalue() + stderr.getvalue())
+
+    def test_timeout_is_visible_without_logging_credentials(self):
+        import io
+        from contextlib import redirect_stderr
+        from unittest.mock import patch
+        output = io.StringIO()
+        with redirect_stderr(output), patch.object(cleanup.urllib.request, 'urlopen', side_effect=TimeoutError('SECRET_TEST_TOKEN')):
+            with self.assertRaises(TimeoutError):
+                cleanup.GitHub('example/project', 'SECRET_TEST_TOKEN').request('/releases')
+        self.assertIn('failed (TimeoutError)', output.getvalue())
+        self.assertNotIn('SECRET_TEST_TOKEN', output.getvalue())
+
+
 if __name__ == '__main__':
     unittest.main()
