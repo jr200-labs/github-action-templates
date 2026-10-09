@@ -219,3 +219,13 @@ jobs:
       - name: Delete ephemeral iOS Simulator
         if: always() && steps.xcode.outputs.simulator-id != ''
         run: xcrun simctl delete "${{ steps.xcode.outputs.simulator-id }}"
+
+      - name: Retain Scotty test results
+        if: always() && inputs.scotty-unattended && inputs.run-tests
+        uses: actions/upload-artifact@v7
+        with:
+          name: scotty-test-results-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}
+          path: .build/scotty-action-results/**/Results.xcresult
+          include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 7
