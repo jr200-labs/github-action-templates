@@ -42,3 +42,5 @@ jobs:
             args+=(--policy .github/runner-policy.json)
           fi
           ./_gha_templates/scripts/lint-workflow-runners.sh "${args[@]}"
+      - name: Validate artifact retention, including bespoke workflows and local actions
+        run: uv run --script ./_gha_templates/scripts/lint-artifact-retention.py

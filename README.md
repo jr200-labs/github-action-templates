@@ -30,3 +30,5 @@ and other issues that are poorly documented upstream.
 - [GOTCHAS.md](GOTCHAS.md) — Cross-org reusable workflow & GitHub App gotchas
 - [GitHub: Reusing Workflows](https://docs.github.com/en/actions/sharing-automations/reusing-workflows)
 - [GitHub: Accessing Workflows](https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/enabling-features-for-your-repository/managing-github-actions-settings-for-a-repository#allowing-access-to-components-in-a-private-repository)
+
+Artifact retention is capped at five days. The universal runner-policy check also scans every consumer workflow and local composite action, including bespoke workflows, and rejects implicit or longer artifact retention and uncapped Buildx records. The `hygiene` group installs scheduled cleanup of artifacts older than five days from completed runs; manual runs default to a dry run. GitHub organization/repository retention settings must also be reconciled: workflow changes do not alter existing artifacts or erase already accrued storage billing. Release assets belong in releases rather than PR workflow artifacts.

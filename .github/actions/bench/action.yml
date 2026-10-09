@@ -98,9 +98,9 @@ runs:
       if: steps.baseline.outputs.exists == 'false' && inputs.bootstrap-if-missing == 'true'
       uses: actions/upload-artifact@v7
       with:
+        retention-days: 5
         name: ${{ inputs.bootstrap-artifact-name }}
         path: ${{ inputs.baseline-path }}.new
-        retention-days: 30
 
     - name: compare against baseline
       if: steps.baseline.outputs.exists == 'true'
@@ -115,9 +115,9 @@ runs:
       if: always()
       uses: actions/upload-artifact@v7
       with:
+        retention-days: 5
         name: bench-current
         path: ${{ inputs.current-path }}
-        retention-days: 14
 
     - name: record result
       id: result
