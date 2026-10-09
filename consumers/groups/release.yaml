@@ -5,3 +5,6 @@
 # run automatically.
 includes:
   - release-please
+  - release-assets-retention
+files:
+  - .shared/cleanup-release-assets.py
