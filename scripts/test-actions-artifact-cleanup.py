@@ -241,5 +241,47 @@ class AuthenticationTests(unittest.TestCase):
         self.assertNotIn('PRIVATE_ERROR', str(caught.exception) + self.logs)
 
 
+class StorageReportTests(unittest.TestCase):
+    def test_report_counts_live_bytes_sorts_repositories_and_only_issues_gets(self):
+        from unittest.mock import patch
+        spec = importlib.util.spec_from_file_location('storage_report', Path(__file__).with_name('report-actions-storage.py'))
+        reporter = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(reporter)
+        requests = []
+        def request(api, path, method='GET'):
+            requests.append(method)
+            if '/bad' in api.prefix:
+                raise RuntimeError('unavailable')
+            size = 100 if '/large' in api.prefix else 10
+            return {'artifacts': [
+                {'id': 1, 'size_in_bytes': size, 'created_at': '2026-09-01T00:00:00Z'},
+                {'id': 2, 'size_in_bytes': 5, 'created_at': '2026-10-08T00:00:00Z'},
+                {'id': 3, 'size_in_bytes': 999, 'created_at': '2026-09-01T00:00:00Z', 'expired': True},
+            ]}
+        with patch.object(reporter.cleanup.GitHub, 'request', request):
+            result = reporter.report(['example/small', 'example/large', 'example/bad'], 'TEST', NOW)
+        self.assertEqual(['example/large', 'example/small'], [row['repository'] for row in result['repositories']])
+        self.assertEqual(120, result['total_verified_bytes'])
+        self.assertEqual(100, result['repositories'][0]['older_than_five_days_bytes'])
+        self.assertEqual(2, result['repositories'][0]['artifact_count'])
+        self.assertEqual(1, len(result['errors']))
+        self.assertEqual({'GET'}, set(requests))
+
+    def test_report_paginates_organization_and_rejects_incomplete_inventory(self):
+        from unittest.mock import patch
+        spec = importlib.util.spec_from_file_location('storage_report', Path(__file__).with_name('report-actions-storage.py'))
+        reporter = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(reporter)
+        def request(api, path, method='GET'):
+            self.assertEqual('https://api.github.com/orgs/example', api.prefix)
+            self.assertEqual('GET', method)
+            return [{'full_name': f'example/repo{i}'} for i in range(100)] if path.endswith('&page=1') else [{'full_name':'example/last'}]
+        with patch.object(reporter.cleanup.GitHub, 'request', request):
+            self.assertEqual(101, len(reporter.repositories('example', 'TEST')))
+        with patch.object(reporter.cleanup.GitHub, 'request', return_value=None):
+            with self.assertRaisesRegex(RuntimeError, 'unavailable'):
+                reporter.repositories('example', 'TEST')
+
+
 if __name__ == '__main__':
     unittest.main()
