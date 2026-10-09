@@ -1,0 +1,31 @@
+name: template-cleanup-actions-artifacts
+
+on:
+  workflow_call:
+    inputs:
+      apply:
+        description: Delete artifacts older than five days from completed runs
+        type: boolean
+        default: false
+      runner:
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  cleanup:
+    runs-on: ${{ inputs.runner || fromJSON(vars.RUNNER_PROFILES)[vars.RUNNER_PROFILE].default }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - name: Enforce five-day artifact expiry
+        env:
+          GH_TOKEN: ${{ github.token }}
+          APPLY: ${{ inputs.apply }}
+        run: |
+          args=()
+          if [ "$APPLY" = true ]; then args+=(--apply); fi
+          python3 .shared/cleanup-actions-artifacts.py "${args[@]}"

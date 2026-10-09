@@ -11,3 +11,6 @@ includes:
   - lint-no-auto-merge
   - lint-version-downgrades
   - lint-workflow-runners
+  - actions-storage
+files:
+  - .shared/cleanup-actions-artifacts.py
