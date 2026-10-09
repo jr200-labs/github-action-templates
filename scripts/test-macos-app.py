@@ -288,8 +288,7 @@ class PackagingTest(unittest.TestCase):
                          "${{ inputs.publish-release && 'true' || 'false' }}")
 
     def test_native_workflows_prepare_metal_inside_the_existing_job(self):
-        for path in (ROOT / ".github/workflows/build_macos_app.yaml",
-                     ROOT / ".github/workflows/ci_swift.yaml"):
+        for path in (ROOT / ".github/workflows/build_macos_app.yaml",):
             output = subprocess.check_output(
                 ["yq", "-o=json", '.jobs[].steps[] | select(.name == "Ensure Metal toolchain")', str(path)],
                 text=True,
@@ -301,6 +300,14 @@ class PackagingTest(unittest.TestCase):
             self.assertIn("xcodebuild -downloadComponent MetalToolchain", step["run"])
             self.assertIn("github-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}",
                           step["env"]["SCOTTY_TOOLCHAIN_REQUEST_KEY"])
+
+    def test_generic_xcode_lane_owns_toolchain_preparation(self):
+        workflow = json.loads(subprocess.check_output(
+            ['yq', '-o=json', str(ROOT / '.github/workflows/ci_swift.yaml')], text=True))
+        step = next(s for s in workflow['jobs']['build-and-test']['steps'] if s.get('name') == 'Ensure Metal toolchain')
+        self.assertEqual(step['if'], '${{ !inputs.runner-verifier }}')
+        self.assertIn('xcodebuild -downloadComponent MetalToolchain', step['run'])
+        self.assertIn('xcrun metal --version', step['run'])
 
     def test_swift_ci_resolves_and_reuses_a_test_destination(self):
         workflow = ROOT / ".github/workflows/ci_swift.yaml"
@@ -319,7 +326,7 @@ class PackagingTest(unittest.TestCase):
         ))
         for name in ("Build", "Test"):
             run = next(step["run"] for step in steps if step.get("name") == name)
-            self.assertIn('-destination "${{ steps.xcode.outputs.destination }}"', run)
+            self.assertIn('-destination "$XCODE_DESTINATION"', run)
         cleanup = next(step for step in steps if step.get("name") == "Delete ephemeral iOS Simulator")
         self.assertEqual(cleanup["if"], "always() && steps.xcode.outputs.simulator-id != ''")
         self.assertIn("xcrun simctl delete", cleanup["run"])
