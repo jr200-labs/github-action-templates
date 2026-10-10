@@ -2,7 +2,6 @@
 # exposes it only after every verified update asset has been attached.
 includes:
   - macos-app
-  - publish-macos-app
 files:
   - .shared/package-macos-app.py
   - .shared/fetch-sparkle.py

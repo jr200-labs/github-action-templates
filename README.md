@@ -14,10 +14,11 @@ GAT releases the next `shared-vX.Y.Z` tag automatically when canonical
 consumer workflows or shared files change on `master`, including a GitHub
 Release with generated notes.
 
-macOS PR validation builds and tests without uploading a workflow artifact.
-Release publication builds and tests the tagged source once, then signs the
-appcast and uploads release assets from that same job when `publish-release` is
-true.
+The single `macos-app` workflow validates ordinary code PRs and publishes releases.
+Release Please version-bump PRs skip packaging; the release dispatch builds and
+tests the tagged source once, then signs the appcast and uploads release assets
+from that same job. Manual runs publish when `publish-release` is true.
+Shared sync removes the retired `publish-macos-app` caller on upgrade.
 
 ## Merge Policy
 

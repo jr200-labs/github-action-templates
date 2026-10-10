@@ -265,7 +265,7 @@ done
 
 # GitHub exposes a normal release through /releases/latest before a separately
 # dispatched publisher can attach its assets. macOS app releases therefore stay
-# drafts until publish_macos_app verifies the complete asset set and publishes
+# drafts until macos-app verifies the complete asset set and publishes
 # them. force-tag-creation lets Release Please retain correct release history
 # while the GitHub Release is still a draft.
 ensure_atomic_macos_release_config

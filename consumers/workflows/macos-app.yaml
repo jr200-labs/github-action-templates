@@ -1,20 +1,54 @@
 # GENERATED/SHARED WORKFLOW: copied into consuming repos by sync-shared.
 # Do not edit in consuming repos; change jr200-labs/github-action-templates and sync.
 name: macos-app
+run-name: ${{ github.event.pull_request.title || github.event.client_payload['release-tag'] || inputs.release-tag || 'macOS app validation' }}
 
 on:
   pull_request:
+  repository_dispatch:
+    types: [release-published]
   workflow_dispatch:
+    inputs:
+      publish-release:
+        description: Build, test and publish the specified draft release in this run
+        type: boolean
+        default: false
+      release-tag:
+        description: Existing release tag (required when publishing)
+        type: string
+        default: ''
+      release-id:
+        description: Immutable draft release ID (resolved from the tag when omitted)
+        type: string
+        default: ''
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
-  group: macos-app-${{ github.event.pull_request.number || github.ref }}
+  group: macos-app-${{ github.event.pull_request.number || github.event.client_payload['release-tag'] || inputs.release-tag || github.ref }}
   cancel-in-progress: false
 
 jobs:
   app:
+    if: github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && !inputs.publish-release)
+    permissions:
+      contents: read
     uses: jr200-labs/github-action-templates/.github/workflows/build_macos_app.yaml@master
     with:
+      publish-release: false
+      release-tag: ${{ inputs.release-tag }}
       runner: ${{ fromJSON(vars.RUNNER_PROFILES)[vars.RUNNER_PROFILE].macos }}
+  publish:
+    if: github.event_name == 'repository_dispatch' || (github.event_name == 'workflow_dispatch' && inputs.publish-release)
+    permissions:
+      contents: write
+    uses: jr200-labs/github-action-templates/.github/workflows/build_macos_app.yaml@master
+    with:
+      publish-release: true
+      generate-appcast: true
+      release-tag: ${{ github.event.client_payload['release-tag'] || inputs.release-tag }}
+      release-id: ${{ github.event.client_payload['release-id'] || inputs.release-id }}
+      runner: ${{ fromJSON(vars.RUNNER_PROFILES)[vars.RUNNER_PROFILE].macos }}
+    secrets:
+      SPARKLE_EDDSA_PRIVATE_KEY: ${{ secrets.SPARKLE_EDDSA_PRIVATE_KEY }}
