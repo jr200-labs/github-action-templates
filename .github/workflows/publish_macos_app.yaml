@@ -15,14 +15,14 @@ on:
         description: Immutable ID of the draft GitHub Release
         type: string
         default: ''
+      reuse-verified-build:
+        description: Deprecated compatibility input; every run builds and verifies its own app
+        type: boolean
+        default: false
       runner:
         description: macOS build runner label
         type: string
         default: ''
-      reuse-verified-build:
-        description: Reuse exact successful CI artifacts (caller must grant actions read)
-        type: boolean
-        default: false
       publish-runner:
         description: Deprecated compatibility input; publication now runs on the macOS build runner
         type: string
@@ -34,8 +34,8 @@ on:
 
 jobs:
   package:
-    # Inherit the caller's ceiling. Existing callers can build without actions
-    # read; synchronized callers grant it and explicitly enable artifact reuse.
+    permissions:
+      contents: write
     uses: jr200-labs/github-action-templates/.github/workflows/build_macos_app.yaml@master
     with:
       config-path: ${{ inputs.config-path }}
@@ -43,7 +43,6 @@ jobs:
       release-id: ${{ inputs.release-id }}
       generate-appcast: true
       publish-release: true
-      reuse-verified-build: ${{ inputs.reuse-verified-build }}
       runner: ${{ inputs.runner }}
     secrets:
       SPARKLE_EDDSA_PRIVATE_KEY: ${{ secrets.SPARKLE_EDDSA_PRIVATE_KEY }}
