@@ -30,7 +30,7 @@ jobs:
           repository: jr200-labs/github-action-templates
           ref: ${{ github.repository == 'jr200-labs/github-action-templates' && github.sha || 'master' }}
           path: _gha_templates
-      - uses: astral-sh/setup-uv@v10.2.0
+      - uses: astral-sh/setup-uv@v10.3.0
       - name: Validate workflow runner selection and effective variables
         env:
           WORKFLOWS_DIR: ${{ inputs.workflows-dir }}
