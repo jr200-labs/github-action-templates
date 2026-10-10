@@ -23,8 +23,9 @@ An absent or expired matching build runs the normal build once. Apps whose
 behavior is independent of commit/ref metadata can commit
 `.github/macos-build-reuse.json` containing `{"source_identity":"tree"}` to reuse
 a release PR build after merge or squash when all tracked files are identical.
-GitHub verifies both the workflow source and the recorded build source against
-the release tree. The archive retains its original tested build provenance.
+GitHub verifies the recorded build source against the release tree and binds its
+commit to the source of the successful CI run. The archive retains its original
+tested build provenance.
 Publication waits for an already-running equivalent CI build, avoiding a second
 build when the release PR is merged before its macOS checks finish.
 Existing publisher callers keep building until they synchronize the

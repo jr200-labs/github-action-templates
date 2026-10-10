@@ -104,6 +104,8 @@ jobs:
           config-path: ${{ inputs.config-path }}
           release-tag: ${{ inputs.release-tag }}
           token: ${{ github.token }}
+          source-sha: ${{ steps.verified.outputs.source-sha }}
+          source-event: ${{ steps.verified.outputs.source-event }}
       - name: Ensure Metal toolchain
         if: steps.verified.outputs.artifact-id == ''
         shell: bash

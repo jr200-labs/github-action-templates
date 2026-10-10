@@ -43,11 +43,13 @@ def identity(config_path):
         raise ValueError("Expected an exact Git source tree")
     subprocess.run(["git", "diff", "--quiet", "HEAD", "--"], check=True)
     policy_path = Path(".github/macos-build-reuse.json")
+    if policy_path.is_symlink():
+        raise ValueError("Build reuse policy must be a tracked regular file")
     if policy_path.exists():
         subprocess.run(["git", "ls-files", "--error-unmatch", str(policy_path)],
                        check=True, stdout=subprocess.DEVNULL)
     policy = json.loads(policy_path.read_text()) if policy_path.exists() else {"source_identity": "commit"}
-    if set(policy) != {"source_identity"} or policy["source_identity"] not in ("commit", "tree"):
+    if not isinstance(policy, dict) or set(policy) != {"source_identity"} or policy["source_identity"] not in ("commit", "tree"):
         raise ValueError("Build reuse policy must select commit or tree source identity")
     return config, {
         "schema": 1,
@@ -113,22 +115,28 @@ def lookup(repository, token, expected, current_run):
                     (run.get("repository") or {}).get("full_name") != repository or
                     (run.get("head_repository") or {}).get("full_name") != repository):
                 continue
-            if expected["source_identity"] == "tree" and commit_tree(repository, token, head_sha) != expected["source_tree"]:
+            if (expected["source_identity"] == "tree" and run["event"] != "pull_request" and
+                    commit_tree(repository, token, head_sha) != expected["source_tree"]):
                 continue
-            return {"artifact-id": str(int(artifact["id"])), "run-id": str(int(source["id"]))}
+            return {"artifact-id": str(int(artifact["id"])), "run-id": str(int(source["id"])),
+                    "source-sha": head_sha, "source-event": run["event"]}
         if len(artifacts) < 100:
             break
     return None
 
 
-def commit_tree(repository, token, sha):
+def commit_identity(repository, token, sha):
     if not isinstance(sha, str) or not re.fullmatch(r"[0-9a-f]{40}", sha):
         raise ValueError("Invalid build source commit")
     commit = api(repository, token, "git/commits/" + sha)
     tree = (commit.get("tree") or {}).get("sha")
     if commit.get("sha") != sha or not isinstance(tree, str) or not re.fullmatch(r"[0-9a-f]{40}", tree):
         raise ValueError("GitHub returned an invalid build source identity")
-    return tree
+    return tree, [parent["sha"] for parent in commit.get("parents", [])]
+
+
+def commit_tree(repository, token, sha):
+    return commit_identity(repository, token, sha)[0]
 
 
 def find_build(repository, token, expected, current_run, wait_seconds=1200):
@@ -157,6 +165,13 @@ def find_build(repository, token, expected, current_run, wait_seconds=1200):
                 if sha not in trees:
                     trees[sha] = commit_tree(repository, token, sha)
                 matching = trees[sha] == expected["source_tree"]
+                # GitHub records the PR head in run metadata, while checkout
+                # tests a synthetic merge. Release Please may merge into a newer
+                # base, so only the receipt's anchored merge can prove identity.
+                # Wait for an active release PR; the downloaded receipt must
+                # still prove the exact release tree before publication.
+                if run["event"] == "pull_request" and run.get("head_branch", "").startswith("release-please--"):
+                    matching = True
             if matching:
                 break
         remaining = deadline - time.monotonic()
@@ -190,7 +205,7 @@ def record(expected, output):
     (output / "receipt.json").write_text(json.dumps(receipt, sort_keys=True) + "\n")
 
 
-def restore(config, expected, retained, output, release_tag, repository="", token=""):
+def restore(config, expected, retained, output, release_tag, repository="", token="", origin_sha="", origin_event=""):
     receipt_path, archive = retained / "receipt.json", retained / "app.zip"
     if any(path.is_symlink() or not path.is_file() for path in (receipt_path, archive)):
         raise ValueError("Verified build is missing its archive or receipt")
@@ -200,8 +215,14 @@ def restore(config, expected, retained, output, release_tag, repository="", toke
             any(receipt.get(key) != expected[key] for key in keys) or
             receipt["archive_sha256"] != digest(archive)):
         raise ValueError("Verified build identity or archive checksum does not match")
-    if expected["source_identity"] == "tree" and commit_tree(repository, token, receipt["source_sha"]) != expected["source_tree"]:
-        raise ValueError("Recorded build source tree differs from the release")
+    if expected["source_identity"] == "tree":
+        tree, parents = commit_identity(repository, token, receipt["source_sha"])
+        if tree != expected["source_tree"]:
+            raise ValueError("Recorded build source tree differs from the release")
+        if (not re.fullmatch(r"[0-9a-f]{40}", origin_sha) or
+                (receipt["source_sha"] != origin_sha and
+                 not (origin_event == "pull_request" and len(parents) == 2 and parents[1] == origin_sha))):
+            raise ValueError("Recorded build commit does not belong to the selected workflow source")
     if not release_tag or release_tag != config.get("tag_prefix", "v") + receipt["version"]:
         raise ValueError("Verified app version does not match the release tag")
     # Check archive member paths before invoking ditto. App-internal symlinks
@@ -253,7 +274,8 @@ def main():
         record(expected, retained)
     elif mode == "restore":
         restore(config, expected, retained, Path(os.environ["BUILD_OUTPUT"]), os.environ["BUILD_RELEASE_TAG"],
-                os.environ["GITHUB_REPOSITORY"], os.environ["BUILD_TOKEN"])
+                os.environ["GITHUB_REPOSITORY"], os.environ["BUILD_TOKEN"],
+                os.environ["BUILD_SOURCE_SHA"], os.environ["BUILD_SOURCE_EVENT"])
     else:
         raise ValueError("Unknown verified build operation")
     with Path(os.environ["GITHUB_OUTPUT"]).open("a") as stream:

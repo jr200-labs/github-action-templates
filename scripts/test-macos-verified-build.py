@@ -63,7 +63,8 @@ class VerifiedBuildTest(unittest.TestCase):
         return receipt
 
     def restore(self):
-        build.restore(self.config, self.expected, self.retained, self.output, "v1.2.3")
+        build.restore(self.config, self.expected, self.retained, self.output, "v1.2.3",
+                      "example/app", "token", "a" * 40, "pull_request")
 
     def extract(self, command, **kwargs):
         if command[0] == "/usr/bin/ditto":
@@ -76,7 +77,7 @@ class VerifiedBuildTest(unittest.TestCase):
             with self.subTest(event=event):
                 self.run["event"] = event
                 result, _ = self.lookup()
-                self.assertEqual(result, {"artifact-id": "7", "run-id": "11"})
+                self.assertEqual(result, {"artifact-id": "7", "run-id": "11", "source-sha": "a" * 40, "source-event": event})
 
     def test_missing_expired_current_fork_or_wrong_revision_is_a_miss(self):
         self.assertIsNone(self.lookup([])[0])
@@ -166,7 +167,7 @@ class VerifiedBuildTest(unittest.TestCase):
         self.expected["source_identity"] = "tree"
         self.expected["source_sha"] = "f" * 40
         self.artifact["name"] = build.artifact_name(self.expected)
-        self.assertEqual(self.lookup()[0], {"artifact-id": "7", "run-id": "11"})
+        self.assertEqual(self.lookup()[0]["artifact-id"], "7")
         self.assertEqual(build.artifact_name(self.expected),
                          build.artifact_name(dict(self.expected, source_sha="a" * 40)))
         self.assertNotEqual(build.artifact_name(self.expected),
@@ -183,12 +184,34 @@ class VerifiedBuildTest(unittest.TestCase):
         receipt = self.write_archive()
         receipt["source_sha"] = "c" * 40
         (self.retained / "receipt.json").write_text(json.dumps(receipt))
-        with patch.object(build, "commit_tree", return_value="f" * 40):
+        with patch.object(build, "commit_identity", return_value=("f" * 40, ["b" * 40, "a" * 40])):
             with self.assertRaisesRegex(ValueError, "source tree differs"):
                 self.restore()
-        with patch.object(build, "commit_tree", return_value="e" * 40), patch.object(build.subprocess, "run", side_effect=self.extract):
+        with patch.object(build, "commit_identity", return_value=("e" * 40, ["b" * 40, "a" * 40])), patch.object(build.subprocess, "run", side_effect=self.extract):
             self.restore()
         self.assertTrue((self.output / "example-macos.zip").is_file())
+
+    def test_pr_merge_receipt_must_be_anchored_to_the_workflow_head(self):
+        self.expected["source_identity"] = "tree"
+        receipt = self.write_archive()
+        receipt["source_sha"] = "c" * 40
+        (self.retained / "receipt.json").write_text(json.dumps(receipt))
+        for parents in ([], ["a" * 40], ["a" * 40, "b" * 40], ["b" * 40, "f" * 40]):
+            with self.subTest(parents=parents), patch.object(build, "commit_identity", return_value=("e" * 40, parents)), patch.object(build.subprocess, "run") as run:
+                with self.assertRaisesRegex(ValueError, "selected workflow source"):
+                    self.restore()
+                run.assert_not_called()
+
+    def test_release_pr_head_can_differ_from_the_tested_merge_tree(self):
+        self.expected["source_identity"] = "tree"
+        self.artifact["name"] = build.artifact_name(self.expected)
+        self.run["event"] = "pull_request"
+        with patch.object(build, "commit_tree", return_value="f" * 40):
+            self.assertEqual(self.lookup()[0]["artifact-id"], "7")
+        active = dict(self.run, id=11, status="in_progress", head_branch="release-please--branches--main")
+        with patch.object(build, "lookup", side_effect=[None, {"artifact-id": "7"}]), patch.object(build, "api", return_value={"workflow_runs": [active]}), patch.object(build, "commit_tree", return_value="f" * 40), patch.object(build.time, "sleep") as sleep:
+            self.assertEqual(build.find_build("example/app", "token", self.expected, 99)["artifact-id"], "7")
+            sleep.assert_called_once()
 
     def test_restore_creates_release_assets_without_running_the_build(self):
         self.write_archive()

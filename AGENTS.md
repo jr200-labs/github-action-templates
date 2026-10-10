@@ -132,9 +132,10 @@ commit matching is the default. A tracked `.github/macos-build-reuse.json` with
 `{"source_identity":"tree"}` opts into reuse across merge/squash commits with
 identical Git trees. Use tree identity only when commit/ref metadata does not
 change application behavior; embedded build provenance keeps the original tested
-commit. Validate the workflow head's Git tree and the receipt's actual build
-commit against the release tree through GitHub, rather than trusting a claimed
-tree in a downloaded receipt. Fork artifacts and failed or running workflows
+commit. Validate the receipt's actual build commit against the release tree
+through GitHub. It must be the workflow head commit or, for a PR, a merge whose
+second parent is that head commit. This supports testing an older PR head merged
+into a newer base. Fork artifacts and failed or running workflows
 are ineligible. Record only clean tracked source; generated untracked outputs are
 allowed.
 Restore verifies the archive digest, app version against the release tag, and

@@ -13,6 +13,12 @@ inputs:
   release-tag:
     description: Expected app version tag (restore only)
     default: ''
+  source-sha:
+    description: GitHub's selected workflow head commit (restore only)
+    default: ''
+  source-event:
+    description: GitHub's selected workflow event (restore only)
+    default: ''
 outputs:
   artifact-id:
     description: Verified source artifact ID, empty when no exact successful build exists
@@ -20,6 +26,12 @@ outputs:
   run-id:
     description: Successful workflow run that produced the artifact
     value: ${{ steps.build.outputs.run-id }}
+  source-sha:
+    description: GitHub's selected workflow head commit
+    value: ${{ steps.build.outputs.source-sha }}
+  source-event:
+    description: GitHub's selected workflow event
+    value: ${{ steps.build.outputs.source-event }}
 runs:
   using: composite
   steps:
@@ -49,4 +61,6 @@ runs:
         BUILD_OUTPUT: ${{ runner.temp }}/macos-release
         BUILD_RELEASE_TAG: ${{ inputs.release-tag }}
         BUILD_TOKEN: ${{ inputs.token }}
+        BUILD_SOURCE_SHA: ${{ inputs.source-sha }}
+        BUILD_SOURCE_EVENT: ${{ inputs.source-event }}
       run: python3 "$GITHUB_ACTION_PATH/build.py"
