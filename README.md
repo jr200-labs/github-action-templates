@@ -14,6 +14,23 @@ GAT releases the next `shared-vX.Y.Z` tag automatically when canonical
 consumer workflows or shared files change on `master`, including a GitHub
 Release with generated notes.
 
+macOS CI retains a verified app archive for five days. After synchronizing the
+canonical publisher, releases reuse a successful build only when its exact Git
+commit, packaging configuration and architecture match the release checkout.
+Publishing checks the archive digest, app version and signature, then signs the
+appcast and uploads the release assets without recompiling or rerunning tests.
+An absent or expired matching build runs the normal build once. Apps whose
+behavior is independent of commit/ref metadata can commit
+`.github/macos-build-reuse.json` containing `{"source_identity":"tree"}` to reuse
+a release PR build after merge or squash when all tracked files are identical.
+GitHub verifies the recorded build source against the release tree and binds its
+commit to the source of the successful CI run. The archive retains its original
+tested build provenance.
+Publication waits for an already-running equivalent CI build, avoiding a second
+build when the release PR is merged before its macOS checks finish.
+Existing publisher callers keep building until they synchronize the
+new `actions: read` permission and `reuse-verified-build: true` input together.
+
 ## Merge Policy
 
 Consumer organizations can enforce default-branch protection centrally: rulesets require PRs, repo settings disable auto-merge by default + enable branch auto-delete, and the `lint-no-auto-merge` workflow in `hygiene` fails CI if any caller workflow invokes `gh pr merge`, `--auto-merge`, or `gh pr review --approve`. Shared-ref auto-merge guardrails live in config for a future opt-in, but the feature is currently disabled.

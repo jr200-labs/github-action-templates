@@ -337,7 +337,7 @@ class PackagingTest(unittest.TestCase):
         ))
         self.assertEqual(job["timeout-minutes"], 20)
 
-    def test_release_reuses_the_build_job_without_artifact_transfer(self):
+    def test_release_reuses_verified_artifacts_and_builds_only_on_a_miss(self):
         build = ROOT / ".github/workflows/build_macos_app.yaml"
         publish = ROOT / ".github/workflows/publish_macos_app.yaml"
         ci_caller = ROOT / "consumers/workflows/macos-app.yaml"
@@ -347,7 +347,7 @@ class PackagingTest(unittest.TestCase):
         self.assertEqual(list(build_jobs), ["package"])
         self.assertEqual(list(publish_jobs), ["package"])
         self.assertNotIn("permissions", build_jobs["package"])
-        self.assertEqual(publish_jobs["package"]["permissions"], {"contents": "write"})
+        self.assertNotIn("permissions", publish_jobs["package"])
         self.assertEqual(publish_jobs["package"]["with"]["publish-release"], True)
         self.assertEqual(
             publish_jobs["package"]["uses"],
@@ -355,6 +355,18 @@ class PackagingTest(unittest.TestCase):
         )
         self.assertFalse(any("actions/upload-artifact" in step.get("uses", "")
                              for step in build_jobs["package"]["steps"]))
+        steps = {step.get("name"): step for step in build_jobs["package"]["steps"] if step.get("name")}
+        self.assertEqual(steps["Build and verify"]["if"], "steps.verified.outputs.artifact-id == ''")
+        self.assertEqual(steps["Ensure Metal toolchain"]["if"], "steps.verified.outputs.artifact-id == ''")
+        self.assertEqual(steps["Retain verified app for release reuse"]["with"]["mode"], "record")
+        self.assertEqual(steps["Verify reused app and prepare release assets"]["with"]["mode"], "restore")
+        self.assertEqual(steps["Download verified app"]["with"]["digest-mismatch"], "error")
+        self.assertEqual(steps["Download verified app"]["with"]["run-id"], "${{ steps.verified.outputs.run-id }}")
+        self.assertEqual(steps["Find verified build of this release commit"]["if"],
+                         "inputs.publish-release && inputs.reuse-verified-build")
+        self.assertEqual(publish_jobs["package"]["with"]["reuse-verified-build"], "${{ inputs.reuse-verified-build }}")
+        publish_inputs = json.loads(subprocess.check_output(["yq", "-o=json", ".on.workflow_call.inputs", str(publish)], text=True))
+        self.assertIs(publish_inputs["reuse-verified-build"]["default"], False)
         self.assertEqual(
             subprocess.check_output(["yq", "-r", ".permissions.contents", str(ci_caller)], text=True).strip(),
             "read",
@@ -362,6 +374,10 @@ class PackagingTest(unittest.TestCase):
         self.assertEqual(
             subprocess.check_output(["yq", "-r", ".permissions.contents", str(release_caller)], text=True).strip(),
             "write",
+        )
+        self.assertEqual(
+            subprocess.check_output(["yq", "-r", ".permissions.actions", str(release_caller)], text=True).strip(),
+            "read",
         )
         self.assertNotIn("publish-runner:", release_caller.read_text())
         publish_text = publish.read_text()
