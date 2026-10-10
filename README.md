@@ -17,8 +17,7 @@ Release with generated notes.
 macOS PR validation builds and tests without uploading a workflow artifact.
 Release publication builds and tests the tagged source once, then signs the
 appcast and uploads release assets from that same job when `publish-release` is
-true. The deprecated `reuse-verified-build` input is accepted but ignored so
-existing callers can synchronize separately.
+true.
 
 ## Merge Policy
 

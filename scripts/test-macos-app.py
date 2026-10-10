@@ -360,6 +360,11 @@ class PackagingTest(unittest.TestCase):
         publish_jobs = json.loads(subprocess.check_output(["yq", "-o=json", ".jobs", str(publish)], text=True))
         self.assertEqual(list(build_jobs), ["package"])
         self.assertEqual(list(publish_jobs), ["package"])
+        for workflow in (build, publish):
+            inputs = json.loads(subprocess.check_output(
+                ["yq", "-o=json", ".on.workflow_call.inputs", str(workflow)], text=True))
+            self.assertNotIn("reuse-verified-build", inputs)
+            self.assertNotIn("publish-runner", inputs)
         self.assertNotIn("permissions", build_jobs["package"])
         self.assertEqual(publish_jobs["package"]["permissions"], {"contents": "write"})
         self.assertEqual(publish_jobs["package"]["with"]["publish-release"], True)

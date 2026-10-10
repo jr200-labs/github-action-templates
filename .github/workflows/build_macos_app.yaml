@@ -34,10 +34,6 @@ on:
         description: Verify, attach and publish the draft release from this same job
         type: boolean
         default: false
-      reuse-verified-build:
-        description: Deprecated compatibility input; every run builds and verifies its own app
-        type: boolean
-        default: false
       runner:
         description: macOS build runner label
         type: string
