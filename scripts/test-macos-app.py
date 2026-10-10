@@ -143,11 +143,14 @@ class PackagingTest(unittest.TestCase):
         Path("release-please-config.json").write_bytes((ROOT / "shared/release-please-config.base.json").read_bytes())
         env = dict(os.environ, STRICT="1", SYNC_BASE_URL=(ROOT / "consumers").as_uri())
         sync = ["bash", str(ROOT / "consumers/scripts/sync-shared")]
+        retired = Path(".github/workflows/publish-macos-app.yaml")
+        retired.parent.mkdir(parents=True, exist_ok=True)
+        retired.write_text("# GENERATED/SHARED WORKFLOW: copied into consuming repos by sync-shared.\nname: retired\n")
         subprocess.run(sync, check=True, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         caller = Path(".github/workflows/macos-app.yaml")
         publisher = Path(".github/workflows/publish-macos-app.yaml")
         self.assertEqual(caller.read_bytes(), (ROOT / "consumers/workflows/macos-app.yaml").read_bytes())
-        self.assertEqual(publisher.read_bytes(), (ROOT / "consumers/workflows/publish-macos-app.yaml").read_bytes())
+        self.assertFalse(publisher.exists(), "Sync must remove the retired generated publisher")
         self.assertEqual(Path(".shared/package-macos-app.py").read_bytes(), SCRIPT.read_bytes())
         self.assertEqual(
             Path(".sparkle-public-key").read_bytes(),
@@ -160,10 +163,9 @@ class PackagingTest(unittest.TestCase):
                 (ROOT / "consumers/files/.shared" / helper).read_bytes(),
             )
         caller_data = subprocess.check_output(["yq", "-o=json", ".", str(caller)], text=True)
-        self.assertNotIn("repository_dispatch", caller_data)
-        self.assertNotIn("SPARKLE_EDDSA_PRIVATE_KEY", caller_data)
+        self.assertIn("repository_dispatch", caller_data)
         publisher_secret = subprocess.check_output(
-            ["yq", "-r", ".jobs.app.secrets.SPARKLE_EDDSA_PRIVATE_KEY", str(publisher)], text=True
+            ["yq", "-r", ".jobs.publish.secrets.SPARKLE_EDDSA_PRIVATE_KEY", str(caller)], text=True
         ).strip()
         self.assertEqual(publisher_secret, "${{ secrets.SPARKLE_EDDSA_PRIVATE_KEY }}")
         release_config = json.loads(Path("release-please-config.json").read_text())
@@ -185,6 +187,17 @@ class PackagingTest(unittest.TestCase):
         subprocess.run(sync, check=True, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         Path(".shared/package-macos-app.py").write_text("drift")
         self.assertNotEqual(subprocess.run(sync + ["--check"], env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE).returncode, 0)
+
+    def test_sync_keeps_generated_workflows_when_a_group_cannot_be_resolved(self):
+        Path(".github/workflows").mkdir(parents=True)
+        Path(".github/.shared-config.yaml").write_text("ref: shared-v0.1.0\nworkflows:\n  - hygiene\n  - missing-group\n")
+        old = Path(".github/workflows/previous.yaml")
+        old.write_text("# GENERATED/SHARED WORKFLOW: copied into consuming repos by sync-shared.\nname: previous\n")
+        result = subprocess.run(["bash", str(ROOT / "consumers/scripts/sync-shared")],
+            env=dict(os.environ, STRICT="0", SYNC_BASE_URL=(ROOT / "consumers").as_uri()),
+            capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(old.exists(), "Partial group resolution must not delete generated workflows")
 
     def test_macos_release_config_requires_atomic_draft_publication(self):
         Path(".github").mkdir()
@@ -351,50 +364,32 @@ class PackagingTest(unittest.TestCase):
         self.assertEqual(publish["if"], "inputs.publish-release")
         self.assertLess(next(i for i,s in enumerate(steps) if s.get("name") == "Build and verify"), steps.index(publish))
 
-    def test_release_reuses_the_build_job_without_artifact_transfer(self):
+    def test_single_macos_workflow_routes_validation_and_publication(self):
+        caller = ROOT / "consumers/workflows/macos-app.yaml"
+        workflow = json.loads(subprocess.check_output(["yq", "-o=json", str(caller)], text=True))
+        self.assertFalse((ROOT / "consumers/workflows/publish-macos-app.yaml").exists())
+        self.assertEqual(workflow["on"]["repository_dispatch"]["types"], ["release-published"])
+        self.assertIs(workflow["on"]["workflow_dispatch"]["inputs"]["publish-release"]["default"], False)
+        self.assertEqual(set(workflow["jobs"]), {"app", "publish"})
+        ci, release = workflow["jobs"]["app"], workflow["jobs"]["publish"]
+        self.assertEqual(ci["permissions"], {"contents": "read"})
+        self.assertNotIn("secrets", ci)
+        self.assertIs(ci["with"]["publish-release"], False)
+        self.assertIs(release["with"]["publish-release"], True)
+        self.assertIs(release["with"]["generate-appcast"], True)
+        self.assertIn("repository_dispatch", release["if"])
+        self.assertIn("inputs.publish-release", release["if"])
+        self.assertNotIn("pull_request", release["if"])
+        self.assertIn("!inputs.publish-release", ci["if"])
+        self.assertIn("pull_request", ci["if"])
+        for job in (ci, release):
+            self.assertEqual(job["uses"], "jr200-labs/github-action-templates/.github/workflows/build_macos_app.yaml@master")
         build = ROOT / ".github/workflows/build_macos_app.yaml"
-        publish = ROOT / ".github/workflows/publish_macos_app.yaml"
-        ci_caller = ROOT / "consumers/workflows/macos-app.yaml"
-        release_caller = ROOT / "consumers/workflows/publish-macos-app.yaml"
-        build_jobs = json.loads(subprocess.check_output(["yq", "-o=json", ".jobs", str(build)], text=True))
-        publish_jobs = json.loads(subprocess.check_output(["yq", "-o=json", ".jobs", str(publish)], text=True))
-        self.assertEqual(list(build_jobs), ["package"])
-        self.assertEqual(list(publish_jobs), ["package"])
-        for workflow in (build, publish):
-            inputs = json.loads(subprocess.check_output(
-                ["yq", "-o=json", ".on.workflow_call.inputs", str(workflow)], text=True))
-            self.assertNotIn("reuse-verified-build", inputs)
-            self.assertNotIn("publish-runner", inputs)
-        self.assertNotIn("permissions", build_jobs["package"])
-        self.assertEqual(publish_jobs["package"]["permissions"], {"contents": "write"})
-        self.assertEqual(publish_jobs["package"]["with"]["publish-release"], True)
-        self.assertEqual(
-            publish_jobs["package"]["uses"],
-            "jr200-labs/github-action-templates/.github/workflows/build_macos_app.yaml@master",
-        )
-        self.assertFalse(any("actions/upload-artifact" in step.get("uses", "")
-                             for step in build_jobs["package"]["steps"]))
-        self.assertEqual(
-            subprocess.check_output(["yq", "-r", ".permissions.contents", str(ci_caller)], text=True).strip(),
-            "read",
-        )
-        self.assertEqual(
-            subprocess.check_output(["yq", "-r", ".permissions.contents", str(release_caller)], text=True).strip(),
-            "write",
-        )
-        self.assertNotIn("publish-runner:", release_caller.read_text())
-        publish_text = publish.read_text()
-        self.assertNotIn("actions/download-artifact", publish_text)
-        self.assertNotIn("actions/upload-artifact", publish_text)
-        self.assertNotIn("/releases/tags/", publish_text)
-        self.assertNotIn("gh release ", publish_text)
-        build_text = build.read_text()
-        self.assertEqual(build_text.count("uses: jr200-labs/github-action-templates/actions/macos-release@master"), 2)
-        self.assertNotIn("gh api", build_text)
-        self.assertNotIn("jq ", build_text)
-        self.assertNotIn("curl ", build_text)
-        action = (ROOT / "actions/macos-release/action.yml").read_text()
-        self.assertIn('python3 "$GITHUB_ACTION_PATH/release.py"', action)
+        shared = json.loads(subprocess.check_output(["yq", "-o=json", str(build)], text=True))
+        self.assertIn("release-please--branches--", shared["jobs"]["package"]["if"])
+        self.assertIn("github.event.pull_request.user.type == 'Bot'", shared["jobs"]["package"]["if"])
+        self.assertIn("github.event.pull_request.head.repo.full_name == github.repository", shared["jobs"]["package"]["if"])
+        self.assertNotIn("reuse-verified-build", shared["on"]["workflow_call"]["inputs"])
 
 
 if __name__ == "__main__":

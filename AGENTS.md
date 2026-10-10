@@ -124,8 +124,11 @@ generator when it needs different feed behavior.
 
 The reusable workflow accepts config path, checkout ref, release tag, immutable
 GitHub release ID, publish flag, and a macOS runner input. Canonical callers use
-configured runner profiles. PR and manual CI runs build and verify the app without
-creating or uploading an archive. For a `macos-app` consumer, shared config
+configured runner profiles. The single `macos-app` caller handles PR validation,
+release dispatches and manual runs. Ordinary PRs and manual validation build and
+verify without uploading an archive. Bot-owned Release Please branches skip this
+validation job; the release event builds and tests their tagged source once.
+Manual runs enable `publish-release` and provide a release tag to publish. For a `macos-app` consumer, shared config
 synchronization makes Release Please create a draft and force the tag. The
 `release-published` lane builds that exact tag, verifies its app version, creates
 the release archive and checksum in the same job, resolves and addresses the draft
@@ -135,8 +138,10 @@ publishes the release. A failure leaves the release as an inspectable draft.
 Publishing never replaces existing assets. Release packaging and publication stay
 in one native job so the archive is uploaded directly from its build workspace
 instead of crossing the
-workflow artifact service. The PR caller limits contents permission to read; the
-release caller grants the same reusable job write permission.
+workflow artifact service. The mutually exclusive validation and publication
+lanes call the same reusable build job with `publish-release` false or true.
+Validation grants contents read and passes no signing secret; publication grants
+contents write and forwards the configured Sparkle key.
 The script verifies signatures but does not provide signing identities, Developer
 ID signing or notarization. Repository scripts own signing policy and credentials.
 
@@ -240,13 +245,15 @@ Consumer repos may keep additional non-canonical workflows alongside the
 injected set, but they must be named `bespoke_*.yaml`. Drift-check ignores that
 prefix when reporting workflows outside the resolved shared set. Any other
 extra workflow filename is still surfaced as `stale-or-bespoke` so accidental
-drift stays visible.
+drift stays visible. Sync removes generated shared workflow files outside the
+resolved set after complete group resolution and successful caller downloads;
+bespoke files remain. This also removes retired publisher triggers on upgrade.
 
 ## Load-bearing properties
 
 The canonical caller workflows encode invariants that are easy to break by hand and have bitten us before:
 
-- **Top-level `permissions:`** — only the caller's *top-level* permissions cascade into reusable workflows. Job-level permissions on the caller are silently ignored when the caller invokes a reusable. Missing this on a Docker caller can cause a silent build failure.
+- **`permissions:`** — declare workflow permissions and explicit job permissions for lanes that differ. A called reusable workflow can maintain or reduce the permissions granted by its caller. Validation lanes use contents read; publication lanes use contents write.
 - **Secret name match** — the reusable declares a secret name; the caller must pass it under exactly that name. `app_private_key` vs `INTEGRATION_APP_PRIVATE_KEY` is a one-character bug that fails the run at startup.
 - **Runner selection** — select `${{ fromJSON(vars.RUNNER_PROFILES)[vars.RUNNER_PROFILE].<role> }}` in direct jobs and reusable callers. Linux CI generally uses `default`; native Swift/Xcode CI uses `macos`. Reusable primitives may forward an empty-default `workflow_call` runner input supplied by a checked caller. Manual runner overrides, fixed profile keys, literal labels, and arbitrary runner expressions are forbidden. Run `./scripts/lint-workflow-runners.sh` against both `.github/workflows` and `consumers/workflows` when changing workflows. The hygiene group installs `lint-workflow-runners` on every PR, including bespoke workflows. Consumer-owned `.github/runner-policy.json` can declare the required profile and role labels; CI compares it to effective GitHub variables to detect repository overrides.
 
