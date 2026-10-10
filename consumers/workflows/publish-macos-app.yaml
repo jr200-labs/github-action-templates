@@ -19,7 +19,6 @@ on:
 
 permissions:
   contents: write
-  actions: read
 
 concurrency:
   group: publish-macos-app-${{ github.event.client_payload['release-tag'] || github.event.inputs.release-tag }}
@@ -29,7 +28,6 @@ jobs:
   app:
     uses: jr200-labs/github-action-templates/.github/workflows/publish_macos_app.yaml@master
     with:
-      reuse-verified-build: true
       release-tag: ${{ github.event.client_payload['release-tag'] || github.event.inputs.release-tag }}
       release-id: ${{ github.event.client_payload['release-id'] || github.event.inputs.release-id }}
       runner: ${{ fromJSON(vars.RUNNER_PROFILES)[vars.RUNNER_PROFILE].macos }}

@@ -124,42 +124,19 @@ generator when it needs different feed behavior.
 
 The reusable workflow accepts config path, checkout ref, release tag, immutable
 GitHub release ID, publish flag, and a macOS runner input. Canonical callers use
-configured runner profiles. PR and manual CI runs build and verify the app, then
-retain a signature-preserving app archive and receipt for five days. Publication
-reuses an artifact only from a successful `macos-app.yaml` run in the same
-repository, on matching committed source, configuration and architecture. Exact
-commit matching is the default. A tracked `.github/macos-build-reuse.json` with
-`{"source_identity":"tree"}` opts into reuse across merge/squash commits with
-identical Git trees. Use tree identity only when commit/ref metadata does not
-change application behavior; embedded build provenance keeps the original tested
-commit. Validate the receipt's actual build commit against the release tree
-through GitHub. It must be the workflow head commit or, for a PR, a merge whose
-second parent is that head commit. This supports testing an older PR head merged
-into a newer base. Fork artifacts and failed or running workflows
-are ineligible. Record only clean tracked source; generated untracked outputs are
-allowed.
-Restore verifies the archive digest, app version against the release tag, and
-macOS signature. A missing or expired matching artifact builds the tag once;
-lookup errors or invalid downloaded artifacts fail publication. A PR's synthetic
-merge commit or a squash merge can differ from the release commit; commit mode
-rebuilds, while tree mode reuses only when every tracked file is identical.
-If an equivalent CI build is already running when release publication starts,
-wait up to 20 minutes for its successful artifact instead of compiling in
-parallel. Queued builds are not waited on while holding a native runner slot.
-For a `macos-app` consumer, shared config
+configured runner profiles. PR and manual CI runs build and verify the app without
+creating or uploading an archive. For a `macos-app` consumer, shared config
 synchronization makes Release Please create a draft and force the tag. The
-`release-published` lane obtains the verified app for that exact tag, verifies its app version, creates
+`release-published` lane builds that exact tag, verifies its app version, creates
 the release archive and checksum in the same job, resolves and addresses the draft
 by immutable release ID, attaches the ZIP, checksum, and configured signed appcast,
 verifies the complete uploaded asset set and its SHA-256 digests, and only then
 publishes the release. A failure leaves the release as an inspectable draft.
 Publishing never replaces existing assets. Release packaging and publication stay
-in one native job; reuse skips toolchain preparation, compilation and tests while
-keeping release signing and asset verification. The PR caller limits contents
-permission to read; the release caller grants contents write and actions read.
-The canonical publisher opts into `reuse-verified-build`. Its reusable default
-is false so existing callers remain valid until they synchronize the additional
-read permission and input together.
+in one native job so the archive is uploaded directly from its build workspace
+instead of crossing the
+workflow artifact service. The PR caller limits contents permission to read; the
+release caller grants the same reusable job write permission.
 The script verifies signatures but does not provide signing identities, Developer
 ID signing or notarization. Repository scripts own signing policy and credentials.
 
