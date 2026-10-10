@@ -1,0 +1,52 @@
+name: Retain or reuse a verified macOS app
+description: Bind reusable signed app archives to successful CI on matching committed source
+inputs:
+  mode:
+    description: lookup, record or restore
+    required: true
+  config-path:
+    description: Repository-owned app configuration
+    default: .github/macos-app.json
+  token:
+    description: Repository token with actions read and contents read permission (lookup/restore)
+    default: ''
+  release-tag:
+    description: Expected app version tag (restore only)
+    default: ''
+outputs:
+  artifact-id:
+    description: Verified source artifact ID, empty when no exact successful build exists
+    value: ${{ steps.build.outputs.artifact-id }}
+  run-id:
+    description: Successful workflow run that produced the artifact
+    value: ${{ steps.build.outputs.run-id }}
+runs:
+  using: composite
+  steps:
+    - id: build
+      if: inputs.mode != 'restore'
+      shell: bash
+      env:
+        BUILD_MODE: ${{ inputs.mode }}
+        BUILD_CONFIG: ${{ inputs.config-path }}
+        BUILD_RETAINED: ${{ runner.temp }}/macos-verified
+        BUILD_TOKEN: ${{ inputs.token }}
+      run: python3 "$GITHUB_ACTION_PATH/build.py"
+    - if: inputs.mode == 'record'
+      uses: actions/upload-artifact@v7
+      with:
+        name: ${{ steps.build.outputs.artifact-name }}
+        path: ${{ runner.temp }}/macos-verified/*
+        if-no-files-found: error
+        compression-level: 0
+        retention-days: 5
+    - if: inputs.mode == 'restore'
+      shell: bash
+      env:
+        BUILD_MODE: restore
+        BUILD_CONFIG: ${{ inputs.config-path }}
+        BUILD_RETAINED: ${{ runner.temp }}/macos-verified
+        BUILD_OUTPUT: ${{ runner.temp }}/macos-release
+        BUILD_RELEASE_TAG: ${{ inputs.release-tag }}
+        BUILD_TOKEN: ${{ inputs.token }}
+      run: python3 "$GITHUB_ACTION_PATH/build.py"
