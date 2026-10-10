@@ -2,3 +2,7 @@
 *.swp
 *.bak
 private
+
+# Python bytecode
+__pycache__/
+*.py[co]
