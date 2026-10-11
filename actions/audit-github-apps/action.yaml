@@ -1,0 +1,21 @@
+name: Audit GitHub App inventory
+description: Compare organization installations with caller-owned desired state
+inputs:
+  inventory:
+    description: JSON inventory path in the caller checkout
+    required: true
+  organization:
+    description: Organization to audit
+    required: true
+  validate-only:
+    description: Validate desired state without credentials or API calls
+    default: 'false'
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        AUDIT_INVENTORY: ${{ inputs.inventory }}
+        AUDIT_ORGANIZATION: ${{ inputs.organization }}
+        AUDIT_VALIDATE_ONLY: ${{ inputs.validate-only }}
+      run: python3 "$GITHUB_ACTION_PATH/audit.py" "$AUDIT_INVENTORY" "$AUDIT_ORGANIZATION" "$AUDIT_VALIDATE_ONLY"
