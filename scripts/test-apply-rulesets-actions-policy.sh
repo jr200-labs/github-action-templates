@@ -237,7 +237,7 @@ case "$method:$endpoint" in
     cat "$TEST_RULESET_BODY"
     ;;
   "PUT:/orgs/example-enterprise/rulesets/1")
-    true
+    cp "$input_file" "$TEST_CAPTURE_DIR/org-ruleset.json"
     ;;
   "GET:/repos/jr200-labs/public-repo/rulesets")
     echo "1"
@@ -313,6 +313,29 @@ TEST_CAPTURE_DIR="$capture" \
     --org example-enterprise \
     --repo example-enterprise/private-repo \
     --ruleset trunk-protect >"$tmp/apply-rulesets-actions-policy.out"
+
+jq -e '.conditions.repository_name == {"include": ["~ALL"], "exclude": []}' \
+  "$capture/org-ruleset.json" >/dev/null
+
+# An explicit repository selection must survive org-level reconciliation.
+for selection in \
+  '{"repository_name":{"include":["private-repo"],"exclude":["excluded-repo"]}}' \
+  '{"repository_id":{"repository_ids":[123]}}' \
+  '{"repository_property":{"include":[{"name":"tier","source":"custom","property_values":["production"]}],"exclude":[]}}'; do
+  jq --argjson selection "$selection" '.conditions += $selection' \
+    "$root/rulesets/trunk-protect.json" > "$tmp/consumer/rulesets/trunk-protect.json"
+  PATH="$bin:$PATH" \
+  TEST_RULESET_BODY="$root/rulesets/trunk-protect.json" \
+  TEST_CAPTURE_DIR="$capture" \
+    "$root/scripts/apply-rulesets.sh" \
+      --targets-file "$tmp/consumer/targets.yaml" \
+      --automerge-config "$tmp/automerge.json" \
+      --org example-enterprise \
+      --repo example-enterprise/private-repo \
+      --ruleset trunk-protect >"$tmp/target-selection.out"
+  jq -e --slurpfile desired "$tmp/consumer/rulesets/trunk-protect.json" \
+    '.conditions == $desired[0].conditions' "$capture/org-ruleset.json" >/dev/null
+done
 
 PATH="$bin:$PATH" \
 TEST_RULESET_BODY="$root/rulesets/trunk-protect.json" \
