@@ -52,6 +52,23 @@ Adjacent repo settings are also reconciled on every targeted repo:
 - `delete_branch_on_merge=true` so merged PR branches are cleaned up automatically.
 - `allow_update_branch=true` so PRs can use GitHub's `Update branch` button when the base branch moves ahead.
 
+## Commit author allowlist
+
+`jr200-labs-author-allowlist` targets all branches of each non-archived
+`jr200-labs` repository using repository scope. It permits these exact emails:
+
+- `jr200@users.noreply.github.com`
+- `jayshan+git@gmail.com`
+- `273732104+jr200-labs-cicd-bot[bot]@users.noreply.github.com`
+- `279469126+jrl-ensign[bot]@users.noreply.github.com`
+
+These are the owner and bot identities in `github-action-templates`' master
+history. The rule checks author metadata, not signer identity; existing history
+is unchanged. Native commit metadata rules have plan restrictions, so a
+successful configuration review is not proof of live enforcement. Unsupported
+private repositories require an eligible GitHub plan before reconciliation.
+Add new bot author addresses here before enabling them.
+
 ## Adding a target
 
 Edit `targets.yaml`:
