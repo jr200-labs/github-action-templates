@@ -12,3 +12,5 @@
 
 trunk-protect:
   jr200-labs: repo  # free plan — one ruleset per non-archived repo
+jr200-labs-author-allowlist:
+  jr200-labs: repo

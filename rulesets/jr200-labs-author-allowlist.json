@@ -1,0 +1,25 @@
+{
+  "name": "jr200-labs-author-allowlist",
+  "target": "branch",
+  "enforcement": "active",
+  "conditions": {
+    "ref_name": {
+      "include": [
+        "~ALL"
+      ],
+      "exclude": []
+    }
+  },
+  "rules": [
+    {
+      "type": "commit_author_email_pattern",
+      "parameters": {
+        "name": "Approved organization author emails",
+        "negate": false,
+        "operator": "regex",
+        "pattern": "^(jr200@users\\.noreply\\.github\\.com|jayshan\\+git@gmail\\.com|273732104\\+jr200-labs-cicd-bot\\[bot\\]@users\\.noreply\\.github\\.com|279469126\\+jrl-ensign\\[bot\\]@users\\.noreply\\.github\\.com)\\n?$"
+      }
+    }
+  ],
+  "bypass_actors": []
+}
