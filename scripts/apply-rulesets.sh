@@ -250,8 +250,12 @@ apply_org() {
 
     local tmp_body
     tmp_body=$(mktemp)
-    # Organization rulesets require a repository targeting condition
-    jq '.conditions += {"repository_name": {"include": ["~ALL"], "exclude": []}}' "$body_file" > "$tmp_body"
+    # Add the org-wide default only when the body has no repository target.
+    # Preserve explicit selection so consumer rules cannot expand to all repos.
+    jq 'if (.conditions | has("repository_name") or has("repository_id") or has("repository_property"))
+        then .
+        else .conditions.repository_name = {"include": ["~ALL"], "exclude": []}
+        end' "$body_file" > "$tmp_body"
 
     existing=$(gh api "/orgs/$org/rulesets" --jq ".[] | select(.name==\"$name\") | .id" | head -1)
     if [ -n "$existing" ]; then
