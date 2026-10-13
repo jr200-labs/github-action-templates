@@ -43,11 +43,19 @@ jobs:
 
       - name: Run dry-run reconcile
         id: dry
+        continue-on-error: true
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
           set -o pipefail
-          OUT=$(./scripts/apply-rulesets.sh --dry-run --org "$GITHUB_REPOSITORY_OWNER" 2>&1)
+          if OUT=$(./scripts/apply-rulesets.sh --dry-run --org "$GITHUB_REPOSITORY_OWNER" 2>&1); then
+            :
+          else
+            status=$?
+            printf '%s\n' "$OUT"
+            echo "::error::Ruleset scan failed (exit $status); enforcement could not be verified."
+            exit "$status"
+          fi
           echo "$OUT"
           DRIFT=$(echo "$OUT" | grep '^DRY:' || true)
           {
@@ -57,7 +65,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: Open / update tracking issue (drift found)
-        if: steps.dry.outputs.drift != ''
+        if: steps.dry.outcome == 'success' && steps.dry.outputs.drift != ''
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -85,7 +93,7 @@ jobs:
           fi
 
       - name: Close tracking issue (no drift)
-        if: steps.dry.outputs.drift == ''
+        if: steps.dry.outcome == 'success' && steps.dry.outputs.drift == ''
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -94,3 +102,34 @@ jobs:
           if [ -n "$existing" ]; then
             gh issue close "$existing" --repo "$GITHUB_REPOSITORY" --comment 'Drift cleared.'
           fi
+
+      - name: Report failed ruleset scan
+        if: always() && !cancelled() && steps.dry.outcome != 'success'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TITLE="[drift] ${GITHUB_REPOSITORY_OWNER} ruleset scan failed"
+          BODY="Ruleset enforcement could not be verified. Inspect the failed step before treating policy as applied. Existing drift issues remain open. Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          existing=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --search "$TITLE in:title" --json number --jq '.[0].number // empty')
+          if [ -n "$existing" ]; then
+            gh issue edit "$existing" --repo "$GITHUB_REPOSITORY" --body "$BODY"
+          else
+            gh issue create --repo "$GITHUB_REPOSITORY" --title "$TITLE" --body "$BODY"
+          fi
+
+      - name: Close failed-scan issue after successful inspection
+        if: steps.dry.outcome == 'success'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TITLE="[drift] ${GITHUB_REPOSITORY_OWNER} ruleset scan failed"
+          existing=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --search "$TITLE in:title" --json number --jq '.[0].number // empty')
+          if [ -n "$existing" ]; then
+            gh issue close "$existing" --repo "$GITHUB_REPOSITORY" --comment 'Ruleset inspection succeeded; any policy drift is tracked separately.'
+          fi
+
+      - name: Fail incomplete ruleset scan
+        if: always() && !cancelled() && steps.dry.outcome != 'success'
+        run: |
+          echo "::error::Ruleset enforcement could not be verified."
+          exit 1
