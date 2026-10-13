@@ -112,6 +112,7 @@ jobs:
           ./scripts/test-repair-renovate-uv-lock-branches.sh
           ./scripts/test-repair-renovate-shared-workflow-branches.sh
           uv run --script scripts/test-ruleset-drift.py
+          bash ./scripts/test-ruleset-canonicalization.sh
           bash ./scripts/test-apply-rulesets-actions-policy.sh
 
   validate-renovate-pins:

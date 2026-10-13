@@ -221,14 +221,16 @@ run() {
 # Canonicalise a ruleset payload to a stable JSON string for comparison.
 # Strips server-only fields (id/href/timestamps/etc.) and sorts keys.
 canon_ruleset() {
-    jq -Sc '{name, target, enforcement, conditions, rules, bypass_actors}'
+    jq -Sc '{name, target, enforcement, conditions, rules, bypass_actors}
+        | .rules |= map(if .type == "commit_author_email_pattern" and .parameters.name == ""
+            then del(.parameters.name) else . end)'
 }
 
 # Compare canonical body to live; emit DRY: only when they differ.
 diff_or_apply() {
     local label="$1" detail_endpoint="$2" body_file="$3"
     local live want
-    live=$(gh api "$detail_endpoint" | jq -Sc '{name, target, enforcement, conditions, rules, bypass_actors}')
+    live=$(gh api "$detail_endpoint" | canon_ruleset)
     want=$(canon_ruleset < "$body_file")
     if [ "$live" = "$want" ]; then
         echo "  $label: in sync"
