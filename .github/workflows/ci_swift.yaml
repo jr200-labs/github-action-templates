@@ -156,32 +156,51 @@ jobs:
               if [ "$RUNNER_VERIFIER" = "true" ]; then
                 destination="platform=iOS Simulator"
               else
-              read -r simulator_device_type simulator_runtime < <(
-                xcrun simctl list devices available --json | /usr/bin/python3 -c '
+                simulator_selection="$(/usr/bin/python3 - "$project" "$scheme" "$XCODE_CONFIGURATION" <<'PYTHON'
           import json
           import re
+          import subprocess
           import sys
 
-          devices = json.load(sys.stdin).get("devices", {})
+          def command(args):
+              return subprocess.check_output(args, text=True, timeout=60)
+
+          project, scheme, configuration = sys.argv[1:]
+          runtimes = json.loads(command(["xcrun", "simctl", "list", "runtimes", "--json"]))
+          devices = json.loads(command(["xcrun", "simctl", "list", "devices", "available", "--json"]))
+          destinations = command(["xcodebuild", "-project", project, "-scheme", scheme,
+                                  "-configuration", configuration, "-showdestinations"])
+          compatible = set()
+          section = False
+          for line in destinations.splitlines():
+              if "destinations" in line.lower() and ":" in line and "{" not in line:
+                  section = bool(re.search(r"\bAvailable destinations for\b|\bDestinations compatible with\b", line, re.I))
+              if section and "platform:iOS Simulator" in line:
+                  match = re.search(r"(?:^|[, {])id:([^,}]+)", line)
+                  if match:
+                      compatible.add(match[1].strip())
           candidates = []
-          for runtime, runtime_devices in devices.items():
-              if ".SimRuntime.iOS-" not in runtime:
+          for runtime in runtimes["runtimes"]:
+              identifier = runtime.get("identifier", "")
+              match = re.fullmatch(r"com\.apple\.CoreSimulator\.SimRuntime\.iOS-(\d+(?:-\d+)+)", identifier)
+              if not match or not runtime.get("isAvailable"):
                   continue
-              version = tuple(int(part) for part in re.findall(r"\d+", runtime))
-              for device in runtime_devices:
-                  if device.get("isAvailable", True):
-                      device_type = device.get("deviceTypeIdentifier", "")
-                      if device_type:
-                          candidates.append((version, "iPhone" in device_type, device_type, runtime))
+              version = tuple(int(part) for part in match[1].split("-"))
+              for device in devices["devices"].get(identifier, []):
+                  device_type = device.get("deviceTypeIdentifier", "")
+                  if device.get("isAvailable") and device.get("udid") in compatible and device_type:
+                      candidates.append((version, "iPhone" in device_type, device_type, identifier))
           if not candidates:
-              raise SystemExit("No available iOS Simulator found")
+              raise SystemExit("No available project-compatible iOS simulator")
           _, _, device_type, runtime = max(candidates)
           print(device_type, runtime)
-          '
-              )
-              simulator_name="ci-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}"
-              simulator_id="$(xcrun simctl create "$simulator_name" "$simulator_device_type" "$simulator_runtime")"
-              destination="id=$simulator_id"
+          PYTHON
+                )"
+                read -r simulator_device_type simulator_runtime <<< "$simulator_selection"
+                simulator_name="ci-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}"
+                simulator_id="$(xcrun simctl create "$simulator_name" "$simulator_device_type" "$simulator_runtime")"
+                echo "simulator-id=$simulator_id" >> "$GITHUB_OUTPUT"
+                destination="id=$simulator_id"
               fi
             elif [[ " $supported_platforms " == *" macosx "* ]]; then
               destination="platform=macOS"
@@ -270,6 +289,8 @@ jobs:
           -destination "$XCODE_DESTINATION"
           -configuration "$XCODE_CONFIGURATION"
           -derivedDataPath "$XCODE_DERIVED_DATA"
+          -parallel-testing-enabled NO
+          -maximum-concurrent-test-simulator-destinations 1
           CODE_SIGNING_ALLOWED=NO
           CODE_SIGNING_REQUIRED=NO
           test
@@ -279,7 +300,17 @@ jobs:
         shell: bash
         env:
           SIMULATOR_ID: ${{ steps.xcode.outputs.simulator-id }}
-        run: xcrun simctl delete "$SIMULATOR_ID"
+        run: |
+          xcrun simctl shutdown "$SIMULATOR_ID" || true
+          xcrun simctl delete "$SIMULATOR_ID"
+          xcrun simctl list devices --json | /usr/bin/python3 -c '
+          import json, sys
+          identifier = sys.argv[1]
+          if any(device.get("udid") == identifier
+                 for devices in json.load(sys.stdin)["devices"].values()
+                 for device in devices):
+              raise SystemExit("Owned simulator remains after deletion")
+          ' "$SIMULATOR_ID"
 
       - name: Retain Xcode test results
         if: always() && inputs.runner-verifier && inputs.run-tests

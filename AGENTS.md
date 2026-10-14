@@ -343,3 +343,10 @@ Rules:
   draft and forced-tag creation for `macos-app` consumers
 - The release workflow refuses to invoke Release Please if runtime synchronization
   changes the committed release config; generated drift must be repaired in a PR
+
+
+When changing Apple verification, audit the direct workflow, provisioned-verifier
+contract, simulator selection and interruption recovery together. Add regression
+coverage through the real workflow resolver using fictitious projects. Keep the
+contract consistent for generators consuming released workflows; never add a
+consumer inventory or project-specific executor implementation here.
