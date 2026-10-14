@@ -329,7 +329,9 @@ class PackagingTest(unittest.TestCase):
             text=True,
         ))
         self.assertIn("SUPPORTED_PLATFORMS", resolve_step["run"])
-        self.assertIn("xcrun simctl list devices available --json", resolve_step["run"])
+        self.assertIn('command(["xcrun", "simctl", "list", "devices", "available", "--json"])', resolve_step["run"])
+        self.assertIn("-showdestinations", resolve_step["run"])
+        self.assertIn("device.get(\"udid\") in compatible", resolve_step["run"])
         self.assertIn("xcrun simctl create", resolve_step["run"])
         self.assertIn("destination=$destination", resolve_step["run"])
 
