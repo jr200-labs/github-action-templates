@@ -144,7 +144,7 @@ jobs:
         # permission key for /repos/*/dependabot/alerts and produces
         # a perpetual "Cannot access vulnerability alerts" WARN.
         if: ${{ inputs.client-id != '' || vars.INTEGRATION_CLIENT_ID != '' }}
-        uses: actions/create-github-app-token@v3.2.0
+        uses: actions/create-github-app-token@v3.3.0
         with:
           client-id: ${{ inputs.client-id || vars.INTEGRATION_CLIENT_ID }}
           private-key: ${{ secrets.INTEGRATION_APP_PRIVATE_KEY }}
@@ -298,7 +298,7 @@ jobs:
         # floating majors. Pass a complete image reference because the action
         # mistakes a registry port (for example :5000) for an image tag and
         # otherwise ignores renovate-version.
-        uses: renovatebot/github-action@v46.3.7
+        uses: renovatebot/github-action@v46.3.8
         with:
           token: ${{ steps.app-token.outputs.token || secrets.GITHUB_TOKEN }}
           renovate-image: ${{ format('{0}:{1}', runner.environment == 'self-hosted' && inputs.renovate-image || 'ghcr.io/renovatebot/renovate', inputs.renovate-version) }}
@@ -388,7 +388,7 @@ jobs:
         # and rewrite the closed PR title/body to a newer available version
         # without changing the already-merged commit.
         if: success() && inputs.dry-run == '' && steps.renovate-pass2.outputs.run == 'true'
-        uses: renovatebot/github-action@v46.3.7
+        uses: renovatebot/github-action@v46.3.8
         with:
           token: ${{ steps.app-token.outputs.token || secrets.GITHUB_TOKEN }}
           renovate-image: ${{ format('{0}:{1}', runner.environment == 'self-hosted' && inputs.renovate-image || 'ghcr.io/renovatebot/renovate', inputs.renovate-version) }}

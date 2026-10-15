@@ -92,7 +92,7 @@ jobs:
         if: inputs.client-id != '' && env.APP_KEY_SET == 'true'
         env:
           APP_KEY_SET: ${{ secrets.INTEGRATION_APP_PRIVATE_KEY != '' }}
-        uses: actions/create-github-app-token@v3.2.0
+        uses: actions/create-github-app-token@v3.3.0
         with:
           client-id: ${{ inputs.client-id }}
           private-key: ${{ secrets.INTEGRATION_APP_PRIVATE_KEY }}
