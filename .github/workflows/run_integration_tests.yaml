@@ -51,7 +51,7 @@ jobs:
       - uses: actions/checkout@v7
 
       - name: Generate token
-        uses: actions/create-github-app-token@v3.2.0
+        uses: actions/create-github-app-token@v3.3.0
         id: app-token
         with:
           client-id: ${{ secrets.client_id }}
@@ -109,7 +109,7 @@ jobs:
     runs-on: ${{ inputs.runner || fromJSON(vars.RUNNER_PROFILES)[vars.RUNNER_PROFILE].default }}
     steps:
       - name: Generate token
-        uses: actions/create-github-app-token@v3.2.0
+        uses: actions/create-github-app-token@v3.3.0
         id: app-token
         with:
           client-id: ${{ secrets.client_id }}
@@ -207,7 +207,7 @@ jobs:
           } >> $GITHUB_OUTPUT
 
       - name: Generate callback token
-        uses: actions/create-github-app-token@v3.2.0
+        uses: actions/create-github-app-token@v3.3.0
         id: callback-token
         with:
           client-id: ${{ secrets.client_id }}

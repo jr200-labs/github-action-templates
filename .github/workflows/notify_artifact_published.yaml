@@ -93,7 +93,7 @@ jobs:
       - name: Mint target repository token
         if: matrix.configured == true
         id: target-token
-        uses: actions/create-github-app-token@v3.2.0
+        uses: actions/create-github-app-token@v3.3.0
         with:
           client-id: ${{ inputs.dispatch-client-id || vars.RENOVATE_DISPATCH_CLIENT_ID || vars.INTEGRATION_CLIENT_ID }}
           private-key: ${{ secrets.dispatch_app_private_key || secrets.integration_app_private_key }}
