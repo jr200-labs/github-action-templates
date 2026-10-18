@@ -102,6 +102,7 @@ jobs:
           python3 scripts/test-release-asset-cleanup.py
           python3 scripts/test-github-app-inventory.py
           python3 scripts/test-macos-app.py
+          python3 scripts/test-macos-verified-build.py
           python3 scripts/test-unattended-swift.py
           ./scripts/test-docker-image-platform-toggle.sh
           ./scripts/test-npm-preview-publish.sh

@@ -352,15 +352,16 @@ class PackagingTest(unittest.TestCase):
         ))
         self.assertEqual(job["timeout-minutes"], 20)
 
-    def test_builds_have_no_intermediate_artifact_transfer(self):
+    def test_builds_have_no_intermediate_artifact_transfer_and_only_restore_verified_releases(self):
         workflow = json.loads(subprocess.check_output(
             ["yq", "-o=json", str(ROOT / ".github/workflows/build_macos_app.yaml")], text=True))
         steps = workflow["jobs"]["package"]["steps"]
         for step in steps:
             action = step.get("uses", "")
             self.assertFalse(any(name in action for name in (
-                "actions/upload-artifact", "actions/download-artifact", "actions/macos-verified-build")), action)
-        self.assertNotIn("if", next(s for s in steps if s.get("name") == "Build and verify"))
+                "actions/upload-artifact", "actions/download-artifact")), action)
+        self.assertEqual(next(s for s in steps if s.get("name") == "Build and verify")["if"],
+                         "steps.restored.outputs.reused != 'true'")
         self.assertEqual(sum(s.get("name") == "Build and verify" for s in steps), 1)
         publish = next(s for s in steps if s.get("name") == "Verify and attach release assets")
         self.assertEqual(publish["if"], "inputs.publish-release")

@@ -20,6 +20,11 @@ tests the tagged source once, then signs the appcast and uploads release assets
 from that same job. Manual runs publish when `publish-release` is true.
 Shared sync removes the retired `publish-macos-app` caller on upgrade.
 
+Repositories may opt into [verified release archive reuse](docs/macos-release-reuse.md).
+An exact match promotes the original full-verified ZIP on publication retries;
+PR validation stays fresh, and changed source or toolchain inputs require full
+verification. This is an Actions cache, separate from workflow artifact storage.
+
 ## Merge Policy
 
 Consumer organizations can enforce default-branch protection centrally: rulesets require PRs, repo settings disable auto-merge by default + enable branch auto-delete, and the `lint-no-auto-merge` workflow in `hygiene` fails CI if any caller workflow invokes `gh pr merge`, `--auto-merge`, or `gh pr review --approve`. Shared-ref auto-merge guardrails live in config for a future opt-in, but the feature is currently disabled.
