@@ -47,7 +47,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v7
         with:
-          node-version: '24.22.0'
+          node-version: '24.22.1'
 
       - name: Validate Renovate config
         run: |
@@ -90,7 +90,7 @@ jobs:
     runs-on: ${{ fromJSON(vars.RUNNER_PROFILES)[vars.RUNNER_PROFILE].default }}
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10.3.0
+      - uses: astral-sh/setup-uv@v10.3.2
       - name: Test shared sync scripts
         run: |
           ./scripts/test-message-text-policy.sh
@@ -141,7 +141,7 @@ jobs:
       - uses: actions/checkout@v7
       - name: Lint Renovate uv.lock post-upgrade task
         run: ./scripts/lint-renovate-uv-lock-task.sh
-      - uses: astral-sh/setup-uv@v10.3.0
+      - uses: astral-sh/setup-uv@v10.3.2
       - name: Exercise root and nested Python lockfile tasks
         run: python3 scripts/test-renovate-uv-lock-tasks.py
 
@@ -187,7 +187,7 @@ jobs:
     runs-on: ${{ fromJSON(vars.RUNNER_PROFILES)[vars.RUNNER_PROFILE].default }}
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10.3.0
+      - uses: astral-sh/setup-uv@v10.3.2
       - name: Test runner policy regressions
         run: uv run --with PyYAML==6.0.3 python scripts/test-workflow-runners.py
       - name: Enforce policy on reusable and consumer workflows
