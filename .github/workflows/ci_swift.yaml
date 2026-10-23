@@ -43,6 +43,11 @@ on:
         required: false
         type: boolean
         default: false
+      generate-project:
+        description: "Generate the Xcode project from project.yml before resolving it."
+        required: false
+        type: boolean
+        default: false
       platform:
         description: "Platform for runner verification: ios or macos."
         required: false
@@ -62,6 +67,14 @@ jobs:
         uses: actions/checkout@v7
         with:
           ref: ${{ inputs.checkout-ref }}
+
+      - name: Generate Xcode project
+        if: inputs.generate-project
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcodegen --version | grep -Fx 'Version: 2.46.0'
+          xcodegen generate
 
       - name: Show Xcode version
         run: xcodebuild -version

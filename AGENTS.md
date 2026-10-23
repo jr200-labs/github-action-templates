@@ -63,6 +63,9 @@ Current groups:
 | `node-bench` | node-bench | repo has a Node/pnpm benchmark workflow and wants the shared manual benchmark caller |
 | `npm-package` | publish-npm-package | repo publishes a Node package to npmjs.com on release (needs `secrets.NPMJS_API_TOKEN`) |
 | `go` | ci-go | repo has `go.mod` |
+| `rust` | ci-rust | repo has `Cargo.toml`; format, lint, test and build |
+| `swift-package` | ci-swift-package | repo has `Package.swift`; retains provisioned verification helpers |
+| `ios-app` | ci-ios-app | XcodeGen iOS app using the provisioned runner verifier |
 | `swift` | ci-swift | repo is a native Swift/Xcode app, including macOS app development |
 | `macos-app` | macos-app + shared packaging script | repo builds a signed app bundle and publishes ZIP/checksum release assets |
 | `sparkle-development` | shared `.sparkle-public-key` | internal macOS app uses the common development-only Sparkle identity |
@@ -240,6 +243,11 @@ workflow.
 Edit `consumers/workflows/<name>.yaml` and merge to `master`. The `release-shared-ref` workflow tags the shared surface with the next `shared-vX.Y.Z` ref and publishes a GitHub Release with generated notes when `consumers/**` or `shared/**` changed. Consumer repos pin `.github/.shared-config.yaml` to one of those tags. Renovate watches that pin and opens a dedicated PR per consumer repo; the generated drift-repair workflow is the fallback if a checked-in caller file falls behind the pinned ref.
 
 ## Bespoke workflows
+
+Shared CI is the default for every project. Select the canonical language or
+platform groups. Add missing reusable capabilities here and consume their released
+group before onboarding another project. Bespoke CI is an explicit exception:
+document the unsupported requirement and why shared configuration cannot cover it.
 
 Consumer repos may keep additional non-canonical workflows alongside the
 injected set, but they must be named `bespoke_*.yaml`. Drift-check ignores that

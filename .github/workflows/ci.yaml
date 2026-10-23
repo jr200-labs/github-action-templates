@@ -104,6 +104,7 @@ jobs:
           python3 scripts/test-macos-app.py
           python3 scripts/test-macos-verified-build.py
           python3 scripts/test-unattended-swift.py
+          python3 scripts/test-project-ci.py
           ./scripts/test-docker-image-platform-toggle.sh
           ./scripts/test-npm-preview-publish.sh
           ./scripts/test-artifact-renovate-config.sh
