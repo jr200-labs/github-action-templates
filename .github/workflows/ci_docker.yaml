@@ -1,0 +1,20 @@
+name: template-ci-docker
+
+on:
+  workflow_call:
+    inputs:
+      runner:
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  image:
+    runs-on: ${{ inputs.runner }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - name: Build and smoke-test production images
+        run: python3 .shared/check-docker-images.py
