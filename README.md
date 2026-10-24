@@ -53,3 +53,8 @@ Manual `--apply` prints the exact deletion plan (IDs, names, release tags where 
 Authentication uses `GH_TOKEN`, then `GITHUB_TOKEN`. Interactive manual runs without either token can reuse the existing local GitHub CLI login for `github.com`; credentials stay in memory and CLI output is captured without logging it. CI/noninteractive runs require an explicit environment token and never consult the local login. SSH Git keys alone cannot authorize REST API deletion. Cleanup does not log in, upload SSH keys, read private key files, or change accounts automatically.
 
 To rank live Actions storage by repository, run `python3 scripts/report-actions-storage.py --owner whengas` from this templates checkout. It uses the same interactive authentication, paginates organization repositories and their artifacts directly, and prints live counts, MiB and bytes older than five days. It only makes GET requests. Add `--json` for a machine-readable report. Unreadable repositories are reported and produce a nonzero exit status; they are excluded from verified totals. These are current artifact bytes, not accrued billing, release assets, caches or package storage.
+
+Publication-triggered Renovate runs filter by exact dependency name (`depName`)
+while preserving the enabled/disabled policy from presets and repository rules.
+They disable unrelated dependencies without re-enabling alternate scanners or
+dependencies deliberately disabled by a consumer.

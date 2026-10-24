@@ -248,14 +248,14 @@ jobs:
             .pruneStaleBranches = false
             | .packageRules = ((.packageRules // []) + [
               {
-                "description": "Publication-triggered run: disable dependencies by default.",
-                "matchPackageNames": ["/.*/"],
+                "description": "Publication-triggered run: exclude unrelated dependency names while preserving existing policy for selected dependencies.",
+                "matchDepNames": ($dependencies | map(
+                  "!/^" + (split("") | map(. as $char |
+                    if ("\\.^$|?*+()[]{}/" | contains($char))
+                    then "\\" + $char else $char end
+                  ) | join("")) + "$/"
+                )),
                 "enabled": false
-              },
-              {
-                "description": "Publication-triggered run: enable exact dependency names.",
-                "matchDepNames": $dependencies,
-                "enabled": true
               }
             ])
           ' "$BASE_CONFIG" > "$GITHUB_WORKSPACE/.renovate-out/targeted-config.json"

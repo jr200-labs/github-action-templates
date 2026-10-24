@@ -71,10 +71,12 @@ if grep -Fq '"matchPackageNames": $dependencies' "$renovate_workflow"; then
     echo "targeted Renovate must not enable dependencies through shared lookup package names" >&2
     exit 1
 fi
-if ! grep -Fq '"matchDepNames": $dependencies' "$renovate_workflow"; then
-    echo "targeted Renovate must enable exact dependency names" >&2
+if ! grep -Fq '"matchDepNames": ($dependencies' "$renovate_workflow"; then
+    echo "targeted Renovate must filter exact dependency names" >&2
     exit 1
 fi
+
+python3 "$ROOT/scripts/test-renovate-targeted-config.py"
 
 if ! grep -Eq 'uses: actions/cache@v[0-9]+' "$renovate_workflow"; then
     echo "renovate workflow must restore a persisted Renovate cache" >&2
