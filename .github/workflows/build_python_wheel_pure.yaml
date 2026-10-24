@@ -47,7 +47,7 @@ jobs:
           echo "PYTHON_VERSION=$PYTHON_VERSION"
 
       - name: Setup Python version ${{ env.PYTHON_VERSION }}
-        uses: actions/setup-python@v7.0.0
+        uses: actions/setup-python@v7.1.0
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
