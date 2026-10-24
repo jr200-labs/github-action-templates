@@ -58,3 +58,38 @@ Publication-triggered Renovate runs filter by exact dependency name (`depName`)
 while preserving the enabled/disabled policy from presets and repository rules.
 They disable unrelated dependencies without re-enabling alternate scanners or
 dependencies deliberately disabled by a consumer.
+
+## Docker CI
+
+Opt into `docker-ci` for production-image validation on pull requests. Sync the
+released group to install `ci-docker.yaml` and `.shared/check-docker-images.py`.
+The canonical caller uses the shared `ci_docker.yaml` reusable with contents-read
+permission and the configured default runner. It builds locally without registry
+login, publication or artifact uploads. The ten-minute job limit includes smoke
+tests. Docker, Python 3 and yq must be installed on the runner.
+
+The verifier uses `.github/images.yaml`, the same catalog as publication. Without
+a catalog, it builds `Dockerfile` or `docker/Dockerfile` with the repository root
+as context. Catalog entries support `dockerfile`, `context`, `build_contexts`
+(newline-delimited named contexts), and an optional `smoke-test` argv array:
+
+```yaml
+images:
+  - name: example-service
+    dockerfile: Dockerfile
+    context: .
+    smoke-test: [./scripts/smoke-image]
+```
+
+GAT builds each image with a unique local tag, appends that tag as the final
+argument to the smoke command, and removes the image on success or failure.
+Smoke commands execute directly without shell interpolation; consumer scripts
+own application-specific assertions and must remove containers they start.
+Build or smoke failures fail the check. The catalog is validated before any build.
+Run `python3 .shared/check-docker-images.py` locally for the same check. Private
+build-time registry authentication and cross-platform execution remain in the
+release publisher; this PR lane validates the runner's native platform.
+
+Add generic build capabilities here and release them before adopting them in a
+consumer. A missing shared Docker check is a reason to extend GAT; application
+assertions belong in repository scripts called by the shared workflow.

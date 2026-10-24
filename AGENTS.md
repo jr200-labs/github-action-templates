@@ -70,6 +70,7 @@ Current groups:
 | `macos-app` | macos-app + shared packaging script | repo builds a signed app bundle and publishes ZIP/checksum release assets |
 | `sparkle-development` | shared `.sparkle-public-key` | internal macOS app uses the common development-only Sparkle identity |
 | `docker` | build-docker-image | repo publishes a docker image to ghcr.io |
+| `docker-ci` | ci-docker + shared image verifier | repo validates production Docker builds on PRs; see [Docker CI](README.md#docker-ci) |
 | `quarto-docs` | publish-quarto-docs | repo publishes a Quarto site from `docs` to `gh-pages` |
 | `helm-chart` | build-helm-chart | repo publishes a Helm chart (needs `vars.HELM_CHART_REPO` + `secrets.CHARTS_WRITE_TOKEN`) |
 | `wheel` | publish-wheel | repo publishes a wheel to PyPI (needs `secrets.PYPI_API_TOKEN`) |
