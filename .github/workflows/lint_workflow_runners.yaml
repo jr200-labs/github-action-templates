@@ -43,4 +43,4 @@ jobs:
           fi
           ./_gha_templates/scripts/lint-workflow-runners.sh "${args[@]}"
       - name: Validate artifact retention, including bespoke workflows and local actions
-        run: uv run --script ./_gha_templates/scripts/lint-artifact-retention.py
+        run: uv run --no-project --python python3 --script ./_gha_templates/scripts/lint-artifact-retention.py
