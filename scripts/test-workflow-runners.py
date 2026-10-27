@@ -2,6 +2,9 @@
 """Regression cases for ways workflows bypass runner selection."""
 import importlib.util
 import json
+import os
+import subprocess
+import shutil
 from pathlib import Path
 import tempfile
 import unittest
@@ -74,6 +77,54 @@ class RunnerPolicyTests(unittest.TestCase):
             self.assertTrue(lint.policy_errors(path, "hosted", profiles))
             self.assertTrue(lint.policy_errors(path, "self-hosted", profiles.replace("arc-example", "ubuntu-latest")))
             self.assertTrue(lint.policy_errors(path, "self-hosted", ""))
+
+
+class LinterRuntimeIsolationTests(unittest.TestCase):
+    """Shared guards must run independently of the caller's application Python."""
+
+    def run_guard(self, guard, valid):
+        root = Path(__file__).resolve().parents[1]
+        import yaml
+        workflow = yaml.load((root / ".github/workflows/lint_workflow_runners.yaml").read_text(), Loader=lint.Loader)
+        retention_step = next(step["run"] for step in workflow["jobs"]["lint-workflow-runners"]["steps"] if "lint-artifact-retention.py" in step.get("run", ""))
+        with tempfile.TemporaryDirectory() as directory:
+            caller = Path(directory)
+            (caller / ".python-version").write_text("99.0.0\n")
+            (caller / "pyproject.toml").write_text('[project]\nname = "example-caller"\nversion = "0.0.0"\nrequires-python = ">=99"\ndependencies = ["example-unavailable-dependency"]\n')
+            shared_scripts = caller / "_gha_templates/scripts"
+            shared_scripts.mkdir(parents=True)
+            for filename in ("lint-workflow-runners.sh", "lint-workflow-runners.py", "lint-artifact-retention.py"):
+                shutil.copy2(root / "scripts" / filename, shared_scripts / filename)
+            workflows = caller / ".github/workflows"
+            workflows.mkdir(parents=True)
+            runner = PROFILE if valid else "ubuntu-latest"
+            retention = 5 if valid else 90
+            (workflows / "ci.yaml").write_text(f"on: push\njobs:\n  build:\n    runs-on: {runner}\n    steps:\n      - uses: actions/upload-artifact@v7\n        with:\n          retention-days: {retention}\n")
+            environment = os.environ.copy()
+            environment["UV_PYTHON_DOWNLOADS"] = "never"
+            environment.pop("RUNNER_PROFILE", None)
+            environment.pop("RUNNER_PROFILES", None)
+            if guard == "runners":
+                command = [str(shared_scripts / "lint-workflow-runners.sh"), str(workflows)]
+            else:
+                command = ["bash", "-c", retention_step]
+            return subprocess.run(command, cwd=caller, env=environment, capture_output=True, text=True, timeout=30)
+
+    def test_runner_guard_ignores_caller_python_and_still_enforces_policy(self):
+        for valid in (True, False):
+            with self.subTest(valid=valid):
+                result = self.run_guard("runners", valid)
+                self.assertEqual(0 if valid else 1, result.returncode, result.stdout + result.stderr)
+                if not valid:
+                    self.assertIn("literal", result.stdout + result.stderr)
+
+    def test_retention_guard_ignores_caller_python_and_still_enforces_policy(self):
+        for valid in (True, False):
+            with self.subTest(valid=valid):
+                result = self.run_guard("retention", valid)
+                self.assertEqual(0 if valid else 1, result.returncode, result.stdout + result.stderr)
+                if not valid:
+                    self.assertIn("retention", result.stdout + result.stderr)
 
 
 if __name__ == "__main__":
