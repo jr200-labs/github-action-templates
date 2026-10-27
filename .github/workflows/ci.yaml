@@ -108,6 +108,7 @@ jobs:
           python3 scripts/test-docker-ci.py
           ./scripts/test-docker-ci-integration.sh
           ./scripts/test-docker-image-platform-toggle.sh
+          uv run --with PyYAML==6.0.3 python scripts/test-build-provenance.py
           ./scripts/test-npm-preview-publish.sh
           ./scripts/test-artifact-renovate-config.sh
           ./scripts/test-package-access.sh
