@@ -187,6 +187,18 @@ jobs:
           fetch-depth: 0
           ref: ${{ inputs.checkout-ref }}
 
+      - name: Capture checked-out build source
+        id: source-provenance
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "revision=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          if [ -z "$(git status --porcelain --untracked-files=all)" ]; then
+            echo "dirty=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "dirty=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Set up QEMU
         if: steps.platforms.outputs.needs_qemu == 'true'
         uses: docker/setup-qemu-action@v4
@@ -338,6 +350,8 @@ jobs:
             BUILD_OS=linux
             BUILD_ARCH=amd64
             ${{ inputs.build-args }}
+            SOURCE_REVISION=${{ steps.source-provenance.outputs.revision }}
+            SOURCE_DIRTY=${{ steps.source-provenance.outputs.dirty }}
           secret-files: |
             netrc=/tmp/.netrc
           secrets: |
@@ -365,6 +379,8 @@ jobs:
             BUILD_OS=linux
             BUILD_ARCH=arm64
             ${{ inputs.build-args }}
+            SOURCE_REVISION=${{ steps.source-provenance.outputs.revision }}
+            SOURCE_DIRTY=${{ steps.source-provenance.outputs.dirty }}
           secret-files: |
             netrc=/tmp/.netrc
           secrets: |

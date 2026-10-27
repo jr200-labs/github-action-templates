@@ -59,6 +59,16 @@ while preserving the enabled/disabled policy from presets and repository rules.
 They disable unrelated dependencies without re-enabling alternate scanners or
 dependencies deliberately disabled by a consumer.
 
+## Image source metadata
+
+The Docker publisher supplies `SOURCE_REVISION` and `SOURCE_DIRTY` build arguments
+from the actual checked-out Git tree, for both architectures. These reserved
+arguments override caller-supplied values. They identify source, not the workflow
+trigger commit; release and manual checkout refs can differ from that commit.
+Dockerfiles may opt in with matching `ARG` declarations and embed the values in
+their application's build metadata. Missing metadata must remain unknown.
+No new labels, credentials or publication permissions are required.
+
 ## Docker CI
 
 Opt into `docker-ci` for production-image validation on pull requests. Sync the
