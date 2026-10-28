@@ -108,15 +108,8 @@ jobs:
           mode: identity
           config: ${{ inputs.config-path }}
           release-tag: ${{ inputs.release-tag }}
-      - name: Restore exact verified release archive
+      - name: Restore local verified release archive
         if: inputs.publish-release && steps.verification.outputs.enabled == 'true'
-        id: archive-cache
-        uses: actions/cache/restore@v6
-        with:
-          path: ${{ runner.temp }}/macos-verified-release
-          key: ${{ steps.verification.outputs.key }}
-      - name: Check restored release evidence
-        if: inputs.publish-release && steps.archive-cache.outputs.cache-hit == 'true'
         id: restored
         uses: jr200-labs/github-action-templates/actions/macos-verified-build@master
         with:
@@ -132,19 +125,13 @@ jobs:
           RELEASE_TAG: ${{ inputs.release-tag }}
           UV_MANAGED_PYTHON: 'true'
         run: python3 .shared/package-macos-app.py package --config "$APP_CONFIG" --release-tag "$RELEASE_TAG" --output "$RUNNER_TEMP/macos-release"
-      - name: Prepare immutable verified release archive
+      - name: Save local verified release before publication
         if: inputs.publish-release && steps.verification.outputs.enabled == 'true' && steps.restored.outputs.reused != 'true'
         uses: jr200-labs/github-action-templates/actions/macos-verified-build@master
         with:
           mode: save
           config: ${{ inputs.config-path }}
           release-tag: ${{ inputs.release-tag }}
-          key: ${{ steps.verification.outputs.key }}
-      - name: Save verified release before publication
-        if: inputs.publish-release && steps.verification.outputs.enabled == 'true' && steps.restored.outputs.reused != 'true'
-        uses: actions/cache/save@v6
-        with:
-          path: ${{ runner.temp }}/macos-verified-release
           key: ${{ steps.verification.outputs.key }}
       - name: Generate signed Sparkle appcast
         if: inputs.publish-release && inputs.generate-appcast && steps.config.outputs.appcast != ''

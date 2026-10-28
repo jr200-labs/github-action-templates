@@ -105,14 +105,123 @@ class VerifiedBuildTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'regular'):
             reuse.restore(self.config, self.output, self.cache, self.key, 'v1.2.3')
 
+    def test_action_entrypoint_reuses_across_runner_slots_and_misses_changed_inputs(self):
+        self.archive()
+        config = self.root / 'app.json'
+        config.write_text(json.dumps(self.config))
+        first, second = self.root / 'runner-one', self.root / 'runner-two'
+        first.mkdir()
+        second.mkdir()
+        self.output.rename(first / 'macos-release')
+        result = self.root / 'github-output'
+        environment = dict(os.environ, **self.env, GITHUB_RUN_ID='123', HOME=str(self.root),
+                           RUNNER_TEMP=str(first), REUSE_CONFIG=str(config), REUSE_TAG='v1.2.3',
+                           REUSE_KEY=self.key, GITHUB_OUTPUT=str(result), REUSE_MODE='save')
+        subprocess.run([sys.executable, str(ROOT / 'actions/macos-verified-build/reuse.py')], env=environment, check=True, capture_output=True)
+        shutil.rmtree(first)
+        environment.update(RUNNER_TEMP=str(second), REUSE_MODE='restore')
+        subprocess.run([sys.executable, str(ROOT / 'actions/macos-verified-build/reuse.py')], env=environment, check=True, capture_output=True)
+        self.assertIn('reused=true', result.read_text())
+        self.assertEqual((second / 'macos-release/example-macos.zip').read_bytes(), b'original fully verified signed bytes')
+        shutil.rmtree(second / 'macos-release')
+        result.write_text('')
+        environment['REUSE_KEY'] = 'macos-verified-v1-' + 'f' * 64
+        subprocess.run([sys.executable, str(ROOT / 'actions/macos-verified-build/reuse.py')], env=environment, check=True, capture_output=True)
+        self.assertIn('reused=false', result.read_text())
+        self.assertFalse((second / 'macos-release').exists())
+
+    def test_local_retry_survives_new_job_workspace_and_rejects_other_repository(self):
+        self.archive()
+        environment = dict(self.env, GITHUB_RUN_ID='123')
+        with patch.object(reuse.Path, 'home', return_value=self.root):
+            self.assertTrue(reuse.local_operation(self.config, self.output, self.key, 'v1.2.3', 'save', environment))
+            fresh = self.root / 'new-job'
+            fresh.mkdir()
+            output = fresh / 'release'
+            with patch.object(reuse, 'save', side_effect=AssertionError('retry must not save')):
+                self.assertTrue(reuse.local_operation(self.config, output, self.key, 'v1.2.3', 'restore', environment))
+            self.assertEqual((output / 'example-macos.zip').read_bytes(), (self.output / 'example-macos.zip').read_bytes())
+            other_output = self.root / 'other-output'
+            self.assertFalse(reuse.local_operation(self.config, other_output, self.key, 'v1.2.3', 'restore', dict(environment, GITHUB_REPOSITORY='other/app')))
+            self.assertFalse(other_output.exists())
+            with self.assertRaisesRegex(ValueError, 'trusted release'):
+                reuse.local_operation(self.config, other_output, self.key, 'v1.2.3', 'restore', dict(environment, GITHUB_EVENT_NAME='pull_request'))
+
+    def test_invalid_local_entry_rebuilds_and_can_be_replaced(self):
+        self.archive()
+        environment = dict(self.env, GITHUB_RUN_ID='123')
+        with patch.object(reuse.Path, 'home', return_value=self.root):
+            self.assertTrue(reuse.local_operation(self.config, self.output, self.key, 'v1.2.3', 'save', environment))
+            with reuse.local_store(self.env['GITHUB_REPOSITORY'], self.key) as cache:
+                (cache / 'example-macos.zip').write_bytes(b'corrupt')
+            output = self.root / 'retry'
+            self.assertFalse(reuse.local_operation(self.config, output, self.key, 'v1.2.3', 'restore', environment))
+            self.assertFalse(output.exists())
+            self.assertTrue(reuse.local_operation(self.config, self.output, self.key, 'v1.2.3', 'save', environment))
+            self.assertTrue(reuse.local_operation(self.config, output, self.key, 'v1.2.3', 'restore', environment))
+
+    def test_nonobject_receipt_and_unsafe_root_fall_back_without_publishing(self):
+        self.archive()
+        environment = dict(self.env, GITHUB_RUN_ID='123')
+        with patch.object(reuse.Path, 'home', return_value=self.root):
+            reuse.local_operation(self.config, self.output, self.key, 'v1.2.3', 'save', environment)
+            with reuse.local_store(self.env['GITHUB_REPOSITORY'], self.key) as cache:
+                (cache / 'verification.json').write_text('[]')
+            retry = self.root / 'retry'
+            self.assertFalse(reuse.local_operation(self.config, retry, self.key, 'v1.2.3', 'restore', environment))
+            self.assertFalse(retry.exists())
+            shutil.rmtree(self.root / '.cache')
+            external = self.root / 'external'
+            external.mkdir()
+            (self.root / '.cache').symlink_to(external, target_is_directory=True)
+            self.assertFalse(reuse.local_operation(self.config, retry, self.key, 'v1.2.3', 'save', environment))
+            self.assertEqual(list(external.iterdir()), [])
+
+    def test_busy_or_unavailable_local_store_does_not_block_release(self):
+        environment = dict(self.env, GITHUB_RUN_ID='123')
+        with patch.object(reuse.Path, 'home', return_value=self.root):
+            with reuse.local_store(self.env['GITHUB_REPOSITORY'], self.key):
+                self.assertFalse(reuse.local_operation(self.config, self.output, self.key, 'v1.2.3', 'restore', environment))
+                self.assertFalse(reuse.local_operation(self.config, self.output, self.key, 'v1.2.3', 'save', environment))
+            with patch.object(reuse, 'private_directory', side_effect=OSError('unavailable')):
+                self.assertFalse(reuse.local_operation(self.config, self.output, self.key, 'v1.2.3', 'restore', environment))
+            self.assertFalse(self.output.exists())
+
+    def test_local_store_prunes_expired_and_excess_archives_without_following_links(self):
+        self.archive()
+        environment = dict(self.env, GITHUB_RUN_ID='123')
+        with patch.object(reuse.Path, 'home', return_value=self.root):
+            reuse.local_operation(self.config, self.output, self.key, 'v1.2.3', 'save', environment)
+            with reuse.local_store(self.env['GITHUB_REPOSITORY'], self.key) as cache:
+                root = cache.parent
+                expired = root / ('macos-verified-v1-' + 'a' * 64)
+                shutil.copytree(cache, expired)
+                os.utime(expired, (0, 0))
+                linked = root / ('macos-verified-v1-' + 'b' * 64)
+                linked.symlink_to(self.output, target_is_directory=True)
+                partial = root / '.partial-abandoned'
+                partial.mkdir()
+                reuse.prune(root)
+                self.assertFalse(expired.exists())
+                self.assertFalse(linked.is_symlink())
+                self.assertTrue(self.output.exists())
+                self.assertFalse(partial.exists())
+                self.assertEqual(root.stat().st_mode & 0o777, 0o700)
+                with patch.object(reuse, 'MAX_BYTES', 1):
+                    reuse.prune(root)
+                self.assertFalse(cache.exists())
+            self.assertFalse(reuse.local_operation(self.config, self.root / 'cold', self.key, 'v1.2.3', 'restore', environment))
+
     def test_workflow_only_saves_successful_release_builds_before_publication(self):
         workflow = json.loads(subprocess.check_output(['yq', '-o=json', str(ROOT / '.github/workflows/build_macos_app.yaml')], text=True))
         steps = workflow['jobs']['package']['steps']
         by_name = {s.get('name'): s for s in steps}
-        restore = by_name['Restore exact verified release archive']
+        restore = by_name['Restore local verified release archive']
         self.assertIn('inputs.publish-release', restore['if'])
-        self.assertNotIn('restore-keys', restore['with'])
-        save = by_name['Save verified release before publication']
+        self.assertNotIn('actions/cache', json.dumps(steps))
+        self.assertEqual(restore['with']['mode'], 'restore')
+        self.assertEqual(by_name['Save local verified release before publication']['with']['mode'], 'save')
+        save = by_name['Save local verified release before publication']
         self.assertIn('inputs.publish-release', save['if'])
         self.assertNotIn('always()', save['if'])
         self.assertLess(steps.index(by_name['Build and verify']), steps.index(save))

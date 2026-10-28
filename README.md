@@ -23,7 +23,8 @@ Shared sync removes the retired `publish-macos-app` caller on upgrade.
 Repositories may opt into [verified release archive reuse](docs/macos-release-reuse.md).
 An exact match promotes the original full-verified ZIP on publication retries;
 PR validation stays fresh, and changed source or toolchain inputs require full
-verification. This is an Actions cache, separate from workflow artifact storage.
+verification. Archives stay on the Mac runner, with bounded local retention;
+release builds do not upload them to the Actions cache service.
 
 ## Merge Policy
 

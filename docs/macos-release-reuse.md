@@ -24,8 +24,7 @@ Repositories without a declaration retain fresh release builds.
 The exact cache key binds repository, source/tag, app configuration, declaration,
 declared inputs, host platform, provider implementation and a weekly verification
 epoch. There are no prefix restores. The checkout must be clean and equal the
-release tag. PR events never read or write this cache; the Actions service's ref
-scoping prevents PR caches from supplying trusted default-branch release entries.
+release tag. Only release workflow events invoke reuse; PR validation skips it.
 
 On a miss the provider runs the repository build/tests, validates the app version
 and codesign signature, creates the ZIP/checksum, then atomically prepares a
@@ -37,9 +36,23 @@ never saves a receipt. A hit verifies the complete file set, receipt age, key,
 tag and checksums, and promotes the original ZIP bytes into a new output
 directory. Signing does not mutate cached executables or archives.
 
+The store lives outside the checkout and job temporary directory at
+`~/.cache/github-action-templates/macos-verified-release/<repository-hash>/<key>`.
+Runner slots sharing the same Mac account can reuse it. A retry on another Mac
+or account builds afresh. No release archive is downloaded from or uploaded to
+GitHub Actions cache storage. Dependency and compiler caches are independent.
+
+Directories are private to the runner account. This is a local performance store
+within that account's trust boundary, not Actions ref-isolated storage. Entries
+are atomically published and read under a nonblocking per-repository file lock;
+a busy store falls back to fresh verification. Entries expire after seven days,
+and each repository retains at most 512 MiB, evicting the oldest entries first.
+Abandoned partial saves are removed on the next store access.
+Loss, eviction or storage failure never blocks a fresh build or publication.
+
 The weekly epoch bounds verification age to seven days. Cache eviction is safe
-and causes full verification. Corrupt or incompatible receipts fail closed
-instead of publishing unverified bytes. Release retries recheck immutable draft
-identity and uploaded asset digests; they never replace conflicting assets.
+and causes full verification. Corrupt or incompatible entries are discarded
+and require full verification before publication. Release retries recheck immutable
+draft identity and uploaded asset digests; they never replace conflicting assets.
 The restore/input-probing steps are timed separately from repository build
 phases, and do not change existing verification or packaging budgets.

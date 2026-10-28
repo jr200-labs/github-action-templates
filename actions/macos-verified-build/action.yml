@@ -1,5 +1,5 @@
 name: Reuse a verified macOS release archive
-description: Exact-input release reuse; PR validation never reads or writes this cache
+description: Exact-input runner-local release reuse; PR validation never reads or writes this store
 inputs:
   mode:
     description: identity, restore or save
