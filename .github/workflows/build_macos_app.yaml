@@ -98,7 +98,7 @@ jobs:
         env:
           APP_CONFIG: ${{ inputs.config-path }}
         run: python3 .shared/package-macos-app.py metadata --config "$APP_CONFIG" >> "$GITHUB_OUTPUT"
-      - uses: astral-sh/setup-uv@v10.3.2
+      - uses: astral-sh/setup-uv@v10.3.3
         if: steps.config.outputs.setup_uv == 'true'
       - name: Resolve release verification inputs
         if: inputs.publish-release
