@@ -11,7 +11,7 @@
   "prHourlyLimit": 0,
   "prConcurrentLimit": 100,
   "rangeStrategy": "bump",
-  "rebaseWhen": "behind-base-branch",
+  "rebaseWhen": "auto",
   "lockFileMaintenance": {
     "enabled": false
   },
