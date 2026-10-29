@@ -1,6 +1,7 @@
 """Offline contract tests for configurable app packaging and canonical adoption."""
 
 import base64
+import fcntl
 import hashlib
 import importlib.util
 import json
@@ -10,6 +11,7 @@ import plistlib
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from unittest.mock import patch
 
@@ -37,6 +39,9 @@ class PackagingTest(unittest.TestCase):
         self.addCleanup(os.chdir, previous)
         self.config = dict(app="dist/Example.app", artifact="example-macos", build=["build-fixture"])
         self.output = Path("assets")
+        build = patch.object(module, "run_build", side_effect=lambda command: self.run_command(command))
+        self.build = build.start()
+        self.addCleanup(build.stop)
 
     def run_command(self, command, **kwargs):
         if command == ["build-fixture"]:
@@ -51,8 +56,8 @@ class PackagingTest(unittest.TestCase):
         with patch.object(module.subprocess, "run", side_effect=self.run_command) as run:
             module.package(self.config, self.output, "v1.2.3")
         commands = [call.args[0] for call in run.call_args_list]
-        self.assertEqual(commands[1][:4], ["/usr/bin/codesign", "--verify", "--deep", "--strict"])
-        self.assertIn("--keepParent", commands[2])
+        self.assertEqual(commands[0][:4], ["/usr/bin/codesign", "--verify", "--deep", "--strict"])
+        self.assertIn("--keepParent", commands[1])
         self.assertEqual((self.output / "example-macos.zip.sha256").read_text(),
                          hashlib.sha256(b"fixture archive").hexdigest() + "  example-macos.zip\n")
         with self.assertRaisesRegex(ValueError, "never overwritten"):
@@ -62,7 +67,7 @@ class PackagingTest(unittest.TestCase):
         with patch.object(module.subprocess, "run", side_effect=self.run_command) as run:
             module.package(self.config, self.output, create_release_assets=False)
         commands = [call.args[0] for call in run.call_args_list]
-        self.assertEqual(commands[1][:4], ["/usr/bin/codesign", "--verify", "--deep", "--strict"])
+        self.assertEqual(commands[0][:4], ["/usr/bin/codesign", "--verify", "--deep", "--strict"])
         self.assertFalse(any(command[0] == "/usr/bin/ditto" for command in commands))
         self.assertFalse(self.output.exists())
 
@@ -117,7 +122,7 @@ class PackagingTest(unittest.TestCase):
                     if (failure == "build" and command == ["build-fixture"]) or (failure == "signature" and command[0] == "/usr/bin/codesign"):
                         raise subprocess.CalledProcessError(1, command)
                     return self.run_command(command, **kwargs)
-                with patch.object(module.subprocess, "run", side_effect=run):
+                with patch.object(module.subprocess, "run", side_effect=run), patch.object(module, "run_build", side_effect=run):
                     with self.assertRaises((ValueError, subprocess.CalledProcessError)):
                         module.package(config, self.output, "v9.9.9" if failure == "version" else "v1.2.3")
                 self.assertFalse(self.output.exists())
@@ -363,6 +368,13 @@ class PackagingTest(unittest.TestCase):
         self.assertEqual(next(s for s in steps if s.get("name") == "Build and verify")["if"],
                          "steps.restored.outputs.reused != 'true'")
         self.assertEqual(sum(s.get("name") == "Build and verify" for s in steps), 1)
+        build = next(s for s in steps if s.get('name') == 'Build and verify')
+        self.assertEqual(build['uses'], 'jr200-labs/github-action-templates/actions/macos-package@master')
+        action = json.loads(subprocess.check_output(['yq', '-o=json', str(ROOT / 'actions/macos-package/action.yml')], text=True))
+        command = action['runs']['steps'][0]['run']
+        self.assertIn('$GITHUB_ACTION_PATH/../../consumers/files/.shared/package-macos-app.py', command)
+        self.assertNotIn('python3 .shared/', command)
+        self.assertEqual(workflow['jobs']['package']['timeout-minutes'], 360)
         publish = next(s for s in steps if s.get("name") == "Verify and attach release assets")
         self.assertEqual(publish["if"], "inputs.publish-release")
         self.assertLess(next(i for i,s in enumerate(steps) if s.get("name") == "Build and verify"), steps.index(publish))
@@ -393,6 +405,82 @@ class PackagingTest(unittest.TestCase):
         self.assertIn("github.event.pull_request.user.type == 'Bot'", shared["jobs"]["package"]["if"])
         self.assertIn("github.event.pull_request.head.repo.full_name == github.repository", shared["jobs"]["package"]["if"])
         self.assertNotIn("reuse-verified-build", shared["on"]["workflow_call"]["inputs"])
+
+
+
+class BuildQueueTest(unittest.TestCase):
+    def test_timeout_releases_native_lease_held_by_a_descendant(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            lease = str(Path(temporary) / 'native.lock')
+            ready = str(Path(temporary) / 'ready')
+            child = """
+import fcntl, signal, sys, time
+from pathlib import Path
+signal.signal(signal.SIGTERM, signal.SIG_IGN)
+with open(sys.argv[1], 'a') as lease:
+    fcntl.flock(lease, fcntl.LOCK_EX)
+    Path(sys.argv[2]).touch()
+    time.sleep(30)
+"""
+            parent = """
+import subprocess, sys, time
+from pathlib import Path
+subprocess.Popen([sys.executable, '-c', sys.argv[1], sys.argv[2], sys.argv[3]])
+while not Path(sys.argv[3]).exists():
+    time.sleep(.01)
+time.sleep(30)
+"""
+            with self.assertRaises(subprocess.TimeoutExpired):
+                module.run_build([sys.executable, '-c', parent, child, lease, ready], timeout=.5)
+            self.assertTrue(Path(ready).is_file(), 'descendant must have held the native lease')
+            with open(lease, 'a') as released:
+                # SIGKILL delivery and descriptor close can trail waitpid on
+                # the group leader. Bound observation of the descendant exit.
+                deadline = time.monotonic() + 2
+                while True:
+                    try:
+                        fcntl.flock(released, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                        break
+                    except BlockingIOError:
+                        if time.monotonic() >= deadline:
+                            self.fail('timed-out descendant retained native capacity')
+                        time.sleep(.01)
+
+    def test_wait_exceeds_execution_budget_then_build_finishes(self):
+        command = [sys.executable, "-c", """
+import os, struct, time
+fd = int(os.environ.pop('MACOS_BUILD_ADMISSION_FD'))
+os.write(fd, struct.pack('!cd', b'W', time.monotonic()))
+time.sleep(.4)
+os.write(fd, struct.pack('!cd', b'R', time.monotonic()))
+"""]
+        started = time.monotonic()
+        module.run_build(command, timeout=.25)
+        self.assertGreater(time.monotonic() - started, .4)
+
+    def test_wait_does_not_disable_execution_timeout(self):
+        command = [sys.executable, "-c", """
+import os, struct, time
+fd = int(os.environ.pop('MACOS_BUILD_ADMISSION_FD'))
+os.write(fd, struct.pack('!cd', b'W', time.monotonic()))
+time.sleep(.4)
+os.write(fd, struct.pack('!cd', b'R', time.monotonic()))
+time.sleep(10)
+"""]
+        with self.assertRaises(subprocess.TimeoutExpired):
+            module.run_build(command, timeout=.25)
+
+    def test_uncoordinated_build_remains_bounded_and_failure_propagates(self):
+        with self.assertRaises(subprocess.TimeoutExpired):
+            module.run_build([sys.executable, '-c', 'import time; time.sleep(10)'], timeout=.1)
+        with self.assertRaises(subprocess.CalledProcessError):
+            module.run_build([sys.executable, '-c', 'raise SystemExit(7)'])
+
+    def test_malformed_or_unfinished_wait_cannot_certify_build(self):
+        for payload in ("b'bad'", "struct.pack('!cd', b'R', time.monotonic())", "struct.pack('!cd', b'W', time.monotonic())"):
+            with self.subTest(payload=payload), self.assertRaises(ValueError):
+                module.run_build([sys.executable, '-c',
+                    "import os, struct, time; os.write(int(os.environ['MACOS_BUILD_ADMISSION_FD']), " + payload + ")"])
 
 
 if __name__ == "__main__":
