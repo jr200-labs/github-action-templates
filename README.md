@@ -119,3 +119,23 @@ release publisher; this PR lane validates the runner's native platform.
 Add generic build capabilities here and release them before adopting them in a
 consumer. A missing shared Docker check is a reason to extend GAT; application
 assertions belong in repository scripts called by the shared workflow.
+
+## Renovate rebase policy
+
+The shared preset uses `rebaseWhen: auto`. On repositories that permit merging
+an otherwise passing PR behind the base branch, Renovate rebases for conflicts
+instead of rebuilding every remaining branch after each merge. This lets a
+maintenance batch collect ready dependency updates before its combined release.
+Repositories requiring up-to-date branches retain Renovate's automatic freshness
+handling. Existing repository overrides remain authoritative; this does not
+change branch protection, required checks, merge approval or automerge policy.
+
+Scheduled, manual and publication-triggered discovery inherit this setting.
+The targeted workflow preserves repository policy rather than forcing a rebase
+mode. Explicit rebase requests remain available when a particular PR needs one.
+See [Renovate's rebaseWhen documentation](https://docs.renovatebot.com/configuration-options/#rebasewhen).
+
+Consumers extending the unpinned shared preset receive the change on their next
+Renovate configuration refresh after merge. Consumers pinning the preset to a
+Git ref must update that ref. No consumer workflow synchronization is needed for
+this preset-only change.
