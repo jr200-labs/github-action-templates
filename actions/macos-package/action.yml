@@ -1,0 +1,23 @@
+name: Build and verify macOS app
+description: Run repository packaging with separate queue and execution budgets
+inputs:
+  config:
+    description: Repository-owned macOS app configuration
+    required: true
+  release-tag:
+    description: Expected release tag, empty for validation
+    default: ''
+  output:
+    description: New release asset directory
+    required: true
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        APP_CONFIG: ${{ inputs.config }}
+        RELEASE_TAG: ${{ inputs.release-tag }}
+        RELEASE_OUTPUT: ${{ inputs.output }}
+      run: >-
+        python3 "$GITHUB_ACTION_PATH/../../consumers/files/.shared/package-macos-app.py"
+        package --config "$APP_CONFIG" --release-tag "$RELEASE_TAG" --output "$RELEASE_OUTPUT"

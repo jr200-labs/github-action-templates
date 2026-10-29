@@ -20,6 +20,19 @@ tests the tagged source once, then signs the appcast and uploads release assets
 from that same job. Manual runs publish when `publish-release` is true.
 Shared sync removes the retired `publish-macos-app` caller on upgrade.
 
+The reusable workflow runs the provider's `macos-package` action so execution
+budget accounting matches the workflow even before a consumer refreshes its
+synced helper. Builds have the same 1200-second execution budget. Cooperative
+native-capacity waits use `MACOS_BUILD_ADMISSION_FD`: the coordinator writes
+9-byte `!cd` records containing `W` (waiting) or `R` (resumed) and a monotonic
+timestamp. Only these waiting intervals pause the execution timer. Other
+commands retain the ordinary wall timeout; malformed or incomplete records
+fail the build. Cancellation or timeout terminates the build process group.
+The separate six-hour Actions watchdog bounds the total job lifetime, including
+queue time. A queue request belongs to its running Actions process, and does
+not resume after that process ends. Existing test and cleanup budgets remain
+unchanged.
+
 Repositories may opt into [verified release archive reuse](docs/macos-release-reuse.md).
 An exact match promotes the original full-verified ZIP on publication retries;
 PR validation stays fresh, and changed source or toolchain inputs require full

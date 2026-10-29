@@ -3,11 +3,104 @@
 import argparse
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
 import plistlib
 import re
+import select
+import signal
+import socket
+import struct
 import subprocess
+import time
+
+
+def run_build(command, timeout=1200):
+    """Bound execution separately from cooperative capacity waiting.
+
+    The repository build owns its FIFO request and sends fixed wait/resume
+    records over an inherited private descriptor. GitHub owns the outer job
+    lifetime. Commands without this protocol retain the usual wall timeout.
+    """
+    reader, writer = socket.socketpair()
+    process = None
+    previous_handler = signal.getsignal(signal.SIGTERM)
+    started = time.monotonic()
+    waiting_since = None
+    waited = 0.
+    last_event = started
+    pending = b''
+    channel_open = True
+
+    def interrupted(signum, frame):
+        raise InterruptedError('Build cancelled')
+
+    signal.signal(signal.SIGTERM, interrupted)
+    try:
+        environment = dict(os.environ, MACOS_BUILD_ADMISSION_FD=str(writer.fileno()))
+        process = subprocess.Popen(command, env=environment, pass_fds=(writer.fileno(),), start_new_session=True)
+        writer.close()
+        remaining = timeout
+        while True:
+            ready, _, _ = select.select([reader] if channel_open else [], [], [], min(.1, max(0., remaining)))
+            if ready:
+                data = reader.recv(4096)
+                channel_open = bool(data)
+                pending += data
+                while len(pending) >= 9:
+                    state, observed = struct.unpack('!cd', pending[:9])
+                    pending = pending[9:]
+                    if not math.isfinite(observed) or not last_event <= observed <= time.monotonic():
+                        raise ValueError('Invalid build admission timestamp')
+                    last_event = observed
+                    if state == b'W' and waiting_since is None:
+                        waiting_since = observed
+                    elif state == b'R' and waiting_since is not None:
+                        waited += observed - waiting_since
+                        waiting_since = None
+                    else:
+                        raise ValueError('Invalid build admission transition')
+                if not channel_open and (pending or waiting_since is not None):
+                    raise ValueError('Incomplete build admission record')
+            now = time.monotonic()
+            remaining = timeout - (now - started - waited - (now - waiting_since if waiting_since is not None else 0.))
+            result = process.poll()
+            if result is not None:
+                if result:
+                    raise subprocess.CalledProcessError(result, command)
+                # Drain records already sent before accepting successful exit.
+                if channel_open and select.select([reader], [], [], 0)[0]:
+                    continue
+                if pending or waiting_since is not None:
+                    raise ValueError('Build exited during admission')
+                if remaining <= 0:
+                    raise subprocess.TimeoutExpired(command, timeout)
+                return
+            if remaining <= 0:
+                raise subprocess.TimeoutExpired(command, timeout)
+    except BaseException:
+        if process is not None:
+            try:
+                os.killpg(process.pid, signal.SIGTERM)
+                try:
+                    process.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    pass
+                # The leader may exit while a compiler descendant retains a
+                # native lease. Always terminate the remaining process group.
+                try:
+                    os.killpg(process.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                process.wait()
+            except ProcessLookupError:
+                process.wait()
+        raise
+    finally:
+        reader.close()
+        writer.close()
+        signal.signal(signal.SIGTERM, previous_handler)
 
 
 def safe_argv(value, field):
@@ -54,7 +147,7 @@ def package(config, output, release_tag="", create_release_assets=True):
     app = Path(config["app"])
     if app.exists() or app.is_symlink() or (create_release_assets and output.exists()):
         raise ValueError("Build app and output paths must be new; existing artifacts are never overwritten")
-    subprocess.run(config["build"], check=True, timeout=1200)
+    run_build(config["build"])
     if app.is_symlink() or not app.is_dir() or not app.resolve().is_relative_to(Path.cwd().resolve()):
         raise ValueError("Build must produce the configured app directory inside the repository")
     with (app / "Contents/Info.plist").open("rb") as file:

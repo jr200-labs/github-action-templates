@@ -49,7 +49,9 @@ jobs:
     # Keep this gate inside the reusable job so its required check still exists.
     if: github.event_name != 'pull_request' || !(github.event.pull_request.user.type == 'Bot' && github.event.pull_request.head.repo.full_name == github.repository && startsWith(github.head_ref, 'release-please--branches--'))
     runs-on: ${{ inputs.runner || fromJSON(vars.RUNNER_PROFILES)[vars.RUNNER_PROFILE].macos }}
-    timeout-minutes: 30
+    # Queue lifetime is separate from the unchanged 1200s build execution
+    # budget. Retain GitHub's standard six-hour outer cancellation watchdog.
+    timeout-minutes: 360
     # Inherit the caller's token ceiling: read for PR builds and write for the
     # release caller that publishes directly from this native build workspace.
     outputs:
@@ -126,12 +128,14 @@ jobs:
           key: ${{ steps.verification.outputs.key }}
       - name: Build and verify
         if: steps.restored.outputs.reused != 'true'
+        uses: jr200-labs/github-action-templates/actions/macos-package@master
+        with:
+          config: ${{ inputs.config-path }}
+          release-tag: ${{ inputs.release-tag }}
+          output: ${{ runner.temp }}/macos-release
         env:
-          APP_CONFIG: ${{ inputs.config-path }}
           MACOS_PACKAGE_RELEASE_ASSETS: ${{ inputs.publish-release && 'true' || 'false' }}
-          RELEASE_TAG: ${{ inputs.release-tag }}
           UV_MANAGED_PYTHON: 'true'
-        run: python3 .shared/package-macos-app.py package --config "$APP_CONFIG" --release-tag "$RELEASE_TAG" --output "$RUNNER_TEMP/macos-release"
       - name: Prepare immutable verified release archive
         if: inputs.publish-release && steps.verification.outputs.enabled == 'true' && steps.restored.outputs.reused != 'true'
         uses: jr200-labs/github-action-templates/actions/macos-verified-build@master
