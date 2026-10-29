@@ -10,7 +10,13 @@ report_linter="$ROOT/scripts/lint-renovate-report-problems.sh"
 renovate_workflow="$ROOT/.github/workflows/renovate.yaml"
 consumer_workflow="$ROOT/consumers/workflows/renovate.yaml"
 
+self_workflow="$ROOT/.github/workflows/renovate-self.yaml"
+
 for input in repair-lockfiles rebase-branches; do
+    if ! grep -Fq "${input}:" "$self_workflow" || ! grep -Fq "${input}: \${{ github.event_name == 'workflow_dispatch' && inputs.${input} }}" "$self_workflow"; then
+        echo "self Renovate must expose and forward the same manual repair controls as consumers" >&2
+        exit 1
+    fi
     if ! grep -q "${input}:" "$renovate_workflow" || ! grep -q "${input}:" "$consumer_workflow"; then
         echo "renovate repair controls must be exposed by both reusable and shared workflows" >&2
         exit 1

@@ -3,11 +3,11 @@ name: renovate
 # Self-hosted Renovate against this repo only.
 #
 # This is the consumer wrapper that runs the template-renovate reusable
-# workflow (defined in this same repo at .github/workflows/renovate.yml)
+# workflow (defined in this same repo at .github/workflows/renovate.yaml)
 # against github-action-templates itself. Other consumer repos use an
 # identical 1-line consumer file.
 #
-# Lives at renovate-self.yml (not renovate.yml) so it doesn't collide
+# Lives at renovate-self.yaml (not renovate.yaml) so it doesn't collide
 # with the template file's filename.
 
 on:
@@ -16,6 +16,16 @@ on:
     - cron: '17 */4 * * *'
   workflow_dispatch:
     inputs:
+      repair-lockfiles:
+        description: Overwrite stale pnpm lockfiles on existing Renovate branches
+        required: false
+        type: boolean
+        default: false
+      rebase-branches:
+        description: Rebase Renovate branches that are behind the base branch
+        required: false
+        type: boolean
+        default: false
       log-level:
         description: Renovate log level
         required: false
@@ -29,6 +39,15 @@ on:
         default: normal
         options: [normal, full, extract, lookup]
 
+# The reusable workflow's permissions must be allowed by the caller.
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  statuses: write
+  actions: read
+  packages: read
+
 jobs:
   renovate:
     uses: ./.github/workflows/renovate.yaml
@@ -37,12 +56,11 @@ jobs:
     # and unblock cross-repo / ghcr.io lookups. Without this the template
     # falls back to GITHUB_TOKEN.
     secrets: inherit
-    permissions:
-      contents: write
-      pull-requests: write
-      issues: write
-      statuses: write
     with:
+      runner: ${{ fromJSON(vars.RUNNER_PROFILES)[vars.RUNNER_PROFILE].default }}
+      renovate-image: ${{ vars.RENOVATE_IMAGE }}
+      repair-lockfiles: ${{ github.event_name == 'workflow_dispatch' && inputs.repair-lockfiles }}
+      rebase-branches: ${{ github.event_name == 'workflow_dispatch' && inputs.rebase-branches }}
       log-level: ${{ inputs.log-level || 'info' }}
       # Translate the 'normal' sentinel back to empty so the reusable
       # workflow runs Renovate without RENOVATE_DRY_RUN. Actionlint
