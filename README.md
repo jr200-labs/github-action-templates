@@ -25,8 +25,11 @@ budget accounting matches the workflow even before a consumer refreshes its
 synced helper. Builds have the same 1200-second execution budget. Cooperative
 native-capacity waits use `MACOS_BUILD_ADMISSION_FD`: the coordinator writes
 9-byte `!cd` records containing `W` (waiting) or `R` (resumed) and a monotonic
-timestamp. Only these waiting intervals pause the execution timer. Other
-commands retain the ordinary wall timeout; malformed or incomplete records
+timestamp. Only these waiting intervals pause the execution timer.
+The supervisor subtracts pairs of child timestamps to measure wait durations;
+it never compares the child's clock origin with its own. This supports the
+system Python 3.9 supervisor and uv-managed Python on macOS.
+Other commands retain the ordinary wall timeout; malformed or incomplete records
 fail the build. Cancellation or timeout terminates the build process group.
 The separate six-hour Actions watchdog bounds the total job lifetime, including
 queue time. A queue request belongs to its running Actions process, and does

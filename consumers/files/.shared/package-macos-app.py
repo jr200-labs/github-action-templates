@@ -28,8 +28,9 @@ def run_build(command, timeout=1200):
     previous_handler = signal.getsignal(signal.SIGTERM)
     started = time.monotonic()
     waiting_since = None
+    waiting_clock = None
     waited = 0.
-    last_event = started
+    last_event = float('-inf')
     pending = b''
     channel_open = True
 
@@ -51,14 +52,22 @@ def run_build(command, timeout=1200):
                 while len(pending) >= 9:
                     state, observed = struct.unpack('!cd', pending[:9])
                     pending = pending[9:]
-                    if not math.isfinite(observed) or not last_event <= observed <= time.monotonic():
+                    # macOS Python 3.9 and newer interpreters can have distinct
+                    # monotonic epochs. Compare records only within the child
+                    # clock; parent timestamps are used only by the watchdog.
+                    if not math.isfinite(observed) or observed < last_event:
                         raise ValueError('Invalid build admission timestamp')
                     last_event = observed
                     if state == b'W' and waiting_since is None:
-                        waiting_since = observed
+                        waiting_since = time.monotonic()
+                        waiting_clock = observed
                     elif state == b'R' and waiting_since is not None:
-                        waited += observed - waiting_since
+                        duration = observed - waiting_clock
+                        if duration > time.monotonic() - started - waited:
+                            raise ValueError('Invalid build admission duration')
+                        waited += duration
                         waiting_since = None
+                        waiting_clock = None
                     else:
                         raise ValueError('Invalid build admission transition')
                 if not channel_open and (pending or waiting_since is not None):
