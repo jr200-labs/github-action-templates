@@ -409,6 +409,29 @@ class PackagingTest(unittest.TestCase):
 
 
 class BuildQueueTest(unittest.TestCase):
+    def test_parent_and_child_clock_origins_can_differ(self):
+        for origin in ('100.', '1000000000.'):
+            with self.subTest(origin=origin):
+                module.run_build([sys.executable, '-c', """
+import os, struct, sys, time
+fd = int(os.environ.pop('MACOS_BUILD_ADMISSION_FD'))
+base = time.monotonic()
+clock = lambda: float(sys.argv[1]) + time.monotonic() - base
+os.write(fd, struct.pack('!cd', b'W', clock()))
+time.sleep(.4)
+os.write(fd, struct.pack('!cd', b'R', clock()))
+""", origin], timeout=.25)
+
+    def test_child_clock_must_be_ordered_and_duration_must_fit_job_lifetime(self):
+        for resumed in ('99.', '1000000000.', 'nan', 'inf'):
+            with self.subTest(resumed=resumed), self.assertRaises(ValueError):
+                module.run_build([sys.executable, '-c', """
+import os, struct, sys
+fd = int(os.environ.pop('MACOS_BUILD_ADMISSION_FD'))
+os.write(fd, struct.pack('!cd', b'W', 100.))
+os.write(fd, struct.pack('!cd', b'R', float(sys.argv[1])))
+""", resumed])
+
     def test_timeout_releases_native_lease_held_by_a_descendant(self):
         with tempfile.TemporaryDirectory() as temporary:
             lease = str(Path(temporary) / 'native.lock')
