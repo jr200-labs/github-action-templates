@@ -413,13 +413,29 @@ jobs:
           RENOVATE_CONFIG_FILE: ${{ steps.targeted-config.outputs.config-file || inputs.config-file }}
 
       - name: Checkout shared repair scripts
-        if: success() && inputs.dry-run == '' && inputs.repair-branches
+        if: success() && inputs.dry-run == ''
         uses: actions/checkout@v7
         with:
           repository: jr200-labs/github-action-templates
           ref: master
           path: _gha_templates
           token: ${{ steps.app-token.outputs.token || secrets.GITHUB_TOKEN }}
+
+      - name: Report blocked Renovate updates
+        # Run before repair helpers change the branches described by the report.
+        if: success() && inputs.dry-run == ''
+        shell: bash
+        env:
+          RENOVATE_REPORT_TOKEN: ${{ steps.app-token.outputs.token || secrets.GITHUB_TOKEN }}
+          RENOVATE_REPORT_ACTOR: ${{ steps.app-token.outputs.app-slug && format('{0}[bot]', steps.app-token.outputs.app-slug) || 'github-actions[bot]' }}
+          PASS2: ${{ steps.renovate-pass2.outputs.run || 'false' }}
+        run: |
+          set -euo pipefail
+          reports=("$GITHUB_WORKSPACE/.renovate-out/pass1.report.json")
+          if [ "$PASS2" = true ]; then
+            reports+=("$GITHUB_WORKSPACE/.renovate-out/pass2.report.json")
+          fi
+          python3 ./_gha_templates/scripts/report-renovate-backlog.py "${reports[@]}"
 
       - name: Force-rebase Renovate branches
         if: success() && inputs.dry-run == '' && inputs.rebase-branches

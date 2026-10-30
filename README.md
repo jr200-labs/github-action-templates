@@ -139,3 +139,29 @@ Consumers extending the unpinned shared preset receive the change on their next
 Renovate configuration refresh after merge. Consumers pinning the preset to a
 Git ref must update that ref. No consumer workflow synchronization is needed for
 this preset-only change.
+
+## Renovate blocked update notifications
+
+The reusable Renovate workflow annotates existing PRs when its structured report
+says updates are blocked, or the standard PR table still proposes a different
+version from the latest eligible target. The managed section shows each package,
+the version proposed in the PR, the latest policy-eligible target, and an action.
+Titles stay unchanged. A `renovate-blocked` label makes affected PRs searchable.
+A bot comment notifies subscribers when the reason or target changes; identical
+observations do not create repeat comments. A successful run clears the managed
+section and label and marks the previous notification resolved.
+
+Reporting runs for scheduled, manual and publication-targeted updates, before
+branch repair helpers run. It only touches open PRs owned by the same bot and
+included in the current repository report. Missing or invalid report evidence
+fails the step; an unobserved branch is never assumed recovered. Custom PR
+bodies that cannot be read show an unknown proposed version. The notifier does
+not count skipped releases or infer cross-PR dependencies absent from the report.
+
+Keep trusted automation authors in each consumer's own `renovate.json`, using
+`gitIgnoredAuthors` with exact reviewed email addresses. Confidential identities
+belong in private consumer configuration, never the public shared preset,
+workflow, fixtures, or documentation. This permits Renovate to overwrite those
+automation commits on a later update; human authors should remain protected.
+The notifier reports a generic external-edit reason and never copies author
+identities or raw run logs into PRs or comments.
