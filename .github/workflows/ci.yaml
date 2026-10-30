@@ -154,6 +154,8 @@ jobs:
     runs-on: ${{ fromJSON(vars.RUNNER_PROFILES)[vars.RUNNER_PROFILE].default }}
     steps:
       - uses: actions/checkout@v7
+      - name: Test Renovate backlog reporting
+        run: python3 scripts/test-renovate-backlog.py
       - name: Lint shared ref rollout
         run: ./scripts/test-renovate-shared-ref-rollout.sh
 
