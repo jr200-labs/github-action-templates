@@ -63,6 +63,7 @@ YAML
     test -x .githooks/lint-message-text.sh
     test -f cog.toml
     test -f release-please-config.json
+    test "$(jq -r '.["always-update"]' release-please-config.json)" = 'true'
     test "$(git config --get core.hooksPath)" = ".githooks"
 )
 
@@ -273,6 +274,9 @@ YAML
 lint_repo="$TMPDIR/lint-consumer"
 mkdir -p "$lint_repo/.github"
 cp "$ROOT/shared/sync.sh" "$lint_repo/sync.sh"
+cat > "$lint_repo/.release-please.local.json" <<'JSON'
+{"release-type":"node","always-update":false}
+JSON
 cat > "$lint_repo/.github/.shared-config.yaml" <<'YAML'
 ref: shared-v0.1.0
 workflows:
@@ -320,6 +324,7 @@ YAML
     test -f cog.toml
     test -f release-please-config.json
     test "$(jq -r '.["separate-pull-requests"]' release-please-config.json)" = 'true'
+    test "$(jq -r '.["always-update"]' release-please-config.json)" = 'true'
     test "$(jq -r 'has("draft")' release-please-config.json)" = 'false'
     test "$(jq -r 'has("force-tag-creation")' release-please-config.json)" = 'false'
     test "$(jq -r '.["group-pull-request-title-pattern"]' release-please-config.json)" = 'chore${scope}: release${component} ${version}'

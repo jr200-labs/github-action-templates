@@ -14,6 +14,11 @@ GAT releases the next `shared-vX.Y.Z` tag automatically when canonical
 consumer workflows or shared files change on `master`, including a GitHub
 Release with generated notes.
 
+Shared release configuration enables `always-update` so release PR files refresh
+from the target branch even when release notes are unchanged. Consumers inherit
+this policy when they adopt the corresponding shared ref and regenerate their
+committed configuration; no repository-local override is needed.
+
 The single `macos-app` workflow validates ordinary code PRs and publishes releases.
 Release Please version-bump PRs skip packaging; the release dispatch builds and
 tests the tagged source once, then signs the appcast and uploads release assets
