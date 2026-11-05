@@ -330,6 +330,8 @@ jobs:
           RENOVATE_REPOSITORY_CACHE: 'enabled'
           # Restrict Renovate to the current repo only.
           RENOVATE_REPOSITORIES: ${{ github.repository }}
+          # Add identity without replacing consumer/package-rule labels.
+          RENOVATE_ADD_LABELS: renovate
           # The per-repo renovate.json already exists (it extends the shared
           # preset). Skip the onboarding PR flow so Renovate doesn't open a
           # "Configure Renovate" PR.
@@ -402,6 +404,8 @@ jobs:
           RENOVATE_CACHE_DIR: /out/cache
           RENOVATE_REPOSITORY_CACHE: 'enabled'
           RENOVATE_REPOSITORIES: ${{ github.repository }}
+          # Add identity without replacing consumer/package-rule labels.
+          RENOVATE_ADD_LABELS: renovate
           RENOVATE_ONBOARDING: 'false'
           RENOVATE_REQUIRE_CONFIG: 'required'
           RENOVATE_HOST_RULES: '[{"matchHost":"ghcr.io","hostType":"docker","username":"x-access-token","password":"${{ github.token }}"}]'
