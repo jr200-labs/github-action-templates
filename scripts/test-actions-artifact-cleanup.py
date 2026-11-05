@@ -5,6 +5,7 @@ from copy import deepcopy
 from datetime import datetime, timezone
 from pathlib import Path
 import unittest
+from unittest.mock import patch
 
 spec = importlib.util.spec_from_file_location('cleanup', Path(__file__).resolve().parents[1] / 'consumers/files/.shared/cleanup-actions-artifacts.py')
 cleanup = importlib.util.module_from_spec(spec)
@@ -35,6 +36,52 @@ class API:
         return item
 
 class CleanupTests(unittest.TestCase):
+    def delayed_deletion_api(self, stale_reads):
+        class DelayedAPI(API):
+            def request(self, path, method='GET'):
+                if path == '/actions/artifacts/1':
+                    if method == 'DELETE':
+                        self.stale_item = deepcopy(self.items[1])
+                        self.stale_reads = stale_reads
+                    elif self.deleted and self.stale_reads:
+                        self.stale_reads -= 1
+                        return deepcopy(self.stale_item)
+                return super().request(path, method)
+        return DelayedAPI()
+
+    def test_delayed_deletion_visibility_converges_without_repeating_delete(self):
+        for stale_reads, delays in [(0, []), (1, [1]), (3, [1, 2, 4])]:
+            with self.subTest(stale_reads=stale_reads), patch.object(cleanup.time, 'sleep') as sleep:
+                api = self.delayed_deletion_api(stale_reads)
+                result = cleanup.prune(api, NOW, True)
+                self.assertEqual([1], api.deleted)
+                self.assertEqual(1, result['deleted'])
+                self.assertEqual(60, result['reclaimed_bytes'])
+                self.assertEqual(delays, [call.args[0] for call in sleep.call_args_list])
+
+    def test_persistent_visibility_fails_before_deleting_next_candidate(self):
+        api = self.delayed_deletion_api(100)
+        api.items[4] = dict(api.items[1], id=4, workflow_run={'id': 4})
+        with patch.object(cleanup.time, 'sleep') as sleep:
+            with self.assertRaisesRegex(RuntimeError, 'artifact deletion did not converge'):
+                cleanup.prune(api, NOW, True)
+        self.assertEqual([1], api.deleted)
+        self.assertIn(4, api.items)
+        self.assertEqual([1, 2, 4], [call.args[0] for call in sleep.call_args_list])
+
+    def test_verification_error_is_not_treated_as_absence_or_retried(self):
+        api = API()
+        request = api.request
+        def fail_verification(path, method='GET'):
+            if method == 'GET' and api.deleted:
+                raise RuntimeError('verification unavailable')
+            return request(path, method)
+        with patch.object(api, 'request', side_effect=fail_verification), patch.object(cleanup.time, 'sleep') as sleep:
+            with self.assertRaisesRegex(RuntimeError, 'verification unavailable'):
+                cleanup.prune(api, NOW, True)
+        self.assertEqual([1], api.deleted)
+        sleep.assert_not_called()
+
     def test_only_completed_old_artifact_is_deleted_and_retry_is_safe(self):
         api = API()
         result = cleanup.prune(api, NOW, True)
