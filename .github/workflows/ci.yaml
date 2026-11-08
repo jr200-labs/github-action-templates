@@ -70,11 +70,23 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      - name: Set up Go for actionlint
+        uses: actions/setup-go@v7
+        with:
+          go-version: stable
+          cache: false
+
       - name: Install actionlint
         id: get_actionlint
+        shell: bash
+        env:
+          GOBIN: ${{ runner.temp }}/actionlint/bin
+          GOPROXY: https://proxy.golang.org
         run: |
-          bash <(curl -fsSL https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash)
-          echo "exe=$(pwd)/actionlint" >> "$GITHUB_OUTPUT"
+          set -euo pipefail
+          go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
+          "$GOBIN/actionlint" -version
+          echo "exe=$GOBIN/actionlint" >> "$GITHUB_OUTPUT"
 
       - name: Run actionlint
         # actionlint does not yet recognize GitHub's concurrency.queue key.
