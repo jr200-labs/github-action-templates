@@ -70,13 +70,28 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      - name: Find preinstalled actionlint
+        id: actionlint-preinstalled
+        shell: bash
+        run: |
+          set -euo pipefail
+          binary=$(command -v actionlint || true)
+          if [ -n "$binary" ]; then
+            version=$("$binary" -version)
+            if [ "${version%%$'\n'*}" = v1.7.12 ]; then
+              echo "binary=$binary" >> "$GITHUB_OUTPUT"
+            fi
+          fi
+
       - name: Set up Go for actionlint
+        if: steps.actionlint-preinstalled.outputs.binary == ''
         uses: actions/setup-go@v7
         with:
           go-version: stable
           cache: false
 
       - name: Cache actionlint binary
+        if: steps.actionlint-preinstalled.outputs.binary == ''
         id: actionlint-cache
         uses: actions/cache/restore@v6
         with:
@@ -84,7 +99,7 @@ jobs:
           key: actionlint-binary-v1-${{ runner.os }}-${{ runner.arch }}-v1.7.12
 
       - name: Install actionlint
-        if: steps.actionlint-cache.outputs.cache-hit != 'true'
+        if: steps.actionlint-preinstalled.outputs.binary == '' && steps.actionlint-cache.outputs.cache-hit != 'true'
         shell: bash
         env:
           GOBIN: ${{ runner.temp }}/actionlint/bin
@@ -99,13 +114,15 @@ jobs:
         shell: bash
         env:
           GOBIN: ${{ runner.temp }}/actionlint/bin
+          PREINSTALLED_ACTIONLINT: ${{ steps.actionlint-preinstalled.outputs.binary }}
         run: |
           set -euo pipefail
-          "$GOBIN/actionlint" -version
-          echo "exe=$GOBIN/actionlint" >> "$GITHUB_OUTPUT"
+          binary=${PREINSTALLED_ACTIONLINT:-$GOBIN/actionlint}
+          "$binary" -version
+          echo "exe=$binary" >> "$GITHUB_OUTPUT"
 
       - name: Save actionlint binary
-        if: steps.actionlint-cache.outputs.cache-hit != 'true'
+        if: steps.actionlint-preinstalled.outputs.binary == '' && steps.actionlint-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v6
         with:
           path: ${{ runner.temp }}/actionlint/bin

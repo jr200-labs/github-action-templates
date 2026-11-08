@@ -7,12 +7,23 @@ inputs:
 runs:
   using: composite
   steps:
+    - id: preinstalled
+      shell: bash
+      env:
+        COCOGITTO_VERSION: ${{ inputs.version }}
+      run: |
+        set -euo pipefail
+        binary=$(command -v cog || true)
+        if [ -n "$binary" ] && [ "$("$binary" --version)" = "cog ${COCOGITTO_VERSION#v}" ]; then
+          echo "binary=$binary" >> "$GITHUB_OUTPUT"
+        fi
     - id: cache
+      if: steps.preinstalled.outputs.binary == ''
       uses: actions/cache/restore@v6
       with:
         path: ${{ runner.temp }}/cocogitto/bin
         key: cocogitto-binary-v1-${{ runner.os }}-${{ runner.arch }}-${{ inputs.version }}
-    - if: steps.cache.outputs.cache-hit != 'true'
+    - if: steps.preinstalled.outputs.binary == '' && steps.cache.outputs.cache-hit != 'true'
       shell: bash
       env:
         COCOGITTO_VERSION: ${{ inputs.version }}
@@ -21,11 +32,13 @@ runs:
     - shell: bash
       env:
         COCOGITTO_BIN: ${{ runner.temp }}/cocogitto/bin
+        PREINSTALLED_COG: ${{ steps.preinstalled.outputs.binary }}
       run: |
         set -euo pipefail
-        "$COCOGITTO_BIN/cog" --version
-        echo "$COCOGITTO_BIN" >> "$GITHUB_PATH"
-    - if: steps.cache.outputs.cache-hit != 'true'
+        binary=${PREINSTALLED_COG:-$COCOGITTO_BIN/cog}
+        "$binary" --version
+        dirname "$binary" >> "$GITHUB_PATH"
+    - if: steps.preinstalled.outputs.binary == '' && steps.cache.outputs.cache-hit != 'true'
       uses: actions/cache/save@v6
       with:
         path: ${{ runner.temp }}/cocogitto/bin

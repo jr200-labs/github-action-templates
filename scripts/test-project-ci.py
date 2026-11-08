@@ -32,7 +32,8 @@ class ProjectCI(unittest.TestCase):
                 if tool == 'golangci-lint':
                     self.assertIn('steps.go.outputs.go-version', cache['with']['key'])
                     self.assertEqual(next(s for s in steps if s.get('name') == lint)['with']['install-mode'], 'none')
-                self.assertEqual(install['if'], f"steps.{cache_id}.outputs.cache-hit != 'true'")
+                preinstalled_id = cache_id.replace('-cache', '-preinstalled')
+                self.assertEqual(install['if'], f"steps.{preinstalled_id}.outputs.binary == '' && steps.{cache_id}.outputs.cache-hit != 'true'")
                 self.assertEqual(save['if'], install['if'])
                 self.assertEqual(save['with']['path'], cache['with']['path'])
                 self.assertEqual(save['with']['key'], '${{ steps.' + cache_id + '.outputs.cache-primary-key }}')
@@ -53,10 +54,31 @@ class ProjectCI(unittest.TestCase):
                     path = root / 'path'
                     env = dict(os.environ, GITHUB_OUTPUT=str(output), GITHUB_PATH=str(path))
                     for key, value in verify['env'].items():
-                        env[key] = value.replace('${{ runner.temp }}', str(root))
+                        env[key] = '' if value.startswith('${{ steps.') else value.replace('${{ runner.temp }}', str(root))
                     subprocess.run(['bash', '-c', verify['run']], env=env, check=True, capture_output=True)
                     published = output if tool == 'actionlint' else path
                     self.assertIn(str(binary_dir), published.read_text())
+
+    def test_preinstalled_tool_detection_accepts_matching_versions_only(self):
+        for file, job, step_name, tool, expected in (
+            ('ci.yaml', 'validate-workflow-syntax', 'Find preinstalled actionlint', 'actionlint', 'v1.7.12'),
+            ('ci_go.yaml', 'test', 'Find preinstalled golangci-lint', 'golangci-lint', 'golangci-lint has version 2.15.0 built with go1.27.2'),
+        ):
+            step = next(s for s in workflow(file)['jobs'][job]['steps'] if s.get('name') == step_name)
+            for version, compiler, accepted in ((expected, 'go1.27.2', True), ('wrong-version', 'go1.27.2', False), (expected, 'go1.26.9', tool == 'actionlint')):
+                with self.subTest(tool=tool, version=version, compiler=compiler), tempfile.TemporaryDirectory() as directory:
+                    root = Path(directory)
+                    binary = root / tool
+                    binary.write_text('#!/bin/sh\nprintf "%s\\n" "$TOOL_VERSION"\n')
+                    binary.chmod(0o755)
+                    go = root / 'go'
+                    go.write_text('#!/bin/sh\nif [ "$1" = env ]; then echo go1.27.3; else echo "$3: $BUILD_COMPILER"; fi\n')
+                    go.chmod(0o755)
+                    output = root / 'output'
+                    output.touch()
+                    env = dict(os.environ, PATH=f'{root}:{os.environ["PATH"]}', GITHUB_OUTPUT=str(output), TOOL_VERSION=version, BUILD_COMPILER=compiler)
+                    subprocess.run(['bash', '-c', step['run']], env=env, check=True, capture_output=True)
+                    self.assertEqual(output.read_text().strip(), f'binary={binary}' if accepted else '')
 
     def test_canonical_groups_resolve_through_real_sync(self):
         with tempfile.TemporaryDirectory() as directory:
