@@ -34,6 +34,7 @@ jobs:
           ref: ${{ inputs.checkout-ref }}
 
       - name: Setup Go
+        id: go
         uses: actions/setup-go@v7
         with:
           go-version-file: ${{ inputs.go-version-file }}
@@ -61,11 +62,43 @@ jobs:
             echo "No release-please config found, skipping"
           fi
 
+      - name: Cache golangci-lint binary
+        id: golangci-cache
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ runner.temp }}/golangci-lint/bin
+          # A linter built by an older Go compiler cannot inspect newer Go code.
+          key: golangci-binary-v1-${{ runner.os }}-${{ runner.arch }}-v2.15.0-go${{ steps.go.outputs.go-version }}
+
+      - name: Install golangci-lint
+        if: steps.golangci-cache.outputs.cache-hit != 'true'
+        shell: bash
+        env:
+          GOBIN: ${{ runner.temp }}/golangci-lint/bin
+          GOPROXY: https://proxy.golang.org
+          CGO_ENABLED: '0'
+        run: go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.15.0
+
+      - name: Verify golangci-lint binary
+        shell: bash
+        env:
+          GOLANGCI_BIN: ${{ runner.temp }}/golangci-lint/bin
+        run: |
+          set -euo pipefail
+          "$GOLANGCI_BIN/golangci-lint" version
+          echo "$GOLANGCI_BIN" >> "$GITHUB_PATH"
+
+      - name: Save golangci-lint binary
+        if: steps.golangci-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ runner.temp }}/golangci-lint/bin
+          key: ${{ steps.golangci-cache.outputs.cache-primary-key }}
+
       - name: Lint
         uses: golangci/golangci-lint-action@v9
         with:
-          # Use the Go module proxy when release-archive downloads are unavailable.
-          install-mode: goinstall
+          install-mode: none
           args: --config .shared/.golangci.yml
 
       - name: Test

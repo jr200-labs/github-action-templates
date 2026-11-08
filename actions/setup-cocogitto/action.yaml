@@ -7,8 +7,26 @@ inputs:
 runs:
   using: composite
   steps:
-    - shell: bash
+    - id: cache
+      uses: actions/cache/restore@v6
+      with:
+        path: ${{ runner.temp }}/cocogitto/bin
+        key: cocogitto-binary-v1-${{ runner.os }}-${{ runner.arch }}-${{ inputs.version }}
+    - if: steps.cache.outputs.cache-hit != 'true'
+      shell: bash
       env:
         COCOGITTO_VERSION: ${{ inputs.version }}
         COCOGITTO_ACTION_PATH: ${{ github.action_path }}
       run: bash "${COCOGITTO_ACTION_PATH}/install.sh"
+    - shell: bash
+      env:
+        COCOGITTO_BIN: ${{ runner.temp }}/cocogitto/bin
+      run: |
+        set -euo pipefail
+        "$COCOGITTO_BIN/cog" --version
+        echo "$COCOGITTO_BIN" >> "$GITHUB_PATH"
+    - if: steps.cache.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v6
+      with:
+        path: ${{ runner.temp }}/cocogitto/bin
+        key: ${{ steps.cache.outputs.cache-primary-key }}

@@ -76,17 +76,40 @@ jobs:
           go-version: stable
           cache: false
 
+      - name: Cache actionlint binary
+        id: actionlint-cache
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ runner.temp }}/actionlint/bin
+          key: actionlint-binary-v1-${{ runner.os }}-${{ runner.arch }}-v1.7.12
+
       - name: Install actionlint
-        id: get_actionlint
+        if: steps.actionlint-cache.outputs.cache-hit != 'true'
         shell: bash
         env:
           GOBIN: ${{ runner.temp }}/actionlint/bin
           GOPROXY: https://proxy.golang.org
+          CGO_ENABLED: '0'
         run: |
           set -euo pipefail
           go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
+
+      - name: Verify actionlint binary
+        id: get_actionlint
+        shell: bash
+        env:
+          GOBIN: ${{ runner.temp }}/actionlint/bin
+        run: |
+          set -euo pipefail
           "$GOBIN/actionlint" -version
           echo "exe=$GOBIN/actionlint" >> "$GITHUB_OUTPUT"
+
+      - name: Save actionlint binary
+        if: steps.actionlint-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ runner.temp }}/actionlint/bin
+          key: ${{ steps.actionlint-cache.outputs.cache-primary-key }}
 
       - name: Run actionlint
         # actionlint does not yet recognize GitHub's concurrency.queue key.
