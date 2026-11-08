@@ -64,6 +64,8 @@ jobs:
       - name: Lint
         uses: golangci/golangci-lint-action@v9
         with:
+          # Use the Go module proxy when release-archive downloads are unavailable.
+          install-mode: goinstall
           args: --config .shared/.golangci.yml
 
       - name: Test
