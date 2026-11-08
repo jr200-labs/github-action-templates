@@ -44,9 +44,39 @@ jobs:
           ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
 
       - name: Install Cocogitto
+        continue-on-error: true
         uses: cocogitto/cocogitto-action@v4.2.0
         with:
           install-only: true
+
+      - name: Check Cocogitto installation
+        id: cocogitto
+        shell: bash
+        run: |
+          set -euo pipefail
+          if command -v cog >/dev/null 2>&1 && cog --version; then
+            echo 'ready=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'ready=false' >> "$GITHUB_OUTPUT"
+          fi
+
+      # The upstream installer can return success after an invalid archive.
+      # Retry once based on the actual executable, then require a working tool.
+      - name: Retry incomplete Cocogitto installation
+        if: steps.cocogitto.outputs.ready != 'true'
+        uses: cocogitto/cocogitto-action@v4.2.0
+        with:
+          install-only: true
+
+      - name: Verify Cocogitto installation
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! command -v cog >/dev/null 2>&1; then
+            echo '::error::Cocogitto installation did not produce cog after two attempts; commit validation cannot run.'
+            exit 1
+          fi
+          cog --version
 
       - name: Configure Git identity for Cocogitto
         shell: bash
