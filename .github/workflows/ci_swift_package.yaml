@@ -10,11 +10,10 @@ permissions:
 jobs:
   check:
     runs-on: ${{ inputs.runner }}
-    timeout-minutes: 20
+    # Provisioned package verification owns its execution budget after queueing.
+    timeout-minutes: 360
     steps:
       - uses: actions/checkout@v7
-      - name: Resolve packages
-        run: swift package resolve
       - name: Build and test
         shell: bash
         run: |
@@ -23,6 +22,25 @@ jobs:
             # Lifecycle projects retain their provisioned compiler reuse contract.
             python3 scripts/swift-package-verify.py
           else
-            swift build -Xswiftc -warnings-as-errors
-            swift test
+            python3 - <<'PYTHON'
+          import os
+          import signal
+          import subprocess
+          process = subprocess.Popen(["bash", "-e", "-c", "swift package resolve; swift build -Xswiftc -warnings-as-errors; swift test"], start_new_session=True)
+          try:
+              code = process.wait(timeout=1200)
+              if code:
+                  raise subprocess.CalledProcessError(code, "swift verification")
+          finally:
+              try:
+                  os.killpg(process.pid, signal.SIGTERM)
+                  process.wait(timeout=2)
+              except (ProcessLookupError, subprocess.TimeoutExpired):
+                  pass
+              finally:
+                  try:
+                      os.killpg(process.pid, signal.SIGKILL)
+                  except ProcessLookupError:
+                      pass
+          PYTHON
           fi

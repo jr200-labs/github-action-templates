@@ -52,6 +52,19 @@ class PackagingTest(unittest.TestCase):
             Path(command[-1]).write_bytes(b"fixture archive")
         return subprocess.CompletedProcess(command, 0)
 
+    def test_portable_checks_gate_native_allocation_at_the_same_source(self):
+        workflow = json.loads(subprocess.check_output(['yq', '-o=json', str(ROOT / '.github/workflows/build_macos_app.yaml')], text=True))
+        portable, native = workflow['jobs']['portable'], workflow['jobs']['package']
+        self.assertEqual(native['needs'], 'portable')
+        self.assertEqual(portable['runs-on'], '${{ fromJSON(vars.RUNNER_PROFILES)[vars.RUNNER_PROFILE].default }}')
+        checkout = lambda job: next(step for step in job['steps'] if step.get('uses') == 'actions/checkout@v7')['with']['ref']
+        self.assertEqual(checkout(portable), checkout(native))
+        verify = next(step for step in native['steps'] if step.get('name') == 'Build and verify')
+        self.assertEqual(verify['env']['MACOS_PORTABLE_COMMIT'], '${{ needs.portable.outputs.commit }}')
+        self.config['portable'] = ['python3', 'scripts/check.py']
+        Path('config.json').write_text(json.dumps(self.config))
+        self.assertEqual(module.configuration('config.json')['portable'], self.config['portable'])
+
     def test_archive_checksum_version_and_signing(self):
         with patch.object(module.subprocess, "run", side_effect=self.run_command) as run:
             module.package(self.config, self.output, "v1.2.3")
@@ -355,7 +368,7 @@ class PackagingTest(unittest.TestCase):
             ["yq", "-o=json", ".jobs.build-and-test", str(workflow)],
             text=True,
         ))
-        self.assertEqual(job["timeout-minutes"], 20)
+        self.assertEqual(job["timeout-minutes"], "${{ inputs.runner-verifier && 360 || 20 }}")
 
     def test_builds_have_no_intermediate_artifact_transfer_and_only_restore_verified_releases(self):
         workflow = json.loads(subprocess.check_output(
