@@ -128,7 +128,7 @@ def safe_asset(value, field):
 
 def configuration(path):
     config = json.loads(Path(path).read_text())
-    if not isinstance(config, dict) or set(config) - {"app", "artifact", "build", "setup_uv", "tag_prefix", "sparkle"}:
+    if not isinstance(config, dict) or set(config) - {"app", "artifact", "build", "setup_uv", "tag_prefix", "sparkle", "portable"}:
         raise ValueError("Unknown macOS app configuration fields")
     safe_asset(config.get("artifact"), "artifact")
     app = config.get("app")
@@ -137,6 +137,8 @@ def configuration(path):
     if not Path(app).resolve().is_relative_to(Path.cwd().resolve()):
         raise ValueError("app must stay within the repository")
     safe_argv(config.get("build"), "build")
+    if "portable" in config:
+        safe_argv(config["portable"], "portable")
     if type(config.get("setup_uv", False)) is not bool:
         raise ValueError("setup_uv must be boolean")
     if not isinstance(config.get("tag_prefix", "v"), str) or not re.fullmatch(r"[A-Za-z0-9._-]*", config.get("tag_prefix", "v")):
@@ -206,7 +208,7 @@ def appcast(config, output, release_tag, repository):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("operation", choices=("metadata", "package", "appcast"))
+    parser.add_argument("operation", choices=("metadata", "portable", "package", "appcast"))
     parser.add_argument("--config", default=".github/macos-app.json")
     parser.add_argument("--output", type=Path)
     parser.add_argument("--release-tag", default="")
@@ -214,9 +216,14 @@ def main():
     args = parser.parse_args()
     config = configuration(args.config)
     if args.operation == "metadata":
+        print("portable=" + str("portable" in config).lower())
         print("artifact=" + config["artifact"])
         print("setup_uv=" + str(config.get("setup_uv", False)).lower())
         print("appcast=" + (config.get("sparkle") or {}).get("appcast", ""))
+    elif args.operation == "portable":
+        if "portable" not in config:
+            parser.error("portable checks require a configured argv")
+        run_build(config["portable"])
     elif args.operation == "package":
         if args.output is None:
             parser.error("package requires --output")

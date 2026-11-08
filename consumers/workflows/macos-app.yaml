@@ -27,7 +27,7 @@ permissions:
 
 concurrency:
   group: macos-app-${{ github.event.pull_request.number || github.event.client_payload['release-tag'] || inputs.release-tag || github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   app:

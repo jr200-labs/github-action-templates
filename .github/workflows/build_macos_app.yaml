@@ -44,7 +44,40 @@ on:
         required: false
 
 jobs:
+  portable:
+    # Portable checks run on the configured default fleet before taking a Mac.
+    if: github.event_name != 'pull_request' || !(github.event.pull_request.user.type == 'Bot' && github.event.pull_request.head.repo.full_name == github.repository && startsWith(github.head_ref, 'release-please--branches--'))
+    runs-on: ${{ fromJSON(vars.RUNNER_PROFILES)[vars.RUNNER_PROFILE].default }}
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    outputs:
+      commit: ${{ steps.checked.outputs.commit }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.release-tag != '' && format('refs/tags/{0}', inputs.release-tag) || inputs.checkout-ref }}
+          persist-credentials: false
+      - name: Read portable configuration
+        id: config
+        env:
+          APP_CONFIG: ${{ inputs.config-path }}
+        run: python3 .shared/package-macos-app.py metadata --config "$APP_CONFIG" >> "$GITHUB_OUTPUT"
+      - uses: astral-sh/setup-uv@v10.3.3
+        if: steps.config.outputs.portable == 'true' && steps.config.outputs.setup_uv == 'true'
+      - name: Verify portable inputs
+        id: checked
+        if: steps.config.outputs.portable == 'true'
+        env:
+          APP_CONFIG: ${{ inputs.config-path }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 .shared/package-macos-app.py portable --config "$APP_CONFIG"
+          git diff --exit-code HEAD
+          echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
   package:
+    needs: portable
     # Version-bump PRs are packaged once, from their tag, by the release event.
     # Keep this gate inside the reusable job so its required check still exists.
     if: github.event_name != 'pull_request' || !(github.event.pull_request.user.type == 'Bot' && github.event.pull_request.head.repo.full_name == github.repository && startsWith(github.head_ref, 'release-please--branches--'))
@@ -136,6 +169,7 @@ jobs:
         env:
           MACOS_PACKAGE_RELEASE_ASSETS: ${{ inputs.publish-release && 'true' || 'false' }}
           UV_MANAGED_PYTHON: 'true'
+          MACOS_PORTABLE_COMMIT: ${{ needs.portable.outputs.commit }}
       - name: Prepare immutable verified release archive
         if: inputs.publish-release && steps.verification.outputs.enabled == 'true' && steps.restored.outputs.reused != 'true'
         uses: jr200-labs/github-action-templates/actions/macos-verified-build@master

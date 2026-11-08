@@ -118,7 +118,7 @@ class ProjectCI(unittest.TestCase):
             calls = root / 'calls'
             env = dict(os.environ, PATH=str(root)+os.pathsep+os.environ['PATH'], CALLS=str(calls))
             subprocess.run(['bash', '-c', script], cwd=root, env=env, check=True)
-            self.assertEqual(calls.read_text().splitlines(), ['build -Xswiftc -warnings-as-errors', 'test'])
+            self.assertEqual(calls.read_text().splitlines(), ['package resolve', 'build -Xswiftc -warnings-as-errors', 'test'])
 
     def test_failed_xcode_generation_stops_before_project_resolution(self):
         steps = workflow('ci_swift.yaml')['jobs']['build-and-test']['steps']

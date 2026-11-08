@@ -175,3 +175,21 @@ workflow, fixtures, or documentation. This permits Renovate to overwrite those
 automation commits on a later update; human authors should remain protected.
 The notifier reports a generic external-edit reason and never copies author
 identities or raw run logs into PRs or comments.
+
+### Portable macOS preflight and capacity waits
+
+App packaging config accepts an optional `portable` argv, for example
+`["uv", "run", "--locked", "python", "scripts/check-portable.py"]`. The shared
+workflow runs it on the configured default fleet before allocating a macOS job.
+The optional `setup_uv` setting applies to both jobs. Failure prevents native
+allocation; successful preflight passes the checkout SHA as
+`MACOS_PORTABLE_COMMIT`. A consumer may omit repeated portable checks only after
+validating that SHA against its own checkout. Native/frontend build outputs are
+not transferred between jobs. Consumers without `portable` keep their normal
+build command and receive an empty verification SHA.
+
+Provisioned full Apple verifiers own their execution deadlines after admission.
+Their Actions job/step lifetime allows up to six hours for queueing and execution;
+this watchdog does not enlarge the verifier execution budget. Direct Swift
+verification retains its original bound. Canonical PR callers cancel superseded
+runs for the same PR/ref; macOS release publications retain their runs.
