@@ -1,0 +1,14 @@
+name: Set up Cocogitto
+description: Install a working Cocogitto binary with bounded download retries.
+inputs:
+  version:
+    description: Cocogitto release version without a leading v.
+    default: '7.0.0'
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        COCOGITTO_VERSION: ${{ inputs.version }}
+        COCOGITTO_ACTION_PATH: ${{ github.action_path }}
+      run: bash "${COCOGITTO_ACTION_PATH}/install.sh"

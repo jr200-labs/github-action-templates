@@ -94,6 +94,7 @@ jobs:
       - name: Test shared sync scripts
         run: |
           ./scripts/test-message-text-policy.sh
+          python3 scripts/test-cocogitto-install.py
           ./scripts/test-component-releases.sh
           python3 scripts/test-release-pr-cleanup.py
           python3 scripts/test-release-pr-lockfiles.py
