@@ -34,6 +34,7 @@ jobs:
           ref: ${{ inputs.checkout-ref }}
 
       - name: Setup Go
+        id: go
         uses: actions/setup-go@v7
         with:
           go-version-file: ${{ inputs.go-version-file }}
@@ -61,9 +62,63 @@ jobs:
             echo "No release-please config found, skipping"
           fi
 
+      - name: Find preinstalled golangci-lint
+        id: golangci-preinstalled
+        shell: bash
+        run: |
+          set -euo pipefail
+          binary=$(command -v golangci-lint || true)
+          if [ -n "$binary" ]; then
+            version=$("$binary" version)
+            metadata=$(go version -m "$binary")
+            compiler=${metadata%%$'\n'*}
+            go_version=$(go env GOVERSION)
+            go_minor=${go_version%.*}
+            if [[ "$version" =~ version[[:space:]]+2\.15\.0([[:space:]]|$) ]] && [[ "$compiler" == *": $go_minor."* ]]; then
+              echo "binary=$binary" >> "$GITHUB_OUTPUT"
+            fi
+          fi
+
+      - name: Cache golangci-lint binary
+        if: steps.golangci-preinstalled.outputs.binary == ''
+        id: golangci-cache
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ runner.temp }}/golangci-lint/bin
+          # A linter built by an older Go compiler cannot inspect newer Go code.
+          key: golangci-binary-v1-${{ runner.os }}-${{ runner.arch }}-v2.15.0-go${{ steps.go.outputs.go-version }}
+
+      - name: Install golangci-lint
+        if: steps.golangci-preinstalled.outputs.binary == '' && steps.golangci-cache.outputs.cache-hit != 'true'
+        shell: bash
+        env:
+          GOBIN: ${{ runner.temp }}/golangci-lint/bin
+          GOPROXY: https://proxy.golang.org
+          CGO_ENABLED: '0'
+        run: go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.15.0
+
+      - name: Verify golangci-lint binary
+        shell: bash
+        env:
+          GOLANGCI_BIN: ${{ runner.temp }}/golangci-lint/bin
+          PREINSTALLED_GOLANGCI: ${{ steps.golangci-preinstalled.outputs.binary }}
+        run: |
+          set -euo pipefail
+          binary=${PREINSTALLED_GOLANGCI:-$GOLANGCI_BIN/golangci-lint}
+          "$binary" version
+          dirname "$binary" >> "$GITHUB_PATH"
+
+      - name: Save golangci-lint binary
+        if: steps.golangci-preinstalled.outputs.binary == '' && steps.golangci-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ runner.temp }}/golangci-lint/bin
+          key: ${{ steps.golangci-cache.outputs.cache-primary-key }}
+
       - name: Lint
         uses: golangci/golangci-lint-action@v9
         with:
+          install-mode: none
           args: --config .shared/.golangci.yml
 
       - name: Test

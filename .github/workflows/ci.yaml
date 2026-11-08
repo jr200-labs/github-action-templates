@@ -70,11 +70,63 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - name: Install actionlint
-        id: get_actionlint
+      - name: Find preinstalled actionlint
+        id: actionlint-preinstalled
+        shell: bash
         run: |
-          bash <(curl -fsSL https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash)
-          echo "exe=$(pwd)/actionlint" >> "$GITHUB_OUTPUT"
+          set -euo pipefail
+          binary=$(command -v actionlint || true)
+          if [ -n "$binary" ]; then
+            version=$("$binary" -version)
+            if [ "${version%%$'\n'*}" = v1.7.12 ]; then
+              echo "binary=$binary" >> "$GITHUB_OUTPUT"
+            fi
+          fi
+
+      - name: Set up Go for actionlint
+        if: steps.actionlint-preinstalled.outputs.binary == ''
+        uses: actions/setup-go@v7
+        with:
+          go-version: stable
+          cache: false
+
+      - name: Cache actionlint binary
+        if: steps.actionlint-preinstalled.outputs.binary == ''
+        id: actionlint-cache
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ runner.temp }}/actionlint/bin
+          key: actionlint-binary-v1-${{ runner.os }}-${{ runner.arch }}-v1.7.12
+
+      - name: Install actionlint
+        if: steps.actionlint-preinstalled.outputs.binary == '' && steps.actionlint-cache.outputs.cache-hit != 'true'
+        shell: bash
+        env:
+          GOBIN: ${{ runner.temp }}/actionlint/bin
+          GOPROXY: https://proxy.golang.org
+          CGO_ENABLED: '0'
+        run: |
+          set -euo pipefail
+          go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
+
+      - name: Verify actionlint binary
+        id: get_actionlint
+        shell: bash
+        env:
+          GOBIN: ${{ runner.temp }}/actionlint/bin
+          PREINSTALLED_ACTIONLINT: ${{ steps.actionlint-preinstalled.outputs.binary }}
+        run: |
+          set -euo pipefail
+          binary=${PREINSTALLED_ACTIONLINT:-$GOBIN/actionlint}
+          "$binary" -version
+          echo "exe=$binary" >> "$GITHUB_OUTPUT"
+
+      - name: Save actionlint binary
+        if: steps.actionlint-preinstalled.outputs.binary == '' && steps.actionlint-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ runner.temp }}/actionlint/bin
+          key: ${{ steps.actionlint-cache.outputs.cache-primary-key }}
 
       - name: Run actionlint
         # actionlint does not yet recognize GitHub's concurrency.queue key.
@@ -94,6 +146,7 @@ jobs:
       - name: Test shared sync scripts
         run: |
           ./scripts/test-message-text-policy.sh
+          python3 scripts/test-cocogitto-install.py
           ./scripts/test-component-releases.sh
           python3 scripts/test-release-pr-cleanup.py
           python3 scripts/test-release-pr-lockfiles.py

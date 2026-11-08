@@ -44,9 +44,7 @@ jobs:
           ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
 
       - name: Install Cocogitto
-        uses: cocogitto/cocogitto-action@v4.2.0
-        with:
-          install-only: true
+        uses: jr200-labs/github-action-templates/actions/setup-cocogitto@master
 
       - name: Configure Git identity for Cocogitto
         shell: bash
