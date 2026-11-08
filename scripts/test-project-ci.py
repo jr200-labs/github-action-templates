@@ -65,7 +65,12 @@ class ProjectCI(unittest.TestCase):
             ('ci_go.yaml', 'test', 'Find preinstalled golangci-lint', 'golangci-lint', 'golangci-lint has version 2.15.0 built with go1.27.2'),
         ):
             step = next(s for s in workflow(file)['jobs'][job]['steps'] if s.get('name') == step_name)
-            for version, compiler, accepted in ((expected, 'go1.27.2', True), ('wrong-version', 'go1.27.2', False), (expected, 'go1.26.9', tool == 'actionlint')):
+            cases = [(expected, 'go1.27.2', True), ('wrong-version', 'go1.27.2', False), (expected, 'go1.26.9', tool == 'actionlint')]
+            if tool == 'actionlint':
+                # Official release archives print an unprefixed version;
+                # go install builds report the module's v-prefixed version.
+                cases.append(('1.7.12', 'go1.26.1', True))
+            for version, compiler, accepted in cases:
                 with self.subTest(tool=tool, version=version, compiler=compiler), tempfile.TemporaryDirectory() as directory:
                     root = Path(directory)
                     binary = root / tool

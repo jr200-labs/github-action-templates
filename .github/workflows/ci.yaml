@@ -78,7 +78,8 @@ jobs:
           binary=$(command -v actionlint || true)
           if [ -n "$binary" ]; then
             version=$("$binary" -version)
-            if [ "${version%%$'\n'*}" = v1.7.12 ]; then
+            version=${version%%$'\n'*}
+            if [ "${version#v}" = 1.7.12 ]; then
               echo "binary=$binary" >> "$GITHUB_OUTPUT"
             fi
           fi
