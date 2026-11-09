@@ -310,8 +310,9 @@ jobs:
     if: inputs.publish-release
     runs-on: ${{ fromJSON(vars.RUNNER_PROFILES)[vars.RUNNER_PROFILE].default }}
     timeout-minutes: 20
-    permissions:
-      contents: write
+    # Inherit the caller's ceiling: validation calls grant read, release calls
+    # grant write. An explicit write declaration invalidates read-only callers
+    # at startup even though this job is skipped for validation.
     steps:
       - uses: actions/checkout@v7
         with:

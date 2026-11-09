@@ -394,6 +394,28 @@ class PackagingTest(unittest.TestCase):
         ))
         self.assertEqual(job["timeout-minutes"], "${{ inputs.runner-verifier && 360 || 20 }}")
 
+    def test_macos_reusable_graph_never_elevates_caller_permissions(self):
+        def read(path):
+            return json.loads(subprocess.check_output(['yq', '-o=json', str(ROOT / path)], text=True))
+
+        levels = {'none': 0, 'read': 1, 'write': 2}
+
+        def visit(path, ceiling, trail):
+            workflow = read(path)
+            for name, job in workflow['jobs'].items():
+                # GitHub validates skipped jobs too, before scheduling any work.
+                granted = job.get('permissions', workflow.get('permissions', ceiling))
+                for scope, value in granted.items():
+                    self.assertLessEqual(levels[value], levels[ceiling.get(scope, 'none')],
+                                         f'{trail}/{name} elevates {scope} from {ceiling.get(scope, "none")} to {value}')
+                uses = job.get('uses', '')
+                prefix = 'jr200-labs/github-action-templates/'
+                if uses.startswith(prefix):
+                    visit(uses[len(prefix):].split('@')[0], granted, f'{trail}/{name}')
+
+        visit('consumers/workflows/macos-app.yaml', {'contents': 'write'}, 'consumer')
+        visit('.github/workflows/publish_macos_app.yaml', {'contents': 'write'}, 'release-wrapper')
+
     def test_publish_only_consumes_verified_artifacts_without_native_work(self):
         workflow = json.loads(subprocess.check_output(['yq', '-o=json', str(ROOT / '.github/workflows/build_macos_app.yaml')], text=True))
         verify, package, publish = (workflow['jobs'][key] for key in ('verify', 'package', 'publish'))
@@ -406,7 +428,7 @@ class PackagingTest(unittest.TestCase):
         self.assertIn('actions/download-artifact@v8', text)
         self.assertIn('bundle-check', text)
         self.assertNotIn('SPARKLE_EDDSA_PRIVATE_KEY', text)
-        self.assertEqual(publish['permissions'], {'contents': 'write'})
+        self.assertNotIn('permissions', publish)
         self.assertEqual(verify['permissions'], {'contents': 'read'})
         self.assertEqual(package['permissions'], {'contents': 'read'})
         self.assertIn('MACOS_VERIFICATION_EXECUTION_SECONDS', json.dumps(package))
