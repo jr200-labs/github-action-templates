@@ -50,22 +50,11 @@ jobs:
       contents: read
     outputs:
       commit: ${{ steps.checked.outputs.commit }}
-      release-id: ${{ steps.release.outputs.release-id }}
     steps:
       - uses: actions/checkout@v7
         with:
           ref: ${{ inputs.release-tag != '' && format('refs/tags/{0}', inputs.release-tag) || inputs.checkout-ref }}
           persist-credentials: false
-      - name: Resolve immutable draft release identity
-        if: inputs.publish-release
-        id: release
-        uses: jr200-labs/github-action-templates/actions/macos-release@master
-        with:
-          mode: resolve
-          repository: ${{ github.repository }}
-          token: ${{ github.token }}
-          release-tag: ${{ inputs.release-tag }}
-          release-id: ${{ inputs.release-id }}
       - name: Read portable configuration
         id: config
         env:
@@ -175,7 +164,6 @@ jobs:
     outputs:
       key: ${{ needs.verify.outputs.key }}
       source: ${{ needs.verify.outputs.source }}
-      release-id: ${{ needs.portable.outputs.release-id }}
       artifact: ${{ steps.config.outputs.artifact }}
       appcast: ${{ inputs.generate-appcast && steps.config.outputs.appcast || '' }}
     steps:
@@ -318,6 +306,17 @@ jobs:
         with:
           ref: ${{ inputs.release-tag != '' && format('refs/tags/{0}', inputs.release-tag) || inputs.checkout-ref }}
           persist-credentials: false
+      # Draft release reads require the release caller's write-capable token.
+      # Keep that token outside portable verification and native build jobs.
+      - name: Resolve immutable draft release identity
+        id: release
+        uses: jr200-labs/github-action-templates/actions/macos-release@master
+        with:
+          mode: resolve
+          repository: ${{ github.repository }}
+          token: ${{ github.token }}
+          release-tag: ${{ inputs.release-tag }}
+          release-id: ${{ inputs.release-id }}
       - name: Download verified publication bundle
         uses: actions/download-artifact@v8
         with:
@@ -339,7 +338,7 @@ jobs:
           repository: ${{ github.repository }}
           token: ${{ github.token }}
           release-tag: ${{ inputs.release-tag }}
-          release-id: ${{ needs.package.outputs.release-id }}
+          release-id: ${{ steps.release.outputs.release-id }}
           output: ${{ runner.temp }}/macos-release
           artifact: ${{ needs.package.outputs.artifact }}
           appcast: ${{ needs.package.outputs.appcast }}

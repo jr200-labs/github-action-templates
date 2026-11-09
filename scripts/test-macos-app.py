@@ -416,6 +416,23 @@ class PackagingTest(unittest.TestCase):
         visit('consumers/workflows/macos-app.yaml', {'contents': 'write'}, 'consumer')
         visit('.github/workflows/publish_macos_app.yaml', {'contents': 'write'}, 'release-wrapper')
 
+    def test_draft_release_resolution_uses_the_publication_permission_boundary(self):
+        workflow = json.loads(subprocess.check_output(['yq', '-o=json', str(ROOT / '.github/workflows/build_macos_app.yaml')], text=True))
+        resolutions = [(name, step) for name, job in workflow['jobs'].items()
+                       for step in job.get('steps', [])
+                       if step.get('with', {}).get('mode') == 'resolve']
+        self.assertEqual([name for name, _ in resolutions], ['publish'])
+        resolver = resolutions[0][1]
+        self.assertEqual(resolver['with']['release-id'], '${{ inputs.release-id }}')
+        publisher = next(step for step in workflow['jobs']['publish']['steps']
+                         if step.get('with', {}).get('mode') == 'publish')
+        self.assertEqual(publisher['with']['release-id'], '${{ steps.release.outputs.release-id }}')
+        self.assertLess(workflow['jobs']['publish']['steps'].index(resolver),
+                        workflow['jobs']['publish']['steps'].index(publisher))
+        for name in ('portable', 'verify', 'package'):
+            self.assertEqual(workflow['jobs'][name]['permissions'], {'contents': 'read'})
+            self.assertNotIn('macos-release@', json.dumps(workflow['jobs'][name]))
+
     def test_publish_only_consumes_verified_artifacts_without_native_work(self):
         workflow = json.loads(subprocess.check_output(['yq', '-o=json', str(ROOT / '.github/workflows/build_macos_app.yaml')], text=True))
         verify, package, publish = (workflow['jobs'][key] for key in ('verify', 'package', 'publish'))
