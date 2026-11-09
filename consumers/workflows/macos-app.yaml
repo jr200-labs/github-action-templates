@@ -39,7 +39,7 @@ jobs:
       publish-release: false
       release-tag: ${{ inputs.release-tag }}
       runner: ${{ fromJSON(vars.RUNNER_PROFILES)[vars.RUNNER_PROFILE].macos }}
-  publish:
+  release:
     if: github.event_name == 'repository_dispatch' || (github.event_name == 'workflow_dispatch' && inputs.publish-release)
     permissions:
       contents: write

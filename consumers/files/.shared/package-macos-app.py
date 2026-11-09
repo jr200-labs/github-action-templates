@@ -85,7 +85,7 @@ def run_build(command, timeout=1200):
                     raise ValueError('Build exited during admission')
                 if remaining <= 0:
                     raise subprocess.TimeoutExpired(command, timeout)
-                return
+                return max(0., timeout - remaining)
             if remaining <= 0:
                 raise subprocess.TimeoutExpired(command, timeout)
     except BaseException:
@@ -128,7 +128,7 @@ def safe_asset(value, field):
 
 def configuration(path):
     config = json.loads(Path(path).read_text())
-    if not isinstance(config, dict) or set(config) - {"app", "artifact", "build", "setup_uv", "tag_prefix", "sparkle", "portable"}:
+    if not isinstance(config, dict) or set(config) - {"app", "artifact", "build", "setup_uv", "tag_prefix", "sparkle", "portable", "verify"}:
         raise ValueError("Unknown macOS app configuration fields")
     safe_asset(config.get("artifact"), "artifact")
     app = config.get("app")
@@ -137,6 +137,8 @@ def configuration(path):
     if not Path(app).resolve().is_relative_to(Path.cwd().resolve()):
         raise ValueError("app must stay within the repository")
     safe_argv(config.get("build"), "build")
+    if "verify" in config:
+        safe_argv(config["verify"], "verify")
     if "portable" in config:
         safe_argv(config["portable"], "portable")
     if type(config.get("setup_uv", False)) is not bool:
@@ -158,7 +160,10 @@ def package(config, output, release_tag="", create_release_assets=True):
     app = Path(config["app"])
     if app.exists() or app.is_symlink() or (create_release_assets and output.exists()):
         raise ValueError("Build app and output paths must be new; existing artifacts are never overwritten")
-    run_build(config["build"])
+    spent = float(os.environ.get('MACOS_VERIFICATION_EXECUTION_SECONDS', '0'))
+    if not math.isfinite(spent) or not 0 <= spent < 1200:
+        raise ValueError('Invalid verification execution time')
+    run_build(config["build"], timeout=1200 - spent)
     if app.is_symlink() or not app.is_dir() or not app.resolve().is_relative_to(Path.cwd().resolve()):
         raise ValueError("Build must produce the configured app directory inside the repository")
     with (app / "Contents/Info.plist").open("rb") as file:
@@ -208,7 +213,7 @@ def appcast(config, output, release_tag, repository):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("operation", choices=("metadata", "portable", "package", "appcast"))
+    parser.add_argument("operation", choices=("metadata", "portable", "verify", "package", "appcast"))
     parser.add_argument("--config", default=".github/macos-app.json")
     parser.add_argument("--output", type=Path)
     parser.add_argument("--release-tag", default="")
@@ -216,10 +221,15 @@ def main():
     args = parser.parse_args()
     config = configuration(args.config)
     if args.operation == "metadata":
+        print("verify=" + str("verify" in config).lower())
         print("portable=" + str("portable" in config).lower())
         print("artifact=" + config["artifact"])
         print("setup_uv=" + str(config.get("setup_uv", False)).lower())
         print("appcast=" + (config.get("sparkle") or {}).get("appcast", ""))
+    elif args.operation == "verify":
+        spent = run_build(config["verify"]) if "verify" in config else 0.
+        with Path(os.environ['GITHUB_OUTPUT']).open('a') as stream:
+            stream.write(f'execution-seconds={spent}\n')
     elif args.operation == "portable":
         if "portable" not in config:
             parser.error("portable checks require a configured argv")

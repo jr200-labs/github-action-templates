@@ -1,0 +1,20 @@
+name: Verify macOS release inputs
+description: Run configured verification before packaging; never publish an archive
+inputs:
+  config:
+    description: Repository-owned app configuration
+    required: true
+outputs:
+  execution-seconds:
+    description: Execution consumed from the shared 1200-second budget
+    value: ${{ steps.verify.outputs.execution-seconds }}
+runs:
+  using: composite
+  steps:
+    - id: verify
+      shell: bash
+      env:
+        APP_CONFIG: ${{ inputs.config }}
+      run: >-
+        python3 "$GITHUB_ACTION_PATH/../../consumers/files/.shared/package-macos-app.py"
+        verify --config "$APP_CONFIG"

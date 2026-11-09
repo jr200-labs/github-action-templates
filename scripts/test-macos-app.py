@@ -39,7 +39,7 @@ class PackagingTest(unittest.TestCase):
         self.addCleanup(os.chdir, previous)
         self.config = dict(app="dist/Example.app", artifact="example-macos", build=["build-fixture"])
         self.output = Path("assets")
-        build = patch.object(module, "run_build", side_effect=lambda command: self.run_command(command))
+        build = patch.object(module, "run_build", side_effect=lambda command, **options: self.run_command(command))
         self.build = build.start()
         self.addCleanup(build.stop)
 
@@ -55,15 +55,35 @@ class PackagingTest(unittest.TestCase):
     def test_portable_checks_gate_native_allocation_at_the_same_source(self):
         workflow = json.loads(subprocess.check_output(['yq', '-o=json', str(ROOT / '.github/workflows/build_macos_app.yaml')], text=True))
         portable, native = workflow['jobs']['portable'], workflow['jobs']['package']
-        self.assertEqual(native['needs'], 'portable')
+        self.assertEqual(native['needs'], ['portable', 'verify'])
         self.assertEqual(portable['runs-on'], '${{ fromJSON(vars.RUNNER_PROFILES)[vars.RUNNER_PROFILE].default }}')
         checkout = lambda job: next(step for step in job['steps'] if step.get('uses') == 'actions/checkout@v7')['with']['ref']
         self.assertEqual(checkout(portable), checkout(native))
-        verify = next(step for step in native['steps'] if step.get('name') == 'Build and verify')
+        verify = next(step for step in workflow['jobs']['verify']['steps'] if step.get('name') == 'Run configured verification')
         self.assertEqual(verify['env']['MACOS_PORTABLE_COMMIT'], '${{ needs.portable.outputs.commit }}')
         self.config['portable'] = ['python3', 'scripts/check.py']
         Path('config.json').write_text(json.dumps(self.config))
         self.assertEqual(module.configuration('config.json')['portable'], self.config['portable'])
+
+    def test_verification_and_packaging_share_the_execution_budget(self):
+        self.config['verify'] = ['verify-fixture']
+        Path('config.json').write_text(json.dumps(self.config))
+        output = Path('github-output')
+        with patch.dict(os.environ, GITHUB_OUTPUT=str(output)), \
+             patch('sys.argv', ['package','verify','--config','config.json']), \
+             patch.object(module, 'run_build', return_value=42.5):
+            module.main()
+        self.assertEqual(output.read_text(), 'execution-seconds=42.5\n')
+        with patch.dict(os.environ, MACOS_VERIFICATION_EXECUTION_SECONDS='42.5'), \
+             patch.object(module.subprocess, 'run', side_effect=self.run_command):
+            module.package(self.config, self.output, 'v1.2.3')
+        self.assertEqual(self.build.call_args.kwargs['timeout'], 1157.5)
+        for value in ('nan', '-1', '1200'):
+            self.build.reset_mock()
+            invalid = dict(self.config, app='uncreated/Example.app')
+            with patch.dict(os.environ, MACOS_VERIFICATION_EXECUTION_SECONDS=value), self.assertRaisesRegex(ValueError, 'execution time'):
+                module.package(invalid, Path('another-output'), 'v1.2.3')
+            self.build.assert_not_called()
 
     def test_archive_checksum_version_and_signing(self):
         with patch.object(module.subprocess, "run", side_effect=self.run_command) as run:
@@ -183,7 +203,7 @@ class PackagingTest(unittest.TestCase):
         caller_data = subprocess.check_output(["yq", "-o=json", ".", str(caller)], text=True)
         self.assertIn("repository_dispatch", caller_data)
         publisher_secret = subprocess.check_output(
-            ["yq", "-r", ".jobs.publish.secrets.SPARKLE_EDDSA_PRIVATE_KEY", str(caller)], text=True
+            ["yq", "-r", ".jobs.release.secrets.SPARKLE_EDDSA_PRIVATE_KEY", str(caller)], text=True
         ).strip()
         self.assertEqual(publisher_secret, "${{ secrets.SPARKLE_EDDSA_PRIVATE_KEY }}")
         release_config = json.loads(Path("release-please-config.json").read_text())
@@ -268,6 +288,10 @@ class PackagingTest(unittest.TestCase):
         self.assertEqual(sum(method == "POST" for method, _, _ in calls), 2)
         self.assertEqual(calls[-1][0], "PATCH")
 
+        calls.clear()
+        with patch.object(release_module, "api_request", side_effect=api):
+            release_module.publish_release("example/app", "v1.2.3", 123, "test-token-which-is-long", Path("macos-release"), "example-macos")
+        self.assertTrue(all(method == "GET" for method, _, _ in calls), calls)
         release["draft"] = True
         calls.clear()
         with patch.object(release_module, "api_request", side_effect=api):
@@ -311,7 +335,7 @@ class PackagingTest(unittest.TestCase):
         )
         self.assertEqual(step["env"]["SPARKLE_EDDSA_PRIVATE_KEY"], "${{ secrets.SPARKLE_EDDSA_PRIVATE_KEY }}")
         build_step = subprocess.check_output(
-            ["yq", "-o=json", ".jobs.package.steps[] | select(.name == \"Build and verify\")", str(workflow)],
+            ["yq", "-o=json", ".jobs.package.steps[] | select(.name == \"Build package\")", str(workflow)],
             text=True,
         )
         self.assertNotIn("SPARKLE_EDDSA_PRIVATE_KEY", build_step)
@@ -321,7 +345,7 @@ class PackagingTest(unittest.TestCase):
     def test_native_workflows_prepare_metal_inside_the_existing_job(self):
         for path in (ROOT / ".github/workflows/build_macos_app.yaml",):
             output = subprocess.check_output(
-                ["yq", "-o=json", '.jobs[].steps[] | select(.name == "Ensure Metal toolchain")', str(path)],
+                ["yq", "-o=json", '.jobs.package.steps[] | select(.name == "Ensure Metal toolchain")', str(path)],
                 text=True,
             )
             step = json.loads(output)
@@ -370,27 +394,24 @@ class PackagingTest(unittest.TestCase):
         ))
         self.assertEqual(job["timeout-minutes"], "${{ inputs.runner-verifier && 360 || 20 }}")
 
-    def test_builds_have_no_intermediate_artifact_transfer_and_only_restore_verified_releases(self):
-        workflow = json.loads(subprocess.check_output(
-            ["yq", "-o=json", str(ROOT / ".github/workflows/build_macos_app.yaml")], text=True))
-        steps = workflow["jobs"]["package"]["steps"]
-        for step in steps:
-            action = step.get("uses", "")
-            self.assertFalse(any(name in action for name in (
-                "actions/upload-artifact", "actions/download-artifact")), action)
-        self.assertEqual(next(s for s in steps if s.get("name") == "Build and verify")["if"],
-                         "steps.restored.outputs.reused != 'true'")
-        self.assertEqual(sum(s.get("name") == "Build and verify" for s in steps), 1)
-        build = next(s for s in steps if s.get('name') == 'Build and verify')
-        self.assertEqual(build['uses'], 'jr200-labs/github-action-templates/actions/macos-package@master')
-        action = json.loads(subprocess.check_output(['yq', '-o=json', str(ROOT / 'actions/macos-package/action.yml')], text=True))
-        command = action['runs']['steps'][0]['run']
-        self.assertIn('$GITHUB_ACTION_PATH/../../consumers/files/.shared/package-macos-app.py', command)
-        self.assertNotIn('python3 .shared/', command)
-        self.assertEqual(workflow['jobs']['package']['timeout-minutes'], 360)
-        publish = next(s for s in steps if s.get("name") == "Verify and attach release assets")
-        self.assertEqual(publish["if"], "inputs.publish-release")
-        self.assertLess(next(i for i,s in enumerate(steps) if s.get("name") == "Build and verify"), steps.index(publish))
+    def test_publish_only_consumes_verified_artifacts_without_native_work(self):
+        workflow = json.loads(subprocess.check_output(['yq', '-o=json', str(ROOT / '.github/workflows/build_macos_app.yaml')], text=True))
+        verify, package, publish = (workflow['jobs'][key] for key in ('verify', 'package', 'publish'))
+        self.assertIn('verify', package['needs'])
+        self.assertEqual(publish['needs'], 'package')
+        self.assertEqual(publish['runs-on'], '${{ fromJSON(vars.RUNNER_PROFILES)[vars.RUNNER_PROFILE].default }}')
+        text = json.dumps(publish)
+        for forbidden in ('macos-package', 'mode": "identity', 'stage-identity', 'generate_appcast', 'xcodebuild', 'simulator', 'setup-uv'):
+            self.assertNotIn(forbidden, text)
+        self.assertIn('actions/download-artifact@v8', text)
+        self.assertIn('bundle-check', text)
+        self.assertNotIn('SPARKLE_EDDSA_PRIVATE_KEY', text)
+        self.assertEqual(publish['permissions'], {'contents': 'write'})
+        self.assertEqual(verify['permissions'], {'contents': 'read'})
+        self.assertEqual(package['permissions'], {'contents': 'read'})
+        self.assertIn('MACOS_VERIFICATION_EXECUTION_SECONDS', json.dumps(package))
+        self.assertIn('Run configured verification', json.dumps(verify))
+        self.assertNotIn('Run configured verification', json.dumps(package))
 
     def test_single_macos_workflow_routes_validation_and_publication(self):
         caller = ROOT / "consumers/workflows/macos-app.yaml"
@@ -398,8 +419,8 @@ class PackagingTest(unittest.TestCase):
         self.assertFalse((ROOT / "consumers/workflows/publish-macos-app.yaml").exists())
         self.assertEqual(workflow["on"]["repository_dispatch"]["types"], ["release-published"])
         self.assertIs(workflow["on"]["workflow_dispatch"]["inputs"]["publish-release"]["default"], False)
-        self.assertEqual(set(workflow["jobs"]), {"app", "publish"})
-        ci, release = workflow["jobs"]["app"], workflow["jobs"]["publish"]
+        self.assertEqual(set(workflow["jobs"]), {"app", "release"})
+        ci, release = workflow["jobs"]["app"], workflow["jobs"]["release"]
         self.assertEqual(ci["permissions"], {"contents": "read"})
         self.assertNotIn("secrets", ci)
         self.assertIs(ci["with"]["publish-release"], False)
