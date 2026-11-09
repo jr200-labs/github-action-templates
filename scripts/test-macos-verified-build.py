@@ -30,11 +30,12 @@ class VerifiedBuildTest(unittest.TestCase):
         Path('source').write_text('original')
         Path('.github').mkdir(exist_ok=True)
         Path('.github/macos-verification-inputs.json').write_text(json.dumps([sys.executable, '-c', 'print(\'{"compiler":"fixture-v1"}\')']))
+        Path('.github/macos-package-inputs.json').write_text(json.dumps([sys.executable, '-c', 'import json; print(json.dumps(dict(compiler="fixture-mac")))']))
         subprocess.run(['git', 'add', 'source', '.github'], check=True)
         subprocess.run(['git', '-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid',
                         'commit', '-qm', 'test: fixture'], check=True)
         subprocess.run(['git', 'tag', 'v1.2.3'], check=True)
-        self.config = dict(artifact='example-macos', app='dist/Example.app', build=['build'])
+        self.config = dict(artifact='example-macos', app='dist/Example.app', build=['build'], verify=['verify'])
         self.env = dict(GITHUB_EVENT_NAME='repository_dispatch', GITHUB_REPOSITORY='example/app')
         self.output, self.cache = self.root / 'output', self.root / 'cache'
         self.key = reuse.identity(self.config, 'v1.2.3', self.env)
@@ -105,20 +106,63 @@ class VerifiedBuildTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'regular'):
             reuse.restore(self.config, self.output, self.cache, self.key, 'v1.2.3')
 
-    def test_workflow_only_saves_successful_release_builds_before_publication(self):
-        workflow = json.loads(subprocess.check_output(['yq', '-o=json', str(ROOT / '.github/workflows/build_macos_app.yaml')], text=True))
+    def test_stage_receipt_binds_source_inputs_run_and_execution_budget(self):
+        env = dict(self.env, GITHUB_RUN_ID='123', REUSE_SPENT='45')
+        receipt = self.root / 'validation'
+        reuse.validation(self.config, receipt, self.key, 'v1.2.3', env, save=True)
+        reuse.validation(self.config, receipt, self.key, 'v1.2.3', env)
+        with patch.object(reuse, 'identity', side_effect=AssertionError('verification/simulator probe in packaging')):
+            reuse.validation(self.config, receipt, self.key, 'v1.2.3', env)
+        with patch.object(reuse, 'package_identity', return_value='different-toolchain'):
+            with self.assertRaisesRegex(ValueError, 'build inputs'):
+                reuse.validation(self.config, receipt, self.key, 'v1.2.3', env)
+        for changed in ({'GITHUB_RUN_ID':'999'}, {'REUSE_SPENT':'60'}):
+            with self.assertRaisesRegex(ValueError, 'receipt'):
+                reuse.validation(self.config, receipt, self.key, 'v1.2.3', dict(env, **changed))
+        for spent in ('-1', 'nan', '1200'):
+            with self.assertRaisesRegex(ValueError, 'execution'):
+                reuse.validation(self.config, receipt, self.key, 'v1.2.3', dict(env, REUSE_SPENT=spent))
+
+    def test_verification_receipt_can_cross_clean_job_workspaces(self):
+        env = dict(self.env, GITHUB_RUN_ID='123', REUSE_SPENT='30')
+        receipt = self.root / 'validation'
+        reuse.validation(self.config, receipt, self.key, 'v1.2.3', env, save=True)
+        second = self.root / 'second-checkout'
+        shutil.copytree(self.repo, second)
+        try:
+            os.chdir(second)
+            with patch.object(reuse, 'identity', side_effect=AssertionError('native/simulator verification repeated')):
+                reuse.validation(self.config, receipt, self.key, 'v1.2.3', env)
+        finally:
+            os.chdir(self.repo)
+
+    def test_publish_retry_checks_identical_bundle_without_running_any_native_command(self):
+        self.archive()
+        env = dict(self.env, GITHUB_RUN_ID='123')
+        source = reuse.command(['git','rev-parse','HEAD'])
+        reuse.bundle(self.config, self.output, self.key, 'v1.2.3', source, env, save=True)
+        original = (self.output / 'example-macos.zip').read_bytes()
+        with patch.object(reuse, 'identity', side_effect=AssertionError('native probe')), \
+             patch.object(reuse.subprocess, 'run', side_effect=AssertionError('build/test')):
+            with patch.object(reuse, 'command', return_value=source):
+                reuse.bundle(self.config, self.output, self.key, 'v1.2.3', source, env)
+                reuse.bundle(self.config, self.output, self.key, 'v1.2.3', source, env)
+        self.assertEqual((self.output / 'example-macos.zip').read_bytes(), original)
+        for changed in ({'GITHUB_RUN_ID':'999'}, {'GITHUB_REPOSITORY':'example/other'}):
+            with self.assertRaisesRegex(ValueError, 'receipt'):
+                reuse.bundle(self.config, self.output, self.key, 'v1.2.3', source, dict(env, **changed))
+        (self.output / 'example-macos.zip').write_bytes(b'changed')
+        with self.assertRaisesRegex(ValueError, 'checksum'):
+            reuse.bundle(self.config, self.output, self.key, 'v1.2.3', source, env)
+
+    def test_workflow_saves_package_before_separate_publish_job(self):
+        workflow = json.loads(subprocess.check_output(['yq','-o=json',str(ROOT / '.github/workflows/build_macos_app.yaml')], text=True))
         steps = workflow['jobs']['package']['steps']
-        by_name = {s.get('name'): s for s in steps}
-        restore = by_name['Restore exact verified release archive']
-        self.assertIn('inputs.publish-release', restore['if'])
-        self.assertNotIn('restore-keys', restore['with'])
-        save = by_name['Save verified release before publication']
-        self.assertIn('inputs.publish-release', save['if'])
-        self.assertNotIn('always()', save['if'])
-        self.assertLess(steps.index(by_name['Build and verify']), steps.index(save))
-        self.assertLess(steps.index(save), steps.index(by_name['Generate signed Sparkle appcast']))
-        self.assertLess(steps.index(save), steps.index(by_name['Verify and attach release assets']))
-        self.assertNotIn('SPARKLE_EDDSA_PRIVATE_KEY', json.dumps(restore))
+        by_name = {s.get('name'):s for s in steps}
+        self.assertLess(steps.index(by_name['Build package']), steps.index(by_name['Save verified release before publication']))
+        self.assertLess(steps.index(by_name['Seal verified publication bundle']), steps.index(by_name['Retain immutable publication bundle']))
+        self.assertEqual(workflow['jobs']['publish']['needs'], 'package')
+        self.assertNotIn('macos-package', json.dumps(workflow['jobs']['publish']))
 
 
 if __name__ == '__main__':

@@ -21,13 +21,13 @@ committed configuration; no repository-local override is needed.
 
 The single `macos-app` workflow validates ordinary code PRs and publishes releases.
 Release Please version-bump PRs skip packaging; the release dispatch builds and
-tests the tagged source once, then signs the appcast and uploads release assets
-from that same job. Manual runs publish when `publish-release` is true.
+tests the tagged source in verification, packages/signs the appcast on macOS,
+then publishes the immutable bundle from a separate job on the default fleet. Manual runs publish when `publish-release` is true.
 Shared sync removes the retired `publish-macos-app` caller on upgrade.
 
 The reusable workflow runs the provider's `macos-package` action so execution
 budget accounting matches the workflow even before a consumer refreshes its
-synced helper. Builds have the same 1200-second execution budget. Cooperative
+synced helper. Verification and packaging share the same 1200-second execution budget. Cooperative
 native-capacity waits use `MACOS_BUILD_ADMISSION_FD`: the coordinator writes
 9-byte `!cd` records containing `W` (waiting) or `R` (resumed) and a monotonic
 timestamp. Only these waiting intervals pause the execution timer.
@@ -42,9 +42,9 @@ not resume after that process ends. Existing test and cleanup budgets remain
 unchanged.
 
 Repositories may opt into [verified release archive reuse](docs/macos-release-reuse.md).
-An exact match promotes the original full-verified ZIP on publication retries;
-PR validation stays fresh, and changed source or toolchain inputs require full
-verification. This is an Actions cache, separate from workflow artifact storage.
+A failed publish job retries from its five-day workflow artifact without running
+verification, packaging or native probes. Each fresh pipeline verifies its source;
+packaging can reuse an exact trusted cached ZIP after that verification passes.
 
 ## Merge Policy
 
@@ -184,8 +184,8 @@ workflow runs it on the configured default fleet before allocating a macOS job.
 The optional `setup_uv` setting applies to both jobs. Failure prevents native
 allocation; successful preflight passes the checkout SHA as
 `MACOS_PORTABLE_COMMIT`. A consumer may omit repeated portable checks only after
-validating that SHA against its own checkout. Native/frontend build outputs are
-not transferred between jobs. Consumers without `portable` keep their normal
+validating that SHA against its own checkout. Verification receipts and immutable release archives cross jobs as checked
+workflow artifacts; mutable build work stays on the native runner. Consumers without `portable` keep their normal
 build command and receive an empty verification SHA.
 
 Provisioned full Apple verifiers own their execution deadlines after admission.

@@ -2,18 +2,30 @@ name: Reuse a verified macOS release archive
 description: Exact-input release reuse; PR validation never reads or writes this cache
 inputs:
   mode:
-    description: identity, restore or save
+    description: stage-identity, verify-save, verify-check, restore, save, bundle-save or bundle-check
     required: true
   config:
     description: Repository app configuration
     default: .github/macos-app.json
   release-tag:
-    description: Exact release tag
-    required: true
+    description: Exact release tag, empty for PR verification
+    default: ''
   key:
     description: Exact verification input key
     default: ''
+  spent:
+    description: Verification execution seconds consumed from the shared budget
+    default: '0'
+  source:
+    description: Verified source commit for final publication
+    default: ''
+  appcast:
+    description: Optional packaged appcast filename
+    default: ''
 outputs:
+  source:
+    description: Checked source commit
+    value: ${{ steps.reuse.outputs.source }}
   key:
     description: Content and toolchain identity
     value: ${{ steps.reuse.outputs.key }}
@@ -33,5 +45,8 @@ runs:
         REUSE_CONFIG: ${{ inputs.config }}
         REUSE_TAG: ${{ inputs.release-tag }}
         REUSE_KEY: ${{ inputs.key }}
+        REUSE_SPENT: ${{ inputs.spent }}
+        REUSE_SOURCE: ${{ inputs.source }}
+        REUSE_APPCAST: ${{ inputs.appcast }}
         UV_MANAGED_PYTHON: 'true'
       run: python3 "$GITHUB_ACTION_PATH/reuse.py"

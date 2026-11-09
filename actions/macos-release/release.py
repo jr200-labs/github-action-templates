@@ -65,10 +65,10 @@ def api_request(repository, token, path, method="GET", body=None, upload=False):
         raise RuntimeError("GitHub release API returned invalid JSON") from error
 
 
-def checked_release(release, repository, release_tag, release_id):
+def checked_release(release, repository, release_tag, release_id, *, require_draft=True):
     if not isinstance(release, dict) or release.get("id") != release_id or release.get("tag_name") != release_tag:
         raise ValueError("GitHub returned a different release identity")
-    if release.get("draft") is not True:
+    if release.get("draft") is not True and (require_draft or release.get("draft") is not False):
         raise ValueError(f"{release_tag} must remain a draft until its verified assets are attached")
     expected = f"https://uploads.github.com/repos/{repository}/releases/{release_id}/assets"
     upload_url = release.get("upload_url")
@@ -141,7 +141,7 @@ def publish_release(repository, release_tag, release_id, token, output, artifact
     release_path = f"/repos/{repository}/releases/{release_id}"
 
     def load():
-        return checked_release(api_request(repository, token, release_path), repository, release_tag, release_id)
+        return checked_release(api_request(repository, token, release_path), repository, release_tag, release_id, require_draft=False)
 
     release = load()
     unexpected = sorted({asset["name"] for asset in release["assets"] if asset["name"] not in names})
@@ -156,6 +156,8 @@ def publish_release(repository, release_tag, release_id, token, output, artifact
             raise ValueError(f"{name} already exists but does not match the verified local file")
         if matches:
             raise ValueError(f"{name} appears more than once on the draft release")
+        if release["draft"] is not True:
+            raise ValueError("Published release is missing a verified asset; refusing to modify it")
         upload_path = f"/repos/{repository}/releases/{release_id}/assets?name={quote(name, safe='')}"
         api_request(repository, token, upload_path, method="POST", body=files[name].read_bytes(), upload=True)
 
@@ -166,6 +168,8 @@ def publish_release(repository, release_tag, release_id, token, output, artifact
         for name in names
     ):
         raise ValueError("Draft release assets do not exactly match the verified publication set")
+    if release["draft"] is False:
+        return  # A prior publish may have succeeded before its response was lost.
     published = api_request(repository, token, release_path, method="PATCH",
                             body={"draft": False, "make_latest": "true"})
     if (not isinstance(published, dict) or published.get("id") != release_id or

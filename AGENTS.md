@@ -83,71 +83,25 @@ Current groups:
 
 ## macOS app release bundles
 
-For an installable macOS app, opt into `macos-app` and run `sync-shared` to install
-the canonical caller and `.shared/package-macos-app.py`. Keep app-specific build
-and test steps in a repository script, configured by `.github/macos-app.json`:
+Before changing macOS verification, packaging, artifact promotion or publication,
+read [the release contract](docs/macos-release-reuse.md). Keep verification,
+packaging and publication as separate jobs. Publication consumes the immutable
+bundle and its checked provenance; retries of the publish job use the same bytes.
 
-```json
-{
-  "app": "dist/Example.app",
-  "artifact": "example-macos",
-  "build": ["bash", "scripts/build-app.sh"],
-  "setup_uv": false,
-  "sparkle": {
-    "appcast": "appcast.xml",
-    "generate": ["bash", "scripts/generate-appcast.sh"]
-  },
-  "tag_prefix": "v"
-}
-```
+Consumer `.github/macos-app.json` supplies `app`, `artifact`, and `build` argv;
+use a separate `verify` argv for tests. Separate verifiers declare native inputs
+in `.github/macos-verification-inputs.json` and simulator-free build inputs in
+`.github/macos-package-inputs.json`. Consumer commands own signing policy; the
+provider validates version/codesign and shares a 1200-second execution budget
+between verification and packaging, excluding cooperative queue time.
 
-`app`, `artifact`, and `build` are required; optional `setup_uv` defaults to false
-and `tag_prefix` to `v`. `build` is an argv array, not an interpolated shell
-expression. It must run the repository's tests and create a signed bundle at
-`app` within 20 minutes. Fresh app/output paths are required; existing artifacts
-are never deleted or overwritten. The shared script requires Python 3.9+.
-
-The optional `sparkle` block adds a signed appcast to release publications.
-`generate` is an argv array for a repository-owned command. On a release only,
-the shared workflow passes it `--archive`, `--output`, and
-`--download-url-prefix` arguments and exposes `SPARKLE_EDDSA_PRIVATE_KEY`. The
-command must write the new nonempty XML file named by `appcast`. The canonical
-caller forwards the repository secret under that fixed name. Pull requests and
-manual build-only runs never receive the signing key or invoke the generator.
-The `macos-app` group installs a pinned, checksum-verified default generator at
-`.shared/generate-sparkle-appcast.py`; new macOS projects should configure that
-command and treat `SPARKLE_EDDSA_PRIVATE_KEY` plus the matching tracked
-`SUPublicEDKey` as required release setup. Internal projects may also opt into
-the `sparkle-development` group, which synchronizes the canonical shared public
-key into `.sparkle-public-key`; consumer builds embed that committed copy so
-historical tags remain reproducible. Its private half is an organization-level
-secret limited to selected repositories. The helper validates the exported
-Sparkle private key's base64 encoding and decoded length before invoking Sparkle.
-A repository may keep a project-owned
-generator when it needs different feed behavior.
-
-The reusable workflow accepts config path, checkout ref, release tag, immutable
-GitHub release ID, publish flag, and a macOS runner input. Canonical callers use
-configured runner profiles. The single `macos-app` caller handles PR validation,
-release dispatches and manual runs. Ordinary PRs and manual validation build and
-verify without uploading an archive. Bot-owned Release Please branches skip this
-validation job; the release event builds and tests their tagged source once.
-Manual runs enable `publish-release` and provide a release tag to publish. For a `macos-app` consumer, shared config
-synchronization makes Release Please create a draft and force the tag. The
-`release-published` lane builds that exact tag, verifies its app version, creates
-the release archive and checksum in the same job, resolves and addresses the draft
-by immutable release ID, attaches the ZIP, checksum, and configured signed appcast,
-verifies the complete uploaded asset set and its SHA-256 digests, and only then
-publishes the release. A failure leaves the release as an inspectable draft.
-Publishing never replaces existing assets. Release packaging and publication stay
-in one native job so the archive is uploaded directly from its build workspace
-instead of crossing the
-workflow artifact service. The mutually exclusive validation and publication
-lanes call the same reusable build job with `publish-release` false or true.
-Validation grants contents read and passes no signing secret; publication grants
-contents write and forwards the configured Sparkle key.
-The script verifies signatures but does not provide signing identities, Developer
-ID signing or notarization. Repository scripts own signing policy and credentials.
+Canonical `macos-app` callers use configured runner profiles and create draft,
+force-tagged releases. Native jobs have contents-read permission. Sparkle signing
+is restricted to release packaging; the default generator is installed by shared
+sync. Optional `sparkle-development` supplies a committed public key, with its
+private counterpart kept in the selected-repository organization secret.
+Publication alone has contents-write permission and addresses the resolved
+immutable release ID. A mismatch leaves the draft inspectable.
 
 ## Package access drift
 

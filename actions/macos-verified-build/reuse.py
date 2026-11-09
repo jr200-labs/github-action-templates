@@ -5,6 +5,7 @@ PR cache writer, mutable host cache or saved generic test verdict is accepted.
 """
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
 import platform
@@ -30,29 +31,31 @@ def command(argv):
     return subprocess.check_output(argv, text=True, timeout=60).strip()
 
 
-def identity(config, tag, environment):
-    if environment.get('GITHUB_EVENT_NAME') not in ('repository_dispatch', 'workflow_dispatch'):
+def identity(config, tag, environment, *, stage=False):
+    if not stage and environment.get('GITHUB_EVENT_NAME') not in ('repository_dispatch', 'workflow_dispatch'):
         raise ValueError('Verified release reuse requires a trusted release event')
     if not re.fullmatch(r'[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+', environment.get('GITHUB_REPOSITORY', '')):
         raise ValueError('Repository identity is required')
-    if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._-]*', tag):
+    if (tag or not stage) and not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._-]*', tag):
         raise ValueError('Exact release tag is required')
     declaration = Path('.github/macos-verification-inputs.json')
-    if not declaration.exists():
+    if not declaration.exists() and not stage:
         return None
-    if declaration.is_symlink() or declaration.stat().st_size > 65536:
+    if stage and config.get('verify') and not declaration.exists():
+        raise ValueError('Separate verification requires declared toolchain inputs')
+    if declaration.is_symlink() or declaration.exists() and declaration.stat().st_size > 65536:
         raise ValueError('Invalid verification input declaration')
-    inputs = json.loads(declaration.read_text())
-    if not isinstance(inputs, list) or not inputs or any(not isinstance(arg, str) or not arg or '\0' in arg for arg in inputs):
+    inputs = json.loads(declaration.read_text()) if declaration.exists() else None
+    if inputs is not None and (not isinstance(inputs, list) or not inputs or any(not isinstance(arg, str) or not arg or '\0' in arg for arg in inputs)):
         raise ValueError('Verification inputs must be an argv array')
     source = command(['git', 'rev-parse', 'HEAD'])
-    if source != command(['git', 'rev-parse', f'refs/tags/{tag}^{{commit}}']):
+    if tag and source != command(['git', 'rev-parse', f'refs/tags/{tag}^{{commit}}']):
         raise ValueError('Checkout must match the exact release tag')
     if command(['git', 'status', '--porcelain', '--untracked-files=normal']):
         raise ValueError('Release reuse requires a clean source tree')
     # The repository declares actual runtime, compiler, SDK, simulator and signing
     # inputs; locked dependencies and the generator itself are bound by source.
-    declared = json.loads(command(inputs))
+    declared = json.loads(command(inputs)) if inputs is not None else {"declared": False}
     if not isinstance(declared, dict) or not declared:
         raise ValueError('Verification input command must return a nonempty JSON object')
     if command(['git', 'status', '--porcelain', '--untracked-files=normal']):
@@ -142,6 +145,81 @@ def restore(config, output, cache, key, tag):
     return True
 
 
+def package_identity(config):
+    declaration = Path('.github/macos-package-inputs.json')
+    if not declaration.exists():
+        if config.get('verify'):
+            raise ValueError('Separate verification requires declared packaging inputs')
+        return None
+    if declaration.is_symlink() or declaration.stat().st_size > 65536:
+        raise ValueError('Invalid packaging input declaration')
+    argv = json.loads(declaration.read_text())
+    if not isinstance(argv, list) or not argv or any(not isinstance(arg, str) or not arg or '\0' in arg for arg in argv):
+        raise ValueError('Packaging inputs must be an argv array')
+    value = json.loads(command(argv))
+    if not isinstance(value, dict) or not value:
+        raise ValueError('Packaging inputs must be a nonempty JSON object')
+    if command(['git', 'status', '--porcelain', '--untracked-files=normal']):
+        raise ValueError('Packaging probe changed the source tree')
+    return hashlib.sha256(json.dumps(value, sort_keys=True).encode()).hexdigest()
+
+
+def validation(config, directory, key, tag, environment, *, save=False):
+    # Native/simulator probes run only in verification. Packaging checks its
+    # own compiler/runtime declaration and the upstream receipt, never a device.
+    if save and identity(config, tag, environment, stage=True) != key:
+        raise ValueError('Verification inputs changed during verification')
+    source = command(['git', 'rev-parse', 'HEAD'])
+    if command(['git', 'status', '--porcelain', '--untracked-files=normal']):
+        raise ValueError('Verification handoff requires a clean source tree')
+    spent = float(environment.get('REUSE_SPENT', '0'))
+    if not math.isfinite(spent) or not 0 <= spent < 1200:
+        raise ValueError('Invalid verification execution time')
+    expected = dict(schema=1, key=key, repository=environment['GITHUB_REPOSITORY'], source=source,
+                    tag=tag, verification_run=environment['GITHUB_RUN_ID'], execution_seconds=spent,
+                    package_inputs=package_identity(config))
+    if save:
+        directory.mkdir(parents=True, exist_ok=False)
+        (directory / 'validation.json').write_text(json.dumps(expected))
+    else:
+        path = directory / 'validation.json'
+        if path.is_symlink() or not path.is_file() or path.stat().st_size > 4096:
+            raise ValueError('Missing bounded verification receipt')
+        if json.loads(path.read_text()) != expected:
+            raise ValueError('Verification receipt does not match this source/run/build inputs')
+
+
+def bundle(config, directory, key, tag, source, environment, *, save=False, appcast=''):
+    """Seal/check final bytes without native tools, probing, rebuilding or tests."""
+    expected = dict(schema=1, key=key, repository=environment['GITHUB_REPOSITORY'], source=source,
+                    tag=tag, verification_run=environment['GITHUB_RUN_ID'])
+    if not re.fullmatch(r'macos-verified-v1-[a-f0-9]{64}', key) or not re.fullmatch(r'[a-f0-9]{40}', source):
+        raise ValueError('Invalid publication identity')
+    if command(['git', 'rev-parse', 'HEAD']) != source:
+        raise ValueError('Publication checkout differs from verified source')
+    files = list(names(config))
+    if appcast:
+        if appcast != config.get('sparkle', {}).get('appcast') or Path(appcast).name != appcast:
+            raise ValueError('Unexpected appcast identity')
+        files.append(appcast)
+    receipt = directory / 'publication.json'
+    if directory.is_symlink() or set(path.name for path in directory.iterdir()) != set(files) | (set() if save else {'publication.json'}):
+        raise ValueError('Unexpected publication files')
+    for name in files:
+        path = directory / name
+        if path.is_symlink() or not path.is_file() or not path.stat().st_size:
+            raise ValueError('Publication requires regular nonempty files')
+    sha = digest(directory / files[0])
+    if (directory / files[1]).read_text() != f'{sha}  {files[0]}\n':
+        raise ValueError('Publication archive checksum mismatch')
+    expected['files'] = {name: digest(directory / name) for name in files}
+    if save:
+        receipt.write_text(json.dumps(expected))
+    elif (receipt.is_symlink() or not receipt.is_file() or receipt.stat().st_size > 4096
+          or json.loads(receipt.read_text()) != expected):
+        raise ValueError('Publication receipt does not match verified bytes/source/run')
+
+
 def main():
     config = json.loads(Path(os.environ['REUSE_CONFIG']).read_text())
     tag = os.environ['REUSE_TAG']
@@ -149,15 +227,22 @@ def main():
     root = Path(os.environ['RUNNER_TEMP'])
     cache, output = root / 'macos-verified-release', root / 'macos-release'
     result = {}
-    if mode == 'identity':
+    if mode == 'stage-identity':
+        result = dict(key=identity(config, tag, os.environ, stage=True), source=command(['git', 'rev-parse', 'HEAD']), enabled=str(Path('.github/macos-verification-inputs.json').exists()).lower())
+    elif mode in ('verify-save', 'verify-check'):
+        validation(config, root / 'macos-verification', os.environ['REUSE_KEY'], tag, os.environ, save=mode == 'verify-save')
+    elif mode in ('bundle-save', 'bundle-check'):
+        if mode == 'bundle-save':
+            validation(config, root / 'macos-verification', os.environ['REUSE_KEY'], tag, os.environ)
+        bundle(config, output, os.environ['REUSE_KEY'], tag, os.environ['REUSE_SOURCE'], os.environ, save=mode == 'bundle-save', appcast=os.environ.get('REUSE_APPCAST', ''))
+    elif mode == 'identity':
         key = identity(config, tag, os.environ)
         result = dict(key=key or '', enabled=str(key is not None).lower())
     elif mode == 'restore':
         result['reused'] = str(restore(config, output, cache, os.environ['REUSE_KEY'], tag)).lower()
         print('Verified release archive reused=' + result['reused'])
     elif mode == 'save':
-        if identity(config, tag, os.environ) != os.environ['REUSE_KEY']:
-            raise ValueError('Verification inputs changed during the release build')
+        validation(config, root / 'macos-verification', os.environ['REUSE_KEY'], tag, os.environ)
         save(config, output, cache, os.environ['REUSE_KEY'], tag, os.environ['GITHUB_RUN_ID'])
     else:
         raise ValueError('Unknown verified release operation')
