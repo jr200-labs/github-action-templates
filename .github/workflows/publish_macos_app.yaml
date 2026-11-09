@@ -1,40 +1,192 @@
 name: template-publish-macos-app
-
 on:
   workflow_call:
+    outputs:
+      artifact:
+        description: Published artifact basename
+        value: ${{ jobs.resolve.outputs.artifact }}
+      appcast:
+        description: Published appcast filename
+        value: ${{ jobs.resolve.outputs.appcast }}
     inputs:
       config-path:
-        description: Repository-owned app packaging JSON
         type: string
         default: .github/macos-app.json
       release-tag:
-        description: Existing draft GitHub Release tag to build, complete and publish
         type: string
         required: true
       release-id:
-        description: Immutable ID of the draft GitHub Release
         type: string
-        default: ''
+        default: ""
+      generate-appcast:
+        type: boolean
+        default: true
       runner:
-        description: macOS build runner label
+        description: macOS runner used only for Sparkle signing
         type: string
-        default: ''
+        default: ""
     secrets:
       SPARKLE_EDDSA_PRIVATE_KEY:
-        description: Optional private key used by a configured Sparkle appcast generator
         required: false
-
 jobs:
-  package:
+  resolve:
+    runs-on: ${{ fromJSON(vars.RUNNER_PROFILES)[vars.RUNNER_PROFILE].default }}
+    timeout-minutes: 5
+    outputs:
+      artifact-id: ${{ steps.candidate.outputs.artifact-id }}
+      producer-run: ${{ steps.candidate.outputs.producer-run }}
+      release-id: ${{ steps.release.outputs.release-id }}
+      artifact: ${{ steps.config.outputs.artifact }}
+      appcast: ${{ inputs.generate-appcast && steps.config.outputs.appcast || '' }}
+      setup-uv: ${{ steps.config.outputs.setup_uv }}
+      bundle-name: ${{ format('macos-promoted-{0}-{1}', github.run_id, github.run_attempt) }}
+      archive-sha256: ${{ steps.promoted.outputs.archive-sha256 }}
+      checksum-sha256: ${{ steps.promoted.outputs.checksum-sha256 }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: refs/tags/${{ inputs.release-tag }}
+          persist-credentials: false
+      - name: Read publication configuration
+        id: config
+        env:
+          APP_CONFIG: ${{ inputs.config-path }}
+        run: python3 .shared/package-macos-app.py metadata --config "$APP_CONFIG" >> "$GITHUB_OUTPUT"
+      - name: Resolve immutable draft release identity
+        id: release
+        uses: jr200-labs/github-action-templates/actions/macos-release@master
+        with:
+          mode: resolve
+          repository: ${{ github.repository }}
+          token: ${{ github.token }}
+          release-tag: ${{ inputs.release-tag }}
+          release-id: ${{ inputs.release-id }}
+      - name: Resolve successful full-verification artifact
+        id: candidate
+        uses: jr200-labs/github-action-templates/actions/macos-release-candidate@master
+        with:
+          mode: resolve
+          config: ${{ inputs.config-path }}
+          release-tag: ${{ inputs.release-tag }}
+          token: ${{ github.token }}
+      - name: Download fully verified candidate
+        uses: actions/download-artifact@v8
+        with:
+          artifact-ids: ${{ steps.candidate.outputs.artifact-id }}
+          run-id: ${{ steps.candidate.outputs.producer-run }}
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/macos-candidate
+          merge-multiple: true
+      - name: Validate and promote verified bytes
+        id: promoted
+        uses: jr200-labs/github-action-templates/actions/macos-release-candidate@master
+        with:
+          mode: promote
+          config: ${{ inputs.config-path }}
+          release-tag: ${{ inputs.release-tag }}
+          artifact-id: ${{ steps.candidate.outputs.artifact-id }}
+          token: ${{ github.token }}
+      - name: Retain promoted publication input
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ format('macos-promoted-{0}-{1}', github.run_id, github.run_attempt) }}
+          path: ${{ runner.temp }}/macos-release
+          if-no-files-found: error
+          retention-days: 5
+          overwrite: false
+  sign:
+    needs: resolve
+    if: needs.resolve.outputs.appcast != ''
+    runs-on: ${{ inputs.runner || fromJSON(vars.RUNNER_PROFILES)[vars.RUNNER_PROFILE].macos }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: refs/tags/${{ inputs.release-tag }}
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@v10.3.3
+        if: needs.resolve.outputs.setup-uv == 'true'
+      - name: Download promoted publication input
+        uses: actions/download-artifact@v8
+        with:
+          name: ${{ needs.resolve.outputs.bundle-name }}
+          path: ${{ runner.temp }}/macos-release
+      - name: Generate signed Sparkle appcast
+        env:
+          APP_CONFIG: ${{ inputs.config-path }}
+          RELEASE_TAG: ${{ inputs.release-tag }}
+          SPARKLE_EDDSA_PRIVATE_KEY: ${{ secrets.SPARKLE_EDDSA_PRIVATE_KEY }}
+        run: |
+          test -n "$SPARKLE_EDDSA_PRIVATE_KEY"
+          python3 .shared/package-macos-app.py appcast --config "$APP_CONFIG" --release-tag "$RELEASE_TAG" --repository "$GITHUB_REPOSITORY" --output "$RUNNER_TEMP/macos-release"
+      - name: Seal publication bytes
+        uses: jr200-labs/github-action-templates/actions/macos-release-candidate@master
+        with:
+          mode: seal-publication
+          config: ${{ inputs.config-path }}
+          release-tag: ${{ inputs.release-tag }}
+          appcast: ${{ needs.resolve.outputs.appcast }}
+      - name: Retain signed publication bundle
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ format('{0}-signed-{1}', needs.resolve.outputs.bundle-name, github.run_attempt) }}
+          path: ${{ runner.temp }}/macos-release
+          if-no-files-found: error
+          retention-days: 5
+          overwrite: false
     permissions:
-      contents: write
-    uses: jr200-labs/github-action-templates/.github/workflows/build_macos_app.yaml@master
-    with:
-      config-path: ${{ inputs.config-path }}
-      release-tag: ${{ inputs.release-tag }}
-      release-id: ${{ inputs.release-id }}
-      generate-appcast: true
-      publish-release: true
-      runner: ${{ inputs.runner }}
-    secrets:
-      SPARKLE_EDDSA_PRIVATE_KEY: ${{ secrets.SPARKLE_EDDSA_PRIVATE_KEY }}
+      contents: read
+    outputs:
+      bundle-name: ${{ format('{0}-signed-{1}', needs.resolve.outputs.bundle-name, github.run_attempt) }}
+  publish:
+    needs:
+      - resolve
+      - sign
+    if: always() && needs.resolve.result == 'success' && (needs.sign.result == 'success' || needs.sign.result == 'skipped')
+    runs-on: ${{ fromJSON(vars.RUNNER_PROFILES)[vars.RUNNER_PROFILE].default }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: refs/tags/${{ inputs.release-tag }}
+          persist-credentials: false
+      - name: Download signed publication bundle
+        if: needs.sign.result == 'success'
+        uses: actions/download-artifact@v8
+        with:
+          name: ${{ needs.sign.outputs.bundle-name }}
+          path: ${{ runner.temp }}/macos-release
+      - name: Download unsigned verified candidate
+        if: needs.sign.result == 'skipped'
+        uses: actions/download-artifact@v8
+        with:
+          name: ${{ needs.resolve.outputs.bundle-name }}
+          path: ${{ runner.temp }}/macos-release
+      - name: Seal unsigned publication bytes
+        if: needs.sign.result == 'skipped'
+        uses: jr200-labs/github-action-templates/actions/macos-release-candidate@master
+        with:
+          mode: seal-publication
+          config: ${{ inputs.config-path }}
+          release-tag: ${{ inputs.release-tag }}
+      - name: Check publication provenance and bytes
+        uses: jr200-labs/github-action-templates/actions/macos-release-candidate@master
+        with:
+          mode: check-publication
+          config: ${{ inputs.config-path }}
+          release-tag: ${{ inputs.release-tag }}
+          appcast: ${{ needs.resolve.outputs.appcast }}
+          token: ${{ github.token }}
+          archive-sha256: ${{ needs.resolve.outputs.archive-sha256 }}
+          checksum-sha256: ${{ needs.resolve.outputs.checksum-sha256 }}
+      - name: Verify and attach release assets
+        uses: jr200-labs/github-action-templates/actions/macos-release@master
+        with:
+          mode: publish
+          repository: ${{ github.repository }}
+          token: ${{ github.token }}
+          release-tag: ${{ inputs.release-tag }}
+          release-id: ${{ needs.resolve.outputs.release-id }}
+          output: ${{ runner.temp }}/macos-release
+          artifact: ${{ needs.resolve.outputs.artifact }}
+          appcast: ${{ needs.resolve.outputs.appcast }}

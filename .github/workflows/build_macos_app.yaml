@@ -4,10 +4,10 @@ on:
     outputs:
       artifact:
         description: Configured release artifact name
-        value: ${{ jobs.package.outputs.artifact }}
+        value: ${{ jobs.package.outputs.artifact || jobs.release.outputs.artifact }}
       appcast:
         description: Optional appcast filename
-        value: ${{ jobs.package.outputs.appcast }}
+        value: ${{ jobs.release.outputs.appcast }}
     inputs:
       config-path:
         description: Repository-owned app packaging JSON
@@ -18,7 +18,7 @@ on:
         type: string
         default: ""
       release-tag:
-        description: Existing GitHub Release tag; its source is built exactly
+        description: Exact tag for publication or explicit release preparation
         type: string
         default: ""
       release-id:
@@ -30,7 +30,7 @@ on:
         type: boolean
         default: false
       publish-release:
-        description: Publish the verified immutable package after verification and packaging succeed
+        description: Promote an existing verified artifact without rebuilding or retesting
         type: boolean
         default: false
       runner:
@@ -42,8 +42,19 @@ on:
         description: Optional private key used by a configured Sparkle appcast generator
         required: false
 jobs:
+  release:
+    if: inputs.publish-release
+    uses: jr200-labs/github-action-templates/.github/workflows/publish_macos_app.yaml@master
+    with:
+      config-path: ${{ inputs.config-path }}
+      release-tag: ${{ inputs.release-tag }}
+      release-id: ${{ inputs.release-id }}
+      generate-appcast: ${{ inputs.generate-appcast }}
+      runner: ${{ inputs.runner }}
+    secrets:
+      SPARKLE_EDDSA_PRIVATE_KEY: ${{ secrets.SPARKLE_EDDSA_PRIVATE_KEY }}
   portable:
-    if: github.event_name != 'pull_request' || !(github.event.pull_request.user.type == 'Bot' && github.event.pull_request.head.repo.full_name == github.repository && startsWith(github.head_ref, 'release-please--branches--'))
+    if: ${{ !inputs.publish-release }}
     runs-on: ${{ fromJSON(vars.RUNNER_PROFILES)[vars.RUNNER_PROFILE].default }}
     timeout-minutes: 20
     permissions:
@@ -53,7 +64,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ inputs.release-tag != '' && format('refs/tags/{0}', inputs.release-tag) || inputs.checkout-ref }}
+          ref: ${{ inputs.release-tag != '' && format('refs/tags/{0}', inputs.release-tag) || (github.event_name == 'pull_request' && (github.event.pull_request.user.type == 'Bot' && github.event.pull_request.head.repo.full_name == github.repository && startsWith(github.head_ref, 'release-please--branches--')) && github.event.pull_request.head.sha) || inputs.checkout-ref }}
           persist-credentials: false
       - name: Read portable configuration
         id: config
@@ -75,20 +86,19 @@ jobs:
           echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
   verify:
     needs: portable
-    if: github.event_name != 'pull_request' || !(github.event.pull_request.user.type == 'Bot' && github.event.pull_request.head.repo.full_name == github.repository && startsWith(github.head_ref, 'release-please--branches--'))
+    if: ${{ !inputs.publish-release }}
     runs-on: ${{ inputs.runner || fromJSON(vars.RUNNER_PROFILES)[vars.RUNNER_PROFILE].macos }}
     timeout-minutes: 360
     permissions:
       contents: read
     outputs:
       key: ${{ steps.verification.outputs.key }}
-      enabled: ${{ steps.verification.outputs.enabled }}
       source: ${{ steps.verification.outputs.source }}
       execution-seconds: ${{ steps.checks.outputs.execution-seconds }}
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ inputs.release-tag != '' && format('refs/tags/{0}', inputs.release-tag) || inputs.checkout-ref }}
+          ref: ${{ inputs.release-tag != '' && format('refs/tags/{0}', inputs.release-tag) || (github.event_name == 'pull_request' && (github.event.pull_request.user.type == 'Bot' && github.event.pull_request.head.repo.full_name == github.repository && startsWith(github.head_ref, 'release-please--branches--')) && github.event.pull_request.head.sha) || inputs.checkout-ref }}
           persist-credentials: false
       - name: Ensure Metal toolchain
         shell: bash
@@ -133,7 +143,7 @@ jobs:
         with:
           config: ${{ inputs.config-path }}
         env:
-          MACOS_PACKAGE_RELEASE_ASSETS: ${{ inputs.publish-release && 'true' || 'false' }}
+          MACOS_PACKAGE_RELEASE_ASSETS: ${{ (github.event_name == 'workflow_dispatch' || (github.event.pull_request.user.type == 'Bot' && github.event.pull_request.head.repo.full_name == github.repository && startsWith(github.head_ref, 'release-please--branches--'))) && 'true' || 'false' }}
           MACOS_PORTABLE_COMMIT: ${{ needs.portable.outputs.commit }}
           UV_MANAGED_PYTHON: "true"
       - name: Record successful verification
@@ -156,7 +166,7 @@ jobs:
     needs:
       - portable
       - verify
-    if: github.event_name != 'pull_request' || !(github.event.pull_request.user.type == 'Bot' && github.event.pull_request.head.repo.full_name == github.repository && startsWith(github.head_ref, 'release-please--branches--'))
+    if: ${{ !inputs.publish-release }}
     runs-on: ${{ inputs.runner || fromJSON(vars.RUNNER_PROFILES)[vars.RUNNER_PROFILE].macos }}
     timeout-minutes: 360
     permissions:
@@ -165,11 +175,10 @@ jobs:
       key: ${{ needs.verify.outputs.key }}
       source: ${{ needs.verify.outputs.source }}
       artifact: ${{ steps.config.outputs.artifact }}
-      appcast: ${{ inputs.generate-appcast && steps.config.outputs.appcast || '' }}
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ inputs.release-tag != '' && format('refs/tags/{0}', inputs.release-tag) || inputs.checkout-ref }}
+          ref: ${{ inputs.release-tag != '' && format('refs/tags/{0}', inputs.release-tag) || (github.event_name == 'pull_request' && (github.event.pull_request.user.type == 'Bot' && github.event.pull_request.head.repo.full_name == github.repository && startsWith(github.head_ref, 'release-please--branches--')) && github.event.pull_request.head.sha) || inputs.checkout-ref }}
           persist-credentials: false
       - name: Ensure Metal toolchain
         shell: bash
@@ -214,131 +223,33 @@ jobs:
           release-tag: ${{ inputs.release-tag }}
           key: ${{ needs.verify.outputs.key }}
           spent: ${{ needs.verify.outputs.execution-seconds }}
-      - name: Restore exact verified release archive
-        if: inputs.publish-release && needs.verify.outputs.enabled == 'true'
-        id: archive-cache
-        uses: actions/cache/restore@v6
-        with:
-          path: ${{ runner.temp }}/macos-verified-release
-          key: ${{ needs.verify.outputs.key }}
-      - name: Check restored release evidence
-        if: inputs.publish-release && steps.archive-cache.outputs.cache-hit == 'true'
-        id: restored
-        uses: jr200-labs/github-action-templates/actions/macos-verified-build@master
-        with:
-          mode: restore
-          config: ${{ inputs.config-path }}
-          release-tag: ${{ inputs.release-tag }}
-          key: ${{ needs.verify.outputs.key }}
       - name: Build package
-        if: steps.restored.outputs.reused != 'true'
         uses: jr200-labs/github-action-templates/actions/macos-package@master
         with:
           config: ${{ inputs.config-path }}
           release-tag: ${{ inputs.release-tag }}
           output: ${{ runner.temp }}/macos-release
         env:
-          MACOS_PACKAGE_RELEASE_ASSETS: ${{ inputs.publish-release && 'true' || 'false' }}
+          MACOS_PACKAGE_RELEASE_ASSETS: ${{ (github.event_name == 'workflow_dispatch' || (github.event.pull_request.user.type == 'Bot' && github.event.pull_request.head.repo.full_name == github.repository && startsWith(github.head_ref, 'release-please--branches--'))) && 'true' || 'false' }}
           UV_MANAGED_PYTHON: "true"
           MACOS_VERIFICATION_EXECUTION_SECONDS: ${{ needs.verify.outputs.execution-seconds }}
           MACOS_VERIFIED_SOURCE: ${{ needs.verify.outputs.source }}
           MACOS_VERIFICATION_INPUT_KEY: ${{ needs.verify.outputs.key }}
-      - name: Prepare immutable verified release archive
-        if: inputs.publish-release && needs.verify.outputs.enabled == 'true' && steps.restored.outputs.reused != 'true'
-        uses: jr200-labs/github-action-templates/actions/macos-verified-build@master
+      - name: Seal fully verified release candidate
+        if: ${{ github.event_name == 'workflow_dispatch' || (github.event.pull_request.user.type == 'Bot' && github.event.pull_request.head.repo.full_name == github.repository && startsWith(github.head_ref, 'release-please--branches--')) }}
+        id: candidate
+        uses: jr200-labs/github-action-templates/actions/macos-release-candidate@master
         with:
-          mode: save
-          spent: ${{ needs.verify.outputs.execution-seconds }}
+          mode: seal
           config: ${{ inputs.config-path }}
-          release-tag: ${{ inputs.release-tag }}
           key: ${{ needs.verify.outputs.key }}
-      - name: Save verified release before publication
-        if: inputs.publish-release && needs.verify.outputs.enabled == 'true' && steps.restored.outputs.reused != 'true'
-        uses: actions/cache/save@v6
-        with:
-          path: ${{ runner.temp }}/macos-verified-release
-          key: ${{ needs.verify.outputs.key }}
-      - name: Generate signed Sparkle appcast
-        if: inputs.publish-release && inputs.generate-appcast && steps.config.outputs.appcast != ''
-        env:
-          APP_CONFIG: ${{ inputs.config-path }}
-          RELEASE_TAG: ${{ inputs.release-tag }}
-          SPARKLE_EDDSA_PRIVATE_KEY: ${{ secrets.SPARKLE_EDDSA_PRIVATE_KEY }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          test -n "$SPARKLE_EDDSA_PRIVATE_KEY"
-          python3 .shared/package-macos-app.py appcast \
-            --config "$APP_CONFIG" \
-            --release-tag "$RELEASE_TAG" \
-            --repository "$GITHUB_REPOSITORY" \
-            --output "$RUNNER_TEMP/macos-release"
-      - name: Seal verified publication bundle
-        if: inputs.publish-release
-        uses: jr200-labs/github-action-templates/actions/macos-verified-build@master
-        with:
-          mode: bundle-save
-          spent: ${{ needs.verify.outputs.execution-seconds }}
-          config: ${{ inputs.config-path }}
-          release-tag: ${{ inputs.release-tag }}
-          key: ${{ needs.verify.outputs.key }}
-          source: ${{ needs.verify.outputs.source }}
-          appcast: ${{ inputs.generate-appcast && steps.config.outputs.appcast || '' }}
-      - name: Retain immutable publication bundle
-        if: inputs.publish-release
+          full: 'true'
+      - name: Retain fully verified release candidate
+        if: ${{ github.event_name == 'workflow_dispatch' || (github.event.pull_request.user.type == 'Bot' && github.event.pull_request.head.repo.full_name == github.repository && startsWith(github.head_ref, 'release-please--branches--')) }}
         uses: actions/upload-artifact@v7
         with:
-          name: macos-release-${{ github.run_id }}
+          name: ${{ steps.candidate.outputs.name }}
           path: ${{ runner.temp }}/macos-release
           if-no-files-found: error
           retention-days: 5
-          overwrite: true
-  publish:
-    needs: package
-    if: inputs.publish-release
-    runs-on: ${{ fromJSON(vars.RUNNER_PROFILES)[vars.RUNNER_PROFILE].default }}
-    timeout-minutes: 20
-    # Inherit the caller's ceiling: validation calls grant read, release calls
-    # grant write. An explicit write declaration invalidates read-only callers
-    # at startup even though this job is skipped for validation.
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          ref: ${{ inputs.release-tag != '' && format('refs/tags/{0}', inputs.release-tag) || inputs.checkout-ref }}
-          persist-credentials: false
-      # Draft release reads require the release caller's write-capable token.
-      # Keep that token outside portable verification and native build jobs.
-      - name: Resolve immutable draft release identity
-        id: release
-        uses: jr200-labs/github-action-templates/actions/macos-release@master
-        with:
-          mode: resolve
-          repository: ${{ github.repository }}
-          token: ${{ github.token }}
-          release-tag: ${{ inputs.release-tag }}
-          release-id: ${{ inputs.release-id }}
-      - name: Download verified publication bundle
-        uses: actions/download-artifact@v8
-        with:
-          name: macos-release-${{ github.run_id }}
-          path: ${{ runner.temp }}/macos-release
-      - name: Validate publication bytes and provenance
-        uses: jr200-labs/github-action-templates/actions/macos-verified-build@master
-        with:
-          mode: bundle-check
-          config: ${{ inputs.config-path }}
-          release-tag: ${{ inputs.release-tag }}
-          key: ${{ needs.package.outputs.key }}
-          source: ${{ needs.package.outputs.source }}
-          appcast: ${{ needs.package.outputs.appcast }}
-      - name: Verify and attach release assets
-        uses: jr200-labs/github-action-templates/actions/macos-release@master
-        with:
-          mode: publish
-          repository: ${{ github.repository }}
-          token: ${{ github.token }}
-          release-tag: ${{ inputs.release-tag }}
-          release-id: ${{ steps.release.outputs.release-id }}
-          output: ${{ runner.temp }}/macos-release
-          artifact: ${{ needs.package.outputs.artifact }}
-          appcast: ${{ needs.package.outputs.appcast }}
+          overwrite: false

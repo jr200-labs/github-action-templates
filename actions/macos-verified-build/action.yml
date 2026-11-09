@@ -1,8 +1,8 @@
-name: Reuse a verified macOS release archive
-description: Exact-input release reuse; PR validation never reads or writes this cache
+name: Bind macOS verification to packaging
+description: Match source, toolchain inputs and execution budget between preparation jobs
 inputs:
   mode:
-    description: stage-identity, verify-save, verify-check, restore, save, bundle-save or bundle-check
+    description: stage-identity, verify-save or verify-check
     required: true
   config:
     description: Repository app configuration
@@ -16,12 +16,6 @@ inputs:
   spent:
     description: Verification execution seconds consumed from the shared budget
     default: '0'
-  source:
-    description: Verified source commit for final publication
-    default: ''
-  appcast:
-    description: Optional packaged appcast filename
-    default: ''
 outputs:
   source:
     description: Checked source commit
@@ -29,12 +23,6 @@ outputs:
   key:
     description: Content and toolchain identity
     value: ${{ steps.reuse.outputs.key }}
-  enabled:
-    description: Whether the repository supplies verification inputs
-    value: ${{ steps.reuse.outputs.enabled }}
-  reused:
-    description: Whether a verified archive was restored
-    value: ${{ steps.reuse.outputs.reused }}
 runs:
   using: composite
   steps:
@@ -46,7 +34,5 @@ runs:
         REUSE_TAG: ${{ inputs.release-tag }}
         REUSE_KEY: ${{ inputs.key }}
         REUSE_SPENT: ${{ inputs.spent }}
-        REUSE_SOURCE: ${{ inputs.source }}
-        REUSE_APPCAST: ${{ inputs.appcast }}
         UV_MANAGED_PYTHON: 'true'
       run: python3 "$GITHUB_ACTION_PATH/reuse.py"

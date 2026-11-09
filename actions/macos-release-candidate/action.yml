@@ -1,0 +1,66 @@
+name: Promote a verified macOS release candidate
+description: Reuse exact-tree verified bytes across preparation and publication runs
+inputs:
+  mode:
+    description: seal, resolve, promote, seal-publication or check-publication
+    required: true
+  config:
+    description: Repository-owned app configuration
+    default: .github/macos-app.json
+  release-tag:
+    description: Exact publication tag
+    default: ''
+  token:
+    description: Repository token with Actions read permission for promotion
+    default: ''
+  artifact-id:
+    description: Resolved immutable artifact ID
+    default: ''
+  key:
+    description: Successful preparation verification key
+    default: ''
+  full:
+    description: Whether this is full release preparation
+    default: 'false'
+  appcast:
+    description: Optional signed appcast filename
+    default: ''
+  archive-sha256:
+    description: Archive digest validated by the resolver
+    default: ''
+  checksum-sha256:
+    description: Checksum-file digest validated by the resolver
+    default: ''
+outputs:
+  name:
+    description: Content-addressed preparation artifact name
+    value: ${{ steps.candidate.outputs.name }}
+  artifact-id:
+    description: Resolved artifact ID
+    value: ${{ steps.candidate.outputs.artifact-id }}
+  producer-run:
+    description: Successful full-verification run
+    value: ${{ steps.candidate.outputs.producer-run }}
+  archive-sha256:
+    description: Validated archive digest
+    value: ${{ steps.candidate.outputs.archive-sha256 }}
+  checksum-sha256:
+    description: Validated checksum-file digest
+    value: ${{ steps.candidate.outputs.checksum-sha256 }}
+runs:
+  using: composite
+  steps:
+    - id: candidate
+      shell: bash
+      env:
+        CANDIDATE_MODE: ${{ inputs.mode }}
+        CANDIDATE_CONFIG: ${{ inputs.config }}
+        CANDIDATE_TAG: ${{ inputs.release-tag }}
+        CANDIDATE_TOKEN: ${{ inputs.token }}
+        CANDIDATE_ARTIFACT_ID: ${{ inputs.artifact-id }}
+        CANDIDATE_KEY: ${{ inputs.key }}
+        CANDIDATE_FULL: ${{ inputs.full }}
+        CANDIDATE_APPCAST: ${{ inputs.appcast }}
+        CANDIDATE_ARCHIVE_SHA256: ${{ inputs.archive-sha256 }}
+        CANDIDATE_CHECKSUM_SHA256: ${{ inputs.checksum-sha256 }}
+      run: python3 "$GITHUB_ACTION_PATH/candidate.py"

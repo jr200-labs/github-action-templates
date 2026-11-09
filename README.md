@@ -20,9 +20,11 @@ this policy when they adopt the corresponding shared ref and regenerate their
 committed configuration; no repository-local override is needed.
 
 The single `macos-app` workflow validates ordinary code PRs and publishes releases.
-Release Please version-bump PRs skip packaging; the release dispatch builds and
-tests the tagged source in verification, packages/signs the appcast on macOS,
-then publishes the immutable bundle from a separate job on the default fleet. Manual runs publish when `publish-release` is true.
+Release Please version-bump PRs run full verification and retain an immutable
+app archive. The release dispatch promotes that archive only when its complete
+Git tree matches the tag, signs the update feed on macOS when configured, and
+publishes from the default fleet. It runs no build or test commands. Manual runs
+publish when `publish-release` is true; validation-only manual runs prepare proof.
 Shared sync removes the retired `publish-macos-app` caller on upgrade.
 
 The reusable workflow runs the provider's `macos-package` action so execution
@@ -41,10 +43,9 @@ queue time. A queue request belongs to its running Actions process, and does
 not resume after that process ends. Existing test and cleanup budgets remain
 unchanged.
 
-Repositories may opt into [verified release archive reuse](docs/macos-release-reuse.md).
-A failed publish job retries from its five-day workflow artifact without running
-verification, packaging or native probes. Each fresh pipeline verifies its source;
-packaging can reuse an exact trusted cached ZIP after that verification passes.
+See [release preparation and artifact promotion](docs/macos-release-reuse.md).
+Publication and its retries reuse five-day artifacts; missing proof fails clearly
+instead of implicitly rebuilding or repeating verification.
 
 ## Merge Policy
 
