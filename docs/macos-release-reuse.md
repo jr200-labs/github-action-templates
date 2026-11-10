@@ -1,56 +1,70 @@
-# macOS verification, packaging and publication
+# Verify a macOS release once
 
-The shared workflow runs portable checks on the default fleet, native verification
-on macOS, packaging on macOS, and publication on the default fleet. Dependencies
-block packaging after failed verification and publication after failed packaging.
-PR runs stop after packaging and receive no release signing key.
+A Release Please PR runs full verification and creates the signed app archive.
+Publication promotes that immutable archive after the release tag is created.
+Ordinary code PRs retain focused checks. A manual validation run can prepare an
+exact tag when its proof is missing or expired.
 
-Configure `.github/macos-app.json` with separate `verify` and `build` argv arrays.
-`verify` runs required tests; `build` creates the signed app. Existing consumers
-whose build script owns its tests can retain that command, but separating the
-commands gives failures distinct verification and packaging jobs. Sparkle feed
-signing remains in packaging because the generator is a macOS executable.
-Only the publisher gets contents-write permission; it never executes repository
-build commands, native probes, simulator operations or appcast generation.
+## Preparation
 
-## Evidence between jobs
+The canonical caller recognizes a same-repository Release Please branch owned by
+a bot. Preparation checks out that PR's head commit, runs portable checks on the
+default fleet, then native verification and packaging on macOS. Native jobs have
+contents-read permission and receive no release signing secret. Separate `verify`
+and `build` argv in `.github/macos-app.json` keep tests out of packaging.
 
-A separate verifier declares its full external verification inputs through the
-argv in `.github/macos-verification-inputs.json`, and its packaging inputs through
-`.github/macos-package-inputs.json`. Each command prints a nonempty JSON object
-within 60 seconds and leaves tracked/nonignored source unchanged. Verification
-inputs include all SDKs and simulator runtimes used by tests. Packaging inputs
-include only the compiler, SDK, runtime, signing policy and environment used to
-build the shipped app; this probe must not select, boot or lease a simulator.
-Use public identities or hashes and exclude credentials.
+Verification and packaging share the existing 1200-second execution budget;
+cooperative capacity waits remain outside execution time. Consumer fast-lane
+budgets are unchanged. Verification inputs come from the argv in
+`.github/macos-verification-inputs.json`. Simulator-free packaging inputs come
+from `.github/macos-package-inputs.json`. Packaging checks the same source/run
+receipt and build inputs without repeating verification.
 
-The successful verification receipt binds repository, source commit, release tag,
-provider/configuration, verification inputs, packaging inputs, run ID and consumed
-execution time. Packaging checks that receipt, its checkout and its own declared
-build inputs. It does not rerun verification probes. Verification and package
-commands share 1200 seconds of execution time; cooperative native queue waits
-remain separate. The consumer fast verification budget is unchanged.
+After successful full verification and packaging, the provider retains the
+archive, checksum and `candidate.json` as an immutable workflow artifact for five
+days. Its name includes the complete Git tree, run and attempt. The receipt binds
+repository, producer source/run, configuration, provider policy, verification
+key, app version and both file digests. Focused PRs cannot produce release proof.
 
-Packaging validates version/codesign and creates the ZIP/checksum, optionally
-reusing an exact verified archive from the trusted release cache. PRs never access
-that cache. Cached bytes still require the current workflow's successful
-verification receipt. Source, declared verification inputs and weekly epoch bind
-the cache key. Corrupt or mismatched entries fail closed.
+## Publication
 
-The final bundle contains ZIP/checksum, optional signed appcast and
-`publication.json`. Its receipt binds every file digest, repository, exact source,
-tag, verification key and run. The bundle is uploaded as a workflow artifact with
-five-day retention. The publisher downloads it from the same workflow run,
-checks its complete file set, provenance and hashes, and publishes to the immutable
-release ID resolved before verification. Unexpected or conflicting release assets
-are never replaced. An already published release succeeds on retry only when its
-entire expected asset set matches the verified bytes; it is not modified.
+The release workflow does not run portable checks, native verification or app
+compilation. Its default-fleet resolver finds a successful preparation artifact
+for the tagged Git tree, checks GitHub producer metadata, and validates the
+receipt, archive version and hashes. An equivalent merge commit can reuse proof
+when its entire Git tree is identical; no version files or other paths are
+excluded from this comparison.
 
-## Retry publication
+Accepted producers are same-repository release PRs or explicit manual preparation
+runs of the canonical workflow using the shared builder. Failed/incomplete runs,
+forks, other workflows, incompatible policy/configuration, different trees,
+expired artifacts and altered bytes fail validation. API permission failures are
+reported directly. Publication never falls back to a build or a new test run.
 
-Use GitHub's **Re-run failed jobs** when only publication failed. The completed
-verification and packaging jobs stay completed; publication downloads the same
-bundle and repeats only validation/upload/publication. It requires neither a Mac
-slot nor simulator access. A partial upload resumes only with matching digests.
-A missing/expired artifact fails clearly and never triggers an implicit rebuild.
-Re-running all jobs deliberately starts a new verification/package pipeline.
+The resolver promotes the checked bytes into a same-run artifact. If a Sparkle
+feed is configured, a contents-read Mac job signs that feed using the archive;
+it performs no app compilation, tests, simulator operation or native input
+probe. The signing job does not receive the resolver's write-capable token.
+The final default-fleet publisher validates source/provenance and file hashes,
+including the archive digests captured by the resolver before signing, then
+uploads assets and publishes the exact resolved draft release ID.
+
+The canonical caller grants Actions read permission for cross-run artifact
+metadata/downloads and Pull requests read permission for commit associations.
+Existing native preparation jobs keep
+contents-read permission. Release lookup/publication inherits contents-write
+permission because private draft access requires it. No new secret is required;
+Sparkle signing continues to use the selected-repository organization secret.
+
+## Retries and missing proof
+
+Re-run failed publication jobs to reuse the successful resolver/signing outputs
+and immutable bytes. Attempt-specific artifact names are carried through job
+outputs, so a failed publisher can download a bundle from a previous attempt.
+Re-running the complete publication workflow still promotes existing proof and
+never starts verification. Conflicting release assets are never replaced.
+
+A missing/expired artifact fails with an instruction to prepare the release PR
+or exact tag first. Preparation is an explicit validation-only workflow run on
+that source, with publication disabled. A changed source tree requires fresh
+verification; passing checks from a different tree do not certify the release.

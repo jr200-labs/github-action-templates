@@ -157,6 +157,7 @@ jobs:
           python3 scripts/test-github-app-inventory.py
           python3 scripts/test-macos-app.py
           python3 scripts/test-macos-verified-build.py
+          python3 scripts/test-macos-release-candidate.py
           python3 scripts/test-unattended-swift.py
           python3 scripts/test-project-ci.py
           python3 scripts/test-docker-ci.py

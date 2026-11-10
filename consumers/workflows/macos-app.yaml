@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
     inputs:
       publish-release:
-        description: Build, test and publish the specified draft release in this run
+        description: Publish the draft from an existing fully verified release artifact
         type: boolean
         default: false
       release-tag:
@@ -24,6 +24,8 @@ on:
 
 permissions:
   contents: write
+  actions: read
+  pull-requests: read
 
 concurrency:
   group: macos-app-${{ github.event.pull_request.number || github.event.client_payload['release-tag'] || inputs.release-tag || github.ref }}
@@ -43,6 +45,8 @@ jobs:
     if: github.event_name == 'repository_dispatch' || (github.event_name == 'workflow_dispatch' && inputs.publish-release)
     permissions:
       contents: write
+      actions: read
+      pull-requests: read
     uses: jr200-labs/github-action-templates/.github/workflows/build_macos_app.yaml@master
     with:
       publish-release: true

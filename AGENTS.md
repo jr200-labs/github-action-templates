@@ -85,8 +85,9 @@ Current groups:
 
 Before changing macOS verification, packaging, artifact promotion or publication,
 read [the release contract](docs/macos-release-reuse.md). Keep verification,
-packaging and publication as separate jobs. Publication consumes the immutable
-bundle and its checked provenance; retries of the publish job use the same bytes.
+packaging and publication as separate jobs. Full release preparation produces an
+immutable archive on the release PR; publication promotes exact-tree proof and
+the same bytes. Missing proof fails explicitly without starting verification.
 
 Consumer `.github/macos-app.json` supplies `app`, `artifact`, and `build` argv;
 use a separate `verify` argv for tests. Separate verifiers declare native inputs
@@ -97,11 +98,13 @@ between verification and packaging, excluding cooperative queue time.
 
 Canonical `macos-app` callers use configured runner profiles and create draft,
 force-tagged releases. Native jobs have contents-read permission. Sparkle signing
-is restricted to release packaging; the default generator is installed by shared
+is restricted to publication feed signing; the default generator is installed by shared
 sync. Optional `sparkle-development` supplies a committed public key, with its
 private counterpart kept in the selected-repository organization secret.
-Publication alone has contents-write permission and addresses the resolved
-immutable release ID. A mismatch leaves the draft inspectable.
+Publication lookup/upload inherits contents-write, Actions-read and PR-read permission;
+native jobs remain contents-read. Validate successful same-repository producer
+metadata, complete Git tree, provider/configuration, app version and file hashes
+before promoting an artifact. A mismatch leaves the draft inspectable.
 
 ## Package access drift
 
