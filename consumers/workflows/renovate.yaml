@@ -4,6 +4,8 @@ name: renovate
 
 on:
   schedule:
+    # sync-shared renders a stable owner/repo slot between 17:01 and 20:59 UTC.
+    # Native schedule events can still be delayed by GitHub.
     - cron: "0 17 * * *"
   workflow_dispatch:
     inputs:
