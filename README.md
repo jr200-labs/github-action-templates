@@ -14,13 +14,16 @@ GAT releases the next `shared-vX.Y.Z` tag automatically when canonical
 consumer workflows or shared files change on `master`, including a GitHub
 Release with generated notes.
 
-Daily Renovate runs are spread across 15:31–19:29 UTC.
+Daily Renovate runs are spread across 16:01–16:59 UTC (01:01–01:59 JST).
 `sync-shared` hashes the lowercase `owner/repo` identity with POSIX `cksum`
-(without a trailing newline), takes the remainder modulo 236, and maps it to
-four hours of 59 slots. Start with hour `17 + slot / 59` and minute
-`1 + slot % 59`, then subtract 90 minutes. This preserves the repository
-assignments while moving every slot exactly 90 minutes earlier. The shifted
-slots skip minute 30; collisions remain possible.
+(without a trailing newline), takes the remainder modulo 59, and adds one
+to obtain the minute within the 16:00 UTC hour. This keeps starts in the first
+hour after 01:00 JST, avoiding minute zero and leaving at least five hours
+before the intended 07:00 JST completion target (22:00 UTC). Collisions remain
+possible. The target is planning headroom, not an enforced deadline: native
+GitHub schedule delays can exceed five hours, and this change does not skip
+or cancel late jobs. Enforcing a cutoff requires a separate dispatcher and
+an explicit policy for late and unfinished work.
 CI uses `GITHUB_REPOSITORY`; local sync uses the GitHub `origin` URL, accepting
 HTTPS and SSH forms. Missing identity fails rendering rather than choosing a
 shared default. Write and check modes use the same renderer, so drift checks

@@ -160,7 +160,7 @@ make_consumer_repo "$consumer_repo"
 (
     cd "$consumer_repo"
     first_cron=$(yq -r '.on.schedule[0].cron' .github/workflows/renovate.yaml)
-    test "$first_cron" = '37 16 * * *'
+    test "$first_cron" = '7 16 * * *'
     export GITHUB_REPOSITORY=example/other-consumer
     if STRICT=1 SYNC_BASE_URL="file://$ROOT/consumers" ./scripts/sync-shared --check >schedule-drift.log 2>&1; then
         echo "expected check to reject another repository's Renovate slot" >&2
@@ -169,12 +169,11 @@ make_consumer_repo "$consumer_repo"
     grep -q 'renovate.yaml differs from canonical' schedule-drift.log
     STRICT=1 SYNC_BASE_URL="file://$ROOT/consumers" ./scripts/sync-shared
     second_cron=$(yq -r '.on.schedule[0].cron' .github/workflows/renovate.yaml)
-    test "$second_cron" = '17 17 * * *'
+    test "$second_cron" = '47 16 * * *'
     test "$second_cron" != "$first_cron"
     read -r minute hour day month weekday <<<"$second_cron"
-    test "$minute" -ge 0 && test "$minute" -le 59
-    minute_of_day=$((hour * 60 + minute))
-    test "$minute_of_day" -ge 931 && test "$minute_of_day" -le 1169
+    test "$minute" -ge 1 && test "$minute" -le 59
+    test "$hour" -eq 16
     test "$day $month $weekday" = '* * *'
     STRICT=1 SYNC_BASE_URL="file://$ROOT/consumers" ./scripts/sync-shared --check
     unset GITHUB_REPOSITORY
