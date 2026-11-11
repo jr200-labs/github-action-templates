@@ -93,7 +93,7 @@ fetch_shared() {
 # Only Renovate's daily cron varies by repository. Render into a temporary
 # file so an identity/fetch failure never damages the committed caller.
 renovate_cron() {
-    local identity="${GITHUB_REPOSITORY:-}" remote checksum slot
+    local identity="${GITHUB_REPOSITORY:-}" remote checksum slot minute_of_day
     if [ -z "$identity" ]; then
         remote=$(git config --get remote.origin.url 2>/dev/null) || remote=""
         case "$remote" in
@@ -112,7 +112,8 @@ renovate_cron() {
     checksum=$(printf '%s' "$identity" | tr '[:upper:]' '[:lower:]' | cksum) || return 1
     checksum=${checksum%% *}
     slot=$((checksum % (4 * 59)))
-    printf '%s %s * * *\n' "$((1 + slot % 59))" "$((17 + slot / 59))"
+    minute_of_day=$(((17 + slot / 59) * 60 + 1 + slot % 59 - 90))
+    printf '%s %s * * *\n' "$((minute_of_day % 60))" "$((minute_of_day / 60))"
 }
 
 fetch_workflow() {

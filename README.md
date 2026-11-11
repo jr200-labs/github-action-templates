@@ -14,11 +14,13 @@ GAT releases the next `shared-vX.Y.Z` tag automatically when canonical
 consumer workflows or shared files change on `master`, including a GitHub
 Release with generated notes.
 
-Daily Renovate runs are spread across 17:01–20:59 UTC, avoiding minute zero.
+Daily Renovate runs are spread across 15:31–19:29 UTC.
 `sync-shared` hashes the lowercase `owner/repo` identity with POSIX `cksum`
 (without a trailing newline), takes the remainder modulo 236, and maps it to
-four hours of 59 slots. The hour is `17 + slot / 59` and the minute is
-`1 + slot % 59`. Slots stay fixed across updates; collisions remain possible.
+four hours of 59 slots. Start with hour `17 + slot / 59` and minute
+`1 + slot % 59`, then subtract 90 minutes. This preserves the repository
+assignments while moving every slot exactly 90 minutes earlier. The shifted
+slots skip minute 30; collisions remain possible.
 CI uses `GITHUB_REPOSITORY`; local sync uses the GitHub `origin` URL, accepting
 HTTPS and SSH forms. Missing identity fails rendering rather than choosing a
 shared default. Write and check modes use the same renderer, so drift checks
