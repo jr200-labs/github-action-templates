@@ -31,7 +31,7 @@ Consumers adopt staggering when they update their pinned shared tag and run
 run. Manual and artifact-triggered Renovate remain unchanged. GitHub's native
 scheduler can still delay or drop events; staggering mitigates simultaneous
 demand and does not guarantee start times. The template repository's own
-four-hour Renovate schedule is independent of this daily consumer schedule.
+daily Renovate schedule at 12:17 UTC is independent of the consumer slots.
 
 Shared release configuration enables `always-update` so release PR files refresh
 from the target branch even when release notes are unchanged. Consumers inherit

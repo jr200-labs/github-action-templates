@@ -12,8 +12,8 @@ name: renovate
 
 on:
   schedule:
-    # Every 4 hours, offset by 17 minutes to avoid the GitHub cron rush.
-    - cron: '17 */4 * * *'
+    # Daily at 12:17 UTC, away from the top of the hour.
+    - cron: '17 12 * * *'
   workflow_dispatch:
     inputs:
       repair-lockfiles:
