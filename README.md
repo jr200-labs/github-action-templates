@@ -5,7 +5,7 @@ Reusable GitHub Actions workflows _and_ canonical caller workflows shared across
 ## Two halves
 
 - **`.github/workflows/`** — *reusable* workflows (`workflow_call`). Each implements one piece of CI/release machinery. Consumer repos call these via `uses:`.
-- **`consumers/`** — *caller* workflows. Each consuming repo declares groups in `.github/.shared-config.yaml`; `scripts/sync-shared` copies the matching caller files verbatim into `.github/workflows/`. A `drift-check` job in the `hygiene` group fails CI on any divergence. **Don't hand-author caller workflows.** See [AGENTS.md](AGENTS.md) for the full pattern.
+- **`consumers/`** — *caller* workflows. Each consuming repo declares groups in `.github/.shared-config.yaml`; `scripts/sync-shared` installs the matching caller files into `.github/workflows/`. Files are copied verbatim except for the repository-derived Renovate cron described below. A `drift-check` job in the `hygiene` group fails CI on any divergence. **Don't hand-author caller workflows.** See [AGENTS.md](AGENTS.md) for the full pattern.
 
 Consumer repos should pin `.github/.shared-config.yaml` to a `shared-vX.Y.Z`
 tag via `ref:`. Renovate tracks that pin and opens dedicated update PRs, so
@@ -13,6 +13,28 @@ shared workflow drift does not ride along with unrelated feature changes.
 GAT releases the next `shared-vX.Y.Z` tag automatically when canonical
 consumer workflows or shared files change on `master`, including a GitHub
 Release with generated notes.
+
+Daily Renovate runs are spread across 16:01–16:59 UTC (01:01–01:59 JST).
+`sync-shared` hashes the lowercase `owner/repo` identity with POSIX `cksum`
+(without a trailing newline), takes the remainder modulo 59, and adds one
+to obtain the minute within the 16:00 UTC hour. This keeps starts in the first
+hour after 01:00 JST, avoiding minute zero and leaving at least five hours
+before the intended 07:00 JST completion target (22:00 UTC). Collisions remain
+possible. The target is planning headroom, not an enforced deadline: native
+GitHub schedule delays can exceed five hours, and this change does not skip
+or cancel late jobs. Enforcing a cutoff requires a separate dispatcher and
+an explicit policy for late and unfinished work.
+CI uses `GITHUB_REPOSITORY`; local sync uses the GitHub `origin` URL, accepting
+HTTPS and SSH forms. Missing identity fails rendering rather than choosing a
+shared default. Write and check modes use the same renderer, so drift checks
+enforce the repository's slot. Renaming a repository requires another sync.
+
+Consumers adopt staggering when they update their pinned shared tag and run
+`scripts/sync-shared`. This adds no waiting job and uses no runner to delay a
+run. Manual and artifact-triggered Renovate remain unchanged. GitHub's native
+scheduler can still delay or drop events; staggering mitigates simultaneous
+demand and does not guarantee start times. The template repository's own
+daily Renovate schedule at 12:17 UTC is independent of the consumer slots.
 
 Shared release configuration enables `always-update` so release PR files refresh
 from the target branch even when release notes are unchanged. Consumers inherit

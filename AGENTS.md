@@ -36,7 +36,11 @@ workflows:
 
 `ref` pins the canonical consumer files to a `github-action-templates` tag. Tags for this surface use `shared-vX.Y.Z`; consumers should move between them through Renovate PRs, not by tracking `master`. `SYNC_REF=<branch-or-tag> ./scripts/sync-shared` is only for one-off diagnostics or bootstrapping.
 
-No string substitution, no archetype — files are verbatim copies. Per-repo divergence is captured by *which groups* the repo declares, not by parameters within a group.
+Files are verbatim copies except for the daily Renovate cron: `sync-shared`
+derives its stable UTC slot from `owner/repo` in both write and check modes.
+Keep that rendering in `fetch_workflow`; all other workflow content remains
+canonical. Per-repo workflow selection is captured by *which groups* the repo
+declares. See README.md for the schedule algorithm and adoption boundary.
 
 ## Groups
 

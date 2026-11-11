@@ -2,6 +2,7 @@
 set -euo pipefail
 
 ROOT=$(git rev-parse --show-toplevel)
+export GITHUB_REPOSITORY=example/consumer
 TMPDIR=$(mktemp -d)
 trap 'rm -rf "$TMPDIR"' EXIT
 
@@ -152,6 +153,40 @@ make_consumer_repo "$consumer_repo"
     fi
     rm .github/workflows/unexpected.yaml
     STRICT=1 SYNC_BASE_URL="file://$ROOT/consumers" ./scripts/sync-shared --check
+)
+
+# Exercise the actual sync/check boundary: repository identity must change the
+# daily slot, and check mode must reject a slot copied from another repository.
+(
+    cd "$consumer_repo"
+    first_cron=$(yq -r '.on.schedule[0].cron' .github/workflows/renovate.yaml)
+    test "$first_cron" = '7 16 * * *'
+    export GITHUB_REPOSITORY=example/other-consumer
+    if STRICT=1 SYNC_BASE_URL="file://$ROOT/consumers" ./scripts/sync-shared --check >schedule-drift.log 2>&1; then
+        echo "expected check to reject another repository's Renovate slot" >&2
+        exit 1
+    fi
+    grep -q 'renovate.yaml differs from canonical' schedule-drift.log
+    STRICT=1 SYNC_BASE_URL="file://$ROOT/consumers" ./scripts/sync-shared
+    second_cron=$(yq -r '.on.schedule[0].cron' .github/workflows/renovate.yaml)
+    test "$second_cron" = '47 16 * * *'
+    test "$second_cron" != "$first_cron"
+    read -r minute hour day month weekday <<<"$second_cron"
+    test "$minute" -ge 1 && test "$minute" -le 59
+    test "$hour" -eq 16
+    test "$day $month $weekday" = '* * *'
+    STRICT=1 SYNC_BASE_URL="file://$ROOT/consumers" ./scripts/sync-shared --check
+    unset GITHUB_REPOSITORY
+    for remote in https://github.com/example/other-consumer.git git@github.com:example/other-consumer.git ssh://git@github.com/example/other-consumer.git; do
+        git config remote.origin.url "$remote"
+        STRICT=1 SYNC_BASE_URL="file://$ROOT/consumers" ./scripts/sync-shared --check
+    done
+    git config --unset remote.origin.url
+    if STRICT=1 SYNC_BASE_URL="file://$ROOT/consumers" ./scripts/sync-shared --check >missing-identity.log 2>&1; then
+        echo "expected sync to reject missing repository identity" >&2
+        exit 1
+    fi
+    test "$(yq -r '.on.schedule[0].cron' .github/workflows/renovate.yaml)" = "$second_cron"
 )
 
 artifact_repo="$TMPDIR/artifact-consumer"
