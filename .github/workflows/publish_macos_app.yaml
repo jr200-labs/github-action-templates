@@ -31,7 +31,9 @@ on:
 jobs:
   resolve:
     runs-on: ${{ fromJSON(vars.RUNNER_PROFILES)[vars.RUNNER_PROFILE].default }}
-    timeout-minutes: 5
+    # Wait on existing preparation without occupying a native runner. The resolver
+    # bounds that wait to 350 minutes, leaving time to validate/download/promote.
+    timeout-minutes: 360
     outputs:
       artifact-id: ${{ steps.candidate.outputs.artifact-id }}
       producer-run: ${{ steps.candidate.outputs.producer-run }}

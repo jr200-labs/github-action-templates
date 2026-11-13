@@ -35,6 +35,16 @@ receipt, archive version and hashes. An equivalent merge commit can reuse proof
 when its entire Git tree is identical; no version files or other paths are
 excluded from this comparison.
 
+If the release tag arrives while matching preparation is queued or running, the
+resolver waits for that existing run to finish verification and packaging. It
+checks same-repository release-PR identity and the exact tree before waiting;
+manual preparation must already have a scheduled portable job. Publication runs
+and unrelated trees cannot keep it waiting. The default-fleet coordinator polls
+every 30 seconds for at most 350 minutes inside its six-hour job watchdog, without
+holding a macOS runner or changing verification/packaging execution budgets.
+Failed or cancelled preparation leaves publication failed with the missing-proof
+diagnostic. Only successful preparation with a validated artifact can proceed.
+
 Accepted producers are same-repository release PRs or explicit manual preparation
 runs of the canonical workflow using the shared builder. Failed/incomplete runs,
 forks, other workflows, incompatible policy/configuration, different trees,
@@ -64,7 +74,9 @@ outputs, so a failed publisher can download a bundle from a previous attempt.
 Re-running the complete publication workflow still promotes existing proof and
 never starts verification. Conflicting release assets are never replaced.
 
-A missing/expired artifact fails with an instruction to prepare the release PR
-or exact tag first. Preparation is an explicit validation-only workflow run on
+A missing/expired artifact with no active matching preparation fails with an
+instruction to prepare the release PR or exact tag first. A bounded wait that
+expires also fails explicitly; retry publication after preparation succeeds.
+Preparation is an explicit validation-only workflow run on
 that source, with publication disabled. A changed source tree requires fresh
 verification; passing checks from a different tree do not certify the release.
