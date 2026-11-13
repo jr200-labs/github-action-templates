@@ -17,6 +17,8 @@ ROOT = Path(__file__).resolve().parents[2]
 SHA = r'[0-9a-f]{40}'
 REPOSITORY = r'[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+'
 MAX_AGE = 5 * 24 * 3600
+PREPARATION_WAIT = 350 * 60
+ACTIVE_RUN_STATUSES = {'queued', 'in_progress', 'waiting', 'pending', 'requested'}
 
 
 def git(*args):
@@ -117,6 +119,7 @@ class API:
 
     def __call__(self, path):
         allowed = (r'/actions/artifacts(?:\?per_page=100&page=(?:[1-9]|10)|/[1-9][0-9]*)',
+                   r'/actions/workflows/macos-app\.yaml/runs\?per_page=100&page=(?:[1-9]|10)',
                    r'/actions/runs/[1-9][0-9]*(?:/jobs\?per_page=100&filter=latest|/attempts/[1-9][0-9]*/jobs\?per_page=100)?',
                    r'/commits/' + SHA + r'/pulls\?per_page=100', r'/git/commits/' + SHA)
         if not any(re.fullmatch(pattern, path) for pattern in allowed):
@@ -134,19 +137,8 @@ class API:
         return json.loads(raw)
 
 
-def producer(api, repository, artifact, tree):
-    match = re.fullmatch('macos-release-candidate-' + tree + r'-([1-9][0-9]*)-([1-9][0-9]*)', artifact.get('name', ''))
-    if artifact.get('expired') or not match:
-        raise ValueError('Candidate artifact is expired or for another tree')
-    created = datetime.fromisoformat(artifact['created_at'].replace('Z', '+00:00')).timestamp()
-    if not 0 <= time.time() - created < MAX_AGE:
-        raise ValueError('Candidate artifact is too old')
-    run_id = artifact['workflow_run']['id']
-    if str(run_id) != match[1]:
-        raise ValueError('Candidate name and producer run differ')
-    run = api('/actions/runs/' + str(run_id))
-    if (run.get('status') != 'completed' or run.get('conclusion') != 'success'
-            or run.get('path') != '.github/workflows/macos-app.yaml'
+def preparation_source(api, repository, run, tree):
+    if (run.get('path') != '.github/workflows/macos-app.yaml'
             or run.get('head_repository', {}).get('full_name') != repository
             or run.get('repository', {}).get('full_name') != repository
             or not any(row.get('path', '').startswith('jr200-labs/github-action-templates/.github/workflows/build_macos_app.yaml@')
@@ -166,6 +158,23 @@ def producer(api, repository, artifact, tree):
             raise ValueError('Candidate is not from a release PR')
     elif run.get('event') != 'workflow_dispatch':
         raise ValueError('Untrusted candidate workflow event')
+    return source
+
+
+def producer(api, repository, artifact, tree):
+    match = re.fullmatch('macos-release-candidate-' + tree + r'-([1-9][0-9]*)-([1-9][0-9]*)', artifact.get('name', ''))
+    if artifact.get('expired') or not match:
+        raise ValueError('Candidate artifact is expired or for another tree')
+    created = datetime.fromisoformat(artifact['created_at'].replace('Z', '+00:00')).timestamp()
+    if not 0 <= time.time() - created < MAX_AGE:
+        raise ValueError('Candidate artifact is too old')
+    run_id = artifact['workflow_run']['id']
+    if str(run_id) != match[1]:
+        raise ValueError('Candidate name and producer run differ')
+    run = api('/actions/runs/' + str(run_id))
+    if run.get('status') != 'completed' or run.get('conclusion') != 'success':
+        raise ValueError('Candidate producer is not a successful repository workflow')
+    source = preparation_source(api, repository, run, tree)
     jobs = api(f'/actions/runs/{run_id}/jobs?per_page=100&filter=latest')['jobs']
     for stage in ('portable', 'verify', 'package'):
         matches = [job for job in jobs if job.get('name', '').endswith(' / ' + stage)]
@@ -178,7 +187,7 @@ def producer(api, repository, artifact, tree):
     return dict(artifact_id=str(artifact['id']), producer_run=str(run_id), source=source, tree=tree)
 
 
-def resolve(api, repository, tree):
+def find_candidate(api, repository, tree):
     for page in range(1, 11):
         rows = api(f'/actions/artifacts?per_page=100&page={page}')['artifacts']
         for artifact in sorted(rows, key=lambda row: row['id'], reverse=True):
@@ -190,6 +199,60 @@ def resolve(api, repository, tree):
                 continue
         if len(rows) < 100:
             break
+    return None
+
+
+def active_preparations(api, repository, tree):
+    runs = set()
+    for page in range(1, 11):
+        rows = api(f'/actions/workflows/macos-app.yaml/runs?per_page=100&page={page}')['workflow_runs']
+        for run in rows:
+            if run.get('status') not in ACTIVE_RUN_STATUSES:
+                continue
+            # Publication uses this same workflow. Only preparation may keep it waiting.
+            if run.get('event') not in ('pull_request', 'workflow_dispatch'):
+                continue
+            if run.get('event') == 'pull_request' and not run.get('head_branch', '').startswith('release-please--branches--'):
+                continue
+            try:
+                preparation_source(api, repository, run, tree)
+                run_id = str(run['id'])
+                if not re.fullmatch(r'[1-9][0-9]*', run_id):
+                    continue
+                if run['event'] == 'workflow_dispatch':
+                    jobs = api(f'/actions/runs/{run_id}/jobs?per_page=100&filter=latest')['jobs']
+                    # A manual publisher has skipped preparation jobs; never wait on itself.
+                    if not any(job.get('name', '').endswith(' / portable')
+                               and job.get('conclusion') != 'skipped' for job in jobs):
+                        continue
+                runs.add(run_id)
+            except (ValueError, KeyError):
+                continue
+        if len(rows) < 100:
+            break
+    return runs
+
+
+def resolve(api, repository, tree):
+    selected = find_candidate(api, repository, tree)
+    if selected:
+        return selected
+    runs = active_preparations(api, repository, tree)
+    deadline = time.monotonic() + PREPARATION_WAIT
+    while runs:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise ValueError('Timed out waiting for full release preparation; retry publication after preparation succeeds')
+        print(f'Waiting for exact-tree release preparation (runs={",".join(sorted(runs))}); publication has not started', flush=True)
+        time.sleep(min(30, remaining))
+        selected = find_candidate(api, repository, tree)
+        if selected:
+            return selected
+        runs = {run for run in runs if api('/actions/runs/' + run).get('status') in ACTIVE_RUN_STATUSES}
+    # Preparation may complete between the artifact lookup and the run-status read.
+    selected = find_candidate(api, repository, tree)
+    if selected:
+        return selected
     raise ValueError('No successful full-verification artifact for this release tree; prepare the release PR or exact tag first')
 
 

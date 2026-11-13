@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import plistlib
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -69,6 +70,8 @@ class CandidateTest(unittest.TestCase):
         self.calls.append(path)
         if path.startswith('/actions/artifacts?'):
             return dict(artifacts=[copy.deepcopy(self.artifact)])
+        if path.startswith('/actions/workflows/macos-app.yaml/runs?'):
+            return dict(workflow_runs=[dict(copy.deepcopy(self.run), id=123)])
         if path == '/actions/artifacts/12':
             return copy.deepcopy(self.artifact)
         if path == '/actions/runs/123':
@@ -79,6 +82,8 @@ class CandidateTest(unittest.TestCase):
             return dict(jobs=copy.deepcopy(self.attempt_jobs))
         if path == '/git/commits/' + self.source:
             return dict(tree=dict(sha=self.tree))
+        if path == '/git/commits/' + 'd' * 40:
+            return dict(tree=dict(sha='e' * 40))
         if path == '/commits/' + self.source + '/pulls?per_page=100':
             return [copy.deepcopy(self.event['pull_request'])]
         self.fail('Unexpected metadata request: ' + path)
@@ -178,6 +183,120 @@ class CandidateTest(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, '403'):
             candidate.resolve(lambda path: (_ for _ in ()).throw(RuntimeError('403')), 'example/app', self.tree)
 
+    def test_publication_waits_for_matching_preparation_before_promoting(self):
+        for status in ('queued', 'in_progress'):
+            with self.subTest(status=status):
+                self.run.update(status=status, conclusion=None)
+                def finish(seconds):
+                    self.assertEqual(seconds, 30)
+                    self.run.update(status='completed', conclusion='success')
+                def api(path):
+                    if path.startswith('/actions/artifacts?') and self.run['status'] != 'completed':
+                        return dict(artifacts=[])
+                    return self.api(path)
+                with patch.object(candidate.time, 'sleep', side_effect=finish) as slept:
+                    selected = candidate.resolve(api, 'example/app', self.tree)
+                slept.assert_called_once()
+                self.assertEqual(selected['producer_run'], '123')
+                self.promote()
+                shutil.rmtree(self.output)
+
+    def test_uploaded_artifact_is_not_promoted_until_preparation_finishes(self):
+        self.run.update(status='in_progress', conclusion=None)
+        statuses = iter(('in_progress', 'completed'))
+        def advance(seconds):
+            self.run['status'] = next(statuses)
+            self.run['conclusion'] = 'success' if self.run['status'] == 'completed' else None
+        with patch.object(candidate.time, 'sleep', side_effect=advance) as slept:
+            selected = candidate.resolve(self.api, 'example/app', self.tree)
+        self.assertEqual(slept.call_count, 2)
+        self.assertEqual(selected['producer_run'], '123')
+
+    def test_completion_between_artifact_and_run_reads_is_rechecked(self):
+        self.run.update(status='in_progress', conclusion=None)
+        def api(path):
+            if path == '/actions/runs/123':
+                self.run.update(status='completed', conclusion='success')
+            if path.startswith('/actions/artifacts?') and self.run['status'] != 'completed':
+                return dict(artifacts=[])
+            return self.api(path)
+        with patch.object(candidate.time, 'sleep') as slept:
+            selected = candidate.resolve(api, 'example/app', self.tree)
+        slept.assert_called_once()
+        self.assertEqual(selected['producer_run'], '123')
+
+    def test_wait_reports_api_permission_failure_without_retrying_it(self):
+        self.run.update(status='in_progress', conclusion=None)
+        waiting = False
+        def sleep(seconds):
+            nonlocal waiting
+            waiting = True
+        def api(path):
+            if waiting:
+                raise RuntimeError('403')
+            return self.api(path)
+        with patch.object(candidate.time, 'sleep', side_effect=sleep) as slept:
+            with self.assertRaisesRegex(RuntimeError, '403'):
+                candidate.resolve(api, 'example/app', self.tree)
+        slept.assert_called_once()
+
+    def test_manual_preparation_with_active_portable_job_can_finish(self):
+        self.run.update(status='in_progress', conclusion=None, event='workflow_dispatch')
+        self.jobs[0]['conclusion'] = None
+        def finish(seconds):
+            self.jobs[0]['conclusion'] = 'success'
+            self.run.update(status='completed', conclusion='success')
+        with patch.object(candidate.time, 'sleep', side_effect=finish) as slept:
+            self.assertEqual(candidate.resolve(self.api, 'example/app', self.tree)['producer_run'], '123')
+        slept.assert_called_once()
+
+    def test_failed_or_cancelled_preparation_stops_waiting_without_publication(self):
+        for conclusion in ('failure', 'cancelled'):
+            self.run.update(status='in_progress', conclusion=None)
+            def finish(seconds):
+                self.run.update(status='completed', conclusion=conclusion)
+            with self.subTest(conclusion=conclusion), patch.object(candidate.time, 'sleep', side_effect=finish) as slept:
+                with self.assertRaisesRegex(ValueError, 'No successful'):
+                    candidate.resolve(self.api, 'example/app', self.tree)
+                slept.assert_called_once()
+            self.assertFalse(self.output.exists())
+
+    def test_unrelated_or_untrusted_work_never_keeps_publication_waiting(self):
+        original_run, original_event = copy.deepcopy(self.run), copy.deepcopy(self.event)
+        changes = [dict(head_sha='d' * 40), dict(event='repository_dispatch'),
+                   dict(head_repository=dict(full_name='other/fork')), dict(referenced_workflows=[]),
+                   dict(path='.github/workflows/other.yaml')]
+        for change in changes:
+            self.run = dict(original_run, status='in_progress', conclusion=None, **change)
+            with self.subTest(change=change), patch.object(candidate.time, 'sleep') as slept:
+                with self.assertRaisesRegex(ValueError, 'No successful'):
+                    candidate.resolve(self.api, 'example/app', self.tree)
+                slept.assert_not_called()
+        self.run = dict(original_run, status='in_progress', conclusion=None)
+        self.event['pull_request']['user']['type'] = 'User'
+        with patch.object(candidate.time, 'sleep') as slept:
+            with self.assertRaisesRegex(ValueError, 'No successful'):
+                candidate.resolve(self.api, 'example/app', self.tree)
+            slept.assert_not_called()
+        self.event = original_event
+
+    def test_preparation_wait_has_a_fixed_deadline(self):
+        self.run.update(status='in_progress', conclusion=None)
+        with patch.object(candidate.time, 'monotonic', side_effect=[0, 0, 21000]), \
+             patch.object(candidate.time, 'sleep') as slept:
+            with self.assertRaisesRegex(ValueError, 'Timed out'):
+                candidate.resolve(self.api, 'example/app', self.tree)
+            slept.assert_called_once_with(30)
+
+    def test_manual_publication_does_not_wait_for_itself(self):
+        self.run.update(status='in_progress', conclusion=None, event='workflow_dispatch')
+        self.jobs = [dict(name='release / ' + stage, conclusion='skipped')
+                     for stage in ('portable', 'verify', 'package')]
+        with patch.object(candidate.time, 'sleep') as slept:
+            with self.assertRaisesRegex(ValueError, 'No successful'):
+                candidate.resolve(self.api, 'example/app', self.tree)
+            slept.assert_not_called()
+
     def test_publication_or_focused_workflow_success_is_not_full_verification_proof(self):
         self.run.update(event='workflow_dispatch', pull_requests=[])
         self.jobs = [dict(name='release / publish', conclusion='success', run_attempt=1)]
@@ -227,6 +346,8 @@ class WorkflowTest(unittest.TestCase):
         self.assertEqual(set(publish['jobs']), {'resolve', 'sign', 'publish'})
         self.assertEqual(publish['jobs']['sign']['permissions'], {'contents': 'read'})
         self.assertNotIn('github.token', json.dumps(publish['jobs']['sign']))
+        self.assertGreaterEqual(publish['jobs']['resolve']['timeout-minutes'] * 60,
+                                candidate.PREPARATION_WAIT + 5 * 60)
 
     def test_release_pr_uses_head_tree_and_full_preparation_without_signing_secrets(self):
         build = self.workflow('build_macos_app.yaml')
