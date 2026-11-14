@@ -12,6 +12,24 @@ consumer_workflow="$ROOT/consumers/workflows/renovate.yaml"
 
 self_workflow="$ROOT/.github/workflows/renovate-self.yaml"
 
+# Python transitive updates need an independent refresh path. Keep the schedule
+# compatible with a once-daily caller instead of the default pre-4am window.
+jq -e '.lockFileMaintenance.enabled == false and
+  .pep621.lockFileMaintenance.enabled == true and
+  .pep621.lockFileMaintenance.schedule == ["on monday"]' "$config" >/dev/null || {
+    echo "Python lockfile maintenance must be enabled during the Monday daily run" >&2
+    exit 1
+}
+
+
+without_alert_permission="$TMPDIR/without-alert-permission.yaml"
+sed '/permission-vulnerability-alerts: read/d' "$renovate_workflow" > "$without_alert_permission"
+if "$ROOT/scripts/lint-renovate-workflow-token.sh" "$without_alert_permission" > "$TMPDIR/token-lint.log" 2>&1; then
+    echo "missing alert permission must fail token validation" >&2
+    exit 1
+fi
+grep -q 'must request vulnerability-alerts:read' "$TMPDIR/token-lint.log"
+
 for input in repair-lockfiles rebase-branches; do
     if ! grep -Fq "${input}:" "$self_workflow" || ! grep -Fq "${input}: \${{ github.event_name == 'workflow_dispatch' && inputs.${input} }}" "$self_workflow"; then
         echo "self Renovate must expose and forward the same manual repair controls as consumers" >&2
@@ -175,8 +193,8 @@ if [ ! -x "$report_linter" ]; then
     exit 1
 fi
 
-allowed_warning="$TMPDIR/allowed-warning.json"
-cat > "$allowed_warning" <<'JSON'
+security_warning="$TMPDIR/security-warning.json"
+cat > "$security_warning" <<'JSON'
 {
   "repositories": [
     {
@@ -192,7 +210,17 @@ cat > "$allowed_warning" <<'JSON'
   ]
 }
 JSON
-"$report_linter" "$allowed_warning"
+if "$report_linter" "$security_warning"; then
+    echo "security-alert access failure must fail the Renovate run" >&2
+    exit 1
+fi
+
+top_level_warning="$TMPDIR/top-level-security-warning.json"
+jq '{problems: [{msg: .repositories[0].problems[0].warnings[0]}]}' "$security_warning" > "$top_level_warning"
+if "$report_linter" "$top_level_warning"; then
+    echo "top-level security-alert access failure must fail the Renovate run" >&2
+    exit 1
+fi
 
 allowed_pep440="$TMPDIR/allowed-pep440.json"
 cat > "$allowed_pep440" <<'JSON'

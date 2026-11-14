@@ -216,3 +216,31 @@ Their Actions job/step lifetime allows up to six hours for queueing and executio
 this watchdog does not enlarge the verifier execution budget. Direct Swift
 verification retains its original bound. Canonical PR callers cancel superseded
 runs for the same PR/ref; macOS release publications retain their runs.
+
+## Renovate transitive dependency coverage
+
+The App installation token explicitly requests `vulnerability-alerts: read`
+(GitHub's **Dependabot alerts: Read-only** repository permission). This is distinct
+from `security-events` and is unavailable on `GITHUB_TOKEN`. The App registration
+must grant that permission, and each installation must accept any pending
+permission change. If token creation fails after adding this request, check the
+App's repository permissions and the organization's installed-App approval;
+requesting a permission in YAML does not grant it to the App. Keep Dependabot
+alerts enabled. Retain Dependabot security PRs until an actual Renovate run proves
+it can read alerts and propose a security fix.
+
+The `pep621` manager checks declared Python dependencies. Security alerts let it
+also target vulnerable transitive dependencies in `uv.lock`. A denied alert read
+is a workflow failure, rather than a successful run with reduced coverage.
+Report diagnostics retain the permission warning without logging tokens or alert
+payloads.
+
+Python lockfile maintenance runs on Mondays, updating indirect versions within
+manifest constraints even when no manifest dependency changes. The full-day
+window includes the canonical daily schedule; Renovate's default Monday-before-4am
+window does not. Other managers retain their existing disabled maintenance policy.
+Repositories extending `default.json` by branch receive this preset change on the
+next run after merge; pinned consumers need a reviewed preset/ref update. The
+reusable Renovate workflow tracks master, so its token request and failure policy
+apply to callers after merge without modifying copied caller workflows. No
+security fix has been verified merely because this configuration passes tests.
