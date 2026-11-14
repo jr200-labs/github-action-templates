@@ -235,10 +235,18 @@ is a workflow failure, rather than a successful run with reduced coverage.
 Report diagnostics retain the permission warning without logging tokens or alert
 payloads.
 
-Python lockfile maintenance runs on Mondays, updating indirect versions within
-manifest constraints even when no manifest dependency changes. The full-day
+Python and npm (including pnpm and Yarn) lockfile maintenance runs on Mondays,
+updating indirect versions within manifest constraints even when no manifest
+dependency changes. The full-day
 window includes the canonical daily schedule; Renovate's default Monday-before-4am
 window does not. Other managers retain their existing disabled maintenance policy.
+Consumers can override their manager-specific maintenance policy locally.
+
+Install-script permission is set with `RENOVATE_ALLOW_SCRIPTS` in both passes of
+the reusable workflow. The preset retains `ignoreScripts: false`, but cannot
+grant the global `allowScripts` permission itself. Consumers using another
+self-hosted executor must configure that permission in its administrator config.
+
 Repositories extending `default.json` by branch receive this preset change on the
 next run after merge; pinned consumers need a reviewed preset/ref update. The
 reusable Renovate workflow tracks master, so its token request and failure policy

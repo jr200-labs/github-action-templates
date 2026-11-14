@@ -327,6 +327,8 @@ jobs:
           # Self-hosted ARC runners use dind whose inner containers
           # can't resolve DNS to api.github.com (ETIMEDOUT).
           RENOVATE_BINARY_SOURCE: install
+          # Install-script permission is self-hosted configuration, not a repo preset option.
+          RENOVATE_ALLOW_SCRIPTS: 'true'
           # Persist Renovate's HTTP/release metadata, repository JSON cache,
           # and containerbase tool downloads between workflow runs.
           RENOVATE_CACHE_DIR: /out/cache
@@ -404,6 +406,8 @@ jobs:
         env:
           LOG_LEVEL: ${{ inputs.log-level }}
           RENOVATE_BINARY_SOURCE: install
+          # Install-script permission is self-hosted configuration, not a repo preset option.
+          RENOVATE_ALLOW_SCRIPTS: 'true'
           RENOVATE_CACHE_DIR: /out/cache
           RENOVATE_REPOSITORY_CACHE: 'enabled'
           RENOVATE_REPOSITORIES: ${{ github.repository }}

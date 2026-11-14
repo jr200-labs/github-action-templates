@@ -12,15 +12,23 @@ consumer_workflow="$ROOT/consumers/workflows/renovate.yaml"
 
 self_workflow="$ROOT/.github/workflows/renovate-self.yaml"
 
-# Python transitive updates need an independent refresh path. Keep the schedule
+# Python and npm transitive updates need independent refresh paths. Keep the schedule
 # compatible with a once-daily caller instead of the default pre-4am window.
 jq -e '.lockFileMaintenance.enabled == false and
+  .npm.lockFileMaintenance.enabled == true and
+  .npm.lockFileMaintenance.schedule == ["on monday"] and
+  (has("allowScripts") | not) and
   .pep621.lockFileMaintenance.enabled == true and
   .pep621.lockFileMaintenance.schedule == ["on monday"]' "$config" >/dev/null || {
-    echo "Python lockfile maintenance must be enabled during the Monday daily run" >&2
+    echo "Python and npm lockfile maintenance must cover the Monday daily run; script permission belongs in global config" >&2
     exit 1
 }
 
+
+if [ "$(grep -Fc "RENOVATE_ALLOW_SCRIPTS: 'true'" "$renovate_workflow")" -ne 2 ]; then
+    echo "Both Renovate passes must configure install-script permission globally" >&2
+    exit 1
+fi
 
 without_alert_permission="$TMPDIR/without-alert-permission.yaml"
 sed '/permission-vulnerability-alerts: read/d' "$renovate_workflow" > "$without_alert_permission"

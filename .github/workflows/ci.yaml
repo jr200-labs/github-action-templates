@@ -52,7 +52,7 @@ jobs:
       - name: Validate Renovate config
         run: |
           npx --yes --package=renovate@43 -- \
-            renovate-config-validator --strict default.json renovate.json
+            renovate-config-validator --strict --no-global default.json renovate.json
 
   validate-workflow-syntax:
     # actionlint catches: YAML parse errors, invalid `if:` expressions,
