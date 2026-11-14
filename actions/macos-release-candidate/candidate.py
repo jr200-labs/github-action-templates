@@ -119,7 +119,8 @@ class API:
 
     def __call__(self, path):
         allowed = (r'/actions/artifacts(?:\?per_page=100&page=(?:[1-9]|10)|/[1-9][0-9]*)',
-                   r'/actions/workflows/macos-app\.yaml/runs\?per_page=100&page=(?:[1-9]|10)',
+                   r'/actions/workflows/macos-app\.yaml/runs\?per_page=10&page=(?:[1-9][0-9]?|100)&event=(?:pull_request|workflow_dispatch)&status=(?:queued|in_progress|waiting|pending|requested)',
+                   r'/actions/runs/[1-9][0-9]*/artifacts\?per_page=100&page=(?:[1-9]|10)',
                    r'/actions/runs/[1-9][0-9]*(?:/jobs\?per_page=100&filter=latest|/attempts/[1-9][0-9]*/jobs\?per_page=100)?',
                    r'/commits/' + SHA + r'/pulls\?per_page=100', r'/git/commits/' + SHA)
         if not any(re.fullmatch(pattern, path) for pattern in allowed):
@@ -187,9 +188,10 @@ def producer(api, repository, artifact, tree):
     return dict(artifact_id=str(artifact['id']), producer_run=str(run_id), source=source, tree=tree)
 
 
-def find_candidate(api, repository, tree):
+def find_candidate(api, repository, tree, run_id=None):
     for page in range(1, 11):
-        rows = api(f'/actions/artifacts?per_page=100&page={page}')['artifacts']
+        endpoint = '/actions/artifacts' if run_id is None else f'/actions/runs/{run_id}/artifacts'
+        rows = api(f'{endpoint}?per_page=100&page={page}')['artifacts']
         for artifact in sorted(rows, key=lambda row: row['id'], reverse=True):
             if not artifact.get('name', '').startswith('macos-release-candidate-' + tree + '-'):
                 continue
@@ -204,32 +206,36 @@ def find_candidate(api, repository, tree):
 
 def active_preparations(api, repository, tree):
     runs = set()
-    for page in range(1, 11):
-        rows = api(f'/actions/workflows/macos-app.yaml/runs?per_page=100&page={page}')['workflow_runs']
-        for run in rows:
-            if run.get('status') not in ACTIVE_RUN_STATUSES:
-                continue
-            # Publication uses this same workflow. Only preparation may keep it waiting.
-            if run.get('event') not in ('pull_request', 'workflow_dispatch'):
-                continue
-            if run.get('event') == 'pull_request' and not run.get('head_branch', '').startswith('release-please--branches--'):
-                continue
-            try:
-                preparation_source(api, repository, run, tree)
-                run_id = str(run['id'])
-                if not re.fullmatch(r'[1-9][0-9]*', run_id):
-                    continue
-                if run['event'] == 'workflow_dispatch':
-                    jobs = api(f'/actions/runs/{run_id}/jobs?per_page=100&filter=latest')['jobs']
-                    # A manual publisher has skipped preparation jobs; never wait on itself.
-                    if not any(job.get('name', '').endswith(' / portable')
-                               and job.get('conclusion') != 'skipped' for job in jobs):
+    # Filter on the server: completed history is unrelated to readiness. Small
+    # pages keep verbose GitHub run records within the bounded JSON reader.
+    for event in ('pull_request', 'workflow_dispatch'):
+        for status in sorted(ACTIVE_RUN_STATUSES):
+            for page in range(1, 101):
+                rows = api(f'/actions/workflows/macos-app.yaml/runs?per_page=10&page={page}&event={event}&status={status}')['workflow_runs']
+                for run in rows:
+                    if run.get('status') not in ACTIVE_RUN_STATUSES:
                         continue
-                runs.add(run_id)
-            except (ValueError, KeyError):
-                continue
-        if len(rows) < 100:
-            break
+                    # Publication uses this same workflow. Only preparation may keep it waiting.
+                    if run.get('event') not in ('pull_request', 'workflow_dispatch'):
+                        continue
+                    if run.get('event') == 'pull_request' and not run.get('head_branch', '').startswith('release-please--branches--'):
+                        continue
+                    try:
+                        preparation_source(api, repository, run, tree)
+                        run_id = str(run['id'])
+                        if not re.fullmatch(r'[1-9][0-9]*', run_id):
+                            continue
+                        if run['event'] == 'workflow_dispatch':
+                            jobs = api(f'/actions/runs/{run_id}/jobs?per_page=100&filter=latest')['jobs']
+                            # A manual publisher has skipped preparation jobs; never wait on itself.
+                            if not any(job.get('name', '').endswith(' / portable')
+                                       and job.get('conclusion') != 'skipped' for job in jobs):
+                                continue
+                        runs.add(run_id)
+                    except (ValueError, KeyError):
+                        continue
+                if len(rows) < 10:
+                    break
     return runs
 
 
@@ -238,6 +244,7 @@ def resolve(api, repository, tree):
     if selected:
         return selected
     runs = active_preparations(api, repository, tree)
+    discovered = bool(runs)
     deadline = time.monotonic() + PREPARATION_WAIT
     while runs:
         remaining = deadline - time.monotonic()
@@ -245,12 +252,20 @@ def resolve(api, repository, tree):
             raise ValueError('Timed out waiting for full release preparation; retry publication after preparation succeeds')
         print(f'Waiting for exact-tree release preparation (runs={",".join(sorted(runs))}); publication has not started', flush=True)
         time.sleep(min(30, remaining))
-        selected = find_candidate(api, repository, tree)
-        if selected:
-            return selected
-        runs = {run for run in runs if api('/actions/runs/' + run).get('status') in ACTIVE_RUN_STATUSES}
-    # Preparation may complete between the artifact lookup and the run-status read.
-    selected = find_candidate(api, repository, tree)
+        pending = set()
+        for run_id in sorted(runs):
+            # Once bound, poll only that run and its artifacts. Read status first
+            # so completion between requests cannot hide the finished archive.
+            run = api('/actions/runs/' + run_id)
+            if run.get('status') in ACTIVE_RUN_STATUSES:
+                pending.add(run_id)
+            elif run.get('conclusion') == 'success':
+                selected = find_candidate(api, repository, tree, run_id=run_id)
+                if selected:
+                    return selected
+        runs = pending
+    # Handle completion during initial discovery; never restart verification.
+    selected = None if discovered else find_candidate(api, repository, tree)
     if selected:
         return selected
     raise ValueError('No successful full-verification artifact for this release tree; prepare the release PR or exact tag first')

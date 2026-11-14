@@ -68,10 +68,13 @@ class CandidateTest(unittest.TestCase):
 
     def api(self, path):
         self.calls.append(path)
-        if path.startswith('/actions/artifacts?'):
+        if path.startswith('/actions/artifacts?') or '/artifacts?' in path:
             return dict(artifacts=[copy.deepcopy(self.artifact)])
         if path.startswith('/actions/workflows/macos-app.yaml/runs?'):
-            return dict(workflow_runs=[dict(copy.deepcopy(self.run), id=123)])
+            from urllib.parse import parse_qs, urlsplit
+            query = parse_qs(urlsplit(path).query)
+            matches = all(self.run.get(key) == query[key][0] for key in ('event', 'status') if key in query)
+            return dict(workflow_runs=[dict(copy.deepcopy(self.run), id=123)] if matches else [])
         if path == '/actions/artifacts/12':
             return copy.deepcopy(self.artifact)
         if path == '/actions/runs/123':
@@ -116,6 +119,56 @@ class CandidateTest(unittest.TestCase):
         self.assertEqual(proof['producer_run'], '123')
         self.assertEqual(proof['publication_run'], '456')
         self.assertEqual(proof['target_source'], merged)
+
+    def test_discovery_filters_active_work_and_polls_only_selected_run(self):
+        self.run.update(status='in_progress', conclusion=None)
+        waiting = False
+        def api(path):
+            if '/workflows/' in path:
+                self.assertIn('per_page=10&', path)
+                self.assertIn('&status=', path)
+                self.assertIn('&event=', path)
+            if path.startswith('/actions/artifacts?') and waiting:
+                self.fail('Repository history scanned while waiting for a known producer')
+            return self.api(path)
+        def finish(seconds):
+            nonlocal waiting
+            waiting = True
+            self.run.update(status='completed', conclusion='success')
+        with patch.object(candidate.time, 'sleep', side_effect=finish):
+            self.assertEqual(candidate.resolve(api, 'example/app', self.tree)['producer_run'], '123')
+        self.assertTrue(any('/actions/runs/123/artifacts?' in path for path in self.calls))
+
+    def test_verbose_history_is_paginated_through_real_bounded_client(self):
+        from urllib.parse import parse_qs, urlsplit
+        self.run.update(status='in_progress', conclusion=None)
+        # GitHub repeats repository metadata in each row; 100 otherwise normal
+        # rows exceed the reader's 1 MiB limit. Only active PR work is relevant.
+        row = dict(copy.deepcopy(self.run), id=123, metadata='x' * 16000)
+        self.assertGreater(len(json.dumps({'workflow_runs': [row] * 100})), 1_048_576)
+        client = candidate.API('example/app', 'token-' + 'x' * 30)
+        requests = []
+        class Response:
+            def __init__(self, data): self.data = json.dumps(data).encode()
+            def __enter__(self): return self
+            def __exit__(self, *args): pass
+            def read(self, size): return self.data[:size]
+        def open_request(request, **kwargs):
+            url = urlsplit(request.full_url)
+            path = url.path.removeprefix('/repos/example/app')
+            query = parse_qs(url.query)
+            requests.append(query)
+            if '/workflows/' in path:
+                if query.get('event') != ['pull_request'] or query.get('status') != ['in_progress']:
+                    return Response({'workflow_runs': []})
+                count = int(query['per_page'][0])
+                # A full first page must not truncate discovery of the next page.
+                rows = [dict(row, head_sha='d' * 40)] * count if query['page'] == ['1'] else [row]
+                return Response({'workflow_runs': rows})
+            return Response(self.api(path + ('?' + url.query if url.query else '')))
+        with patch.object(candidate, 'urlopen', side_effect=open_request):
+            self.assertEqual(candidate.active_preparations(client, 'example/app', self.tree), {'123'})
+        self.assertTrue(any(query.get('page') == ['2'] for query in requests))
 
     def test_focused_and_ordinary_prs_cannot_certify_a_release(self):
         for env, event, reason in [(dict(self.env, CANDIDATE_FULL='false'), self.event, 'Focused'),
