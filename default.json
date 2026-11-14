@@ -15,6 +15,12 @@
   "lockFileMaintenance": {
     "enabled": false
   },
+  "pep621": {
+    "lockFileMaintenance": {
+      "enabled": true,
+      "schedule": ["on monday"]
+    }
+  },
   "postUpdateOptions": ["pnpmDedupe"],
   "allowScripts": true,
   "ignoreScripts": false,

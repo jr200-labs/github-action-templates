@@ -154,6 +154,9 @@ jobs:
           permission-issues: write
           permission-statuses: write
           permission-workflows: write
+          # Explicit token permissions are a subset of the App installation's
+          # grants. Dependabot alert reads power transitive security updates.
+          permission-vulnerability-alerts: read
 
       - name: Wait for App token repository access
         if: steps.app-token.outputs.token != ''
@@ -504,8 +507,8 @@ jobs:
 
       - name: Fail on Renovate problems
         # Reads Renovate's structured JSON report. Fails the workflow
-        # on problems except the known vulnerability-alert permission
-        # warning. If the report is missing, that's also a hard fail
+        # on problems, including denied vulnerability-alert reads. Those reads
+        # are required for transitive security updates. Missing reports also fail
         # (Renovate may have crashed or couldn't write the file).
         if: always() && inputs.dry-run == ''
         shell: bash
