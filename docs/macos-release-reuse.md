@@ -45,6 +45,13 @@ holding a macOS runner or changing verification/packaging execution budgets.
 Failed or cancelled preparation leaves publication failed with the missing-proof
 diagnostic. Only successful preparation with a validated artifact can proceed.
 
+Discovery queries only active preparation events/statuses, in ten-run pages,
+under the unchanged 1 MiB metadata limit. Completed workflow history does not
+participate in readiness discovery. After binding an exact-tree producer, the
+coordinator polls its run ID and reads only that run's artifacts on success;
+it does not rescan repository artifact history every thirty seconds. Producer,
+job-attempt, tree, policy and byte-integrity checks still apply at promotion.
+
 Accepted producers are same-repository release PRs or explicit manual preparation
 runs of the canonical workflow using the shared builder. Failed/incomplete runs,
 forks, other workflows, incompatible policy/configuration, different trees,
