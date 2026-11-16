@@ -62,6 +62,7 @@ Current groups:
 |---|---|---|
 | `hygiene` | lint-pr-metadata, commitlint (Cocogitto conventional-commit check), drift-check, renovate, lint-version-downgrades | every repo that wants any CI |
 | `python` | ci-python | repo has `pyproject.toml` |
+| `python-stdlib` | ci-python-stdlib | repo keeps dependency-free `unittest` checks under `scripts/` |
 | `node` | ci-node | repo has `package.json` |
 | `node-size-limit` | ci-node-size-limit | repo has `package.json`, a `size` script, and wants size-limit PR comments |
 | `node-bench` | node-bench | repo has a Node/pnpm benchmark workflow and wants the shared manual benchmark caller |
@@ -229,7 +230,7 @@ The canonical caller workflows encode invariants that are easy to break by hand 
 
 ## Tests: unit vs integration
 
-The canonical `ci-python` / `ci-go` / `ci-node` / `ci-swift` callers run **lint/build + unit tests only**. For native Swift/Xcode macOS app development, `ci-swift` builds and tests the app scheme on a macOS runner with code signing disabled. Integration tests — anything that needs external infrastructure (database, message bus, S3, etc.) — stay **bespoke per repo** in a separate `integration-tests.yaml` workflow that owns its own service setup, fixtures, and secrets.
+The canonical `ci-python` / `ci-go` / `ci-node` / `ci-swift` callers run **lint/build + unit tests only**. `ci-python-stdlib` runs `unittest` from `scripts/` without installing a Python package; repository contract tests may validate committed data in that suite. For native Swift/Xcode macOS app development, `ci-swift` builds and tests the app scheme on a macOS runner with code signing disabled. Integration tests — anything that needs external infrastructure (database, message bus, S3, etc.) — stay **bespoke per repo** in a separate `integration-tests.yaml` workflow that owns its own service setup, fixtures, and secrets.
 
 Why: each repo's external deps are different, so there's no canonical infra setup that fits every consumer. Pushing infra into the canonical CI would either reintroduce per-repo substitution (rejected — see "How a consuming repo uses this" above) or impose a one-size-fits-none stack on every Python/Go/Node repo.
 

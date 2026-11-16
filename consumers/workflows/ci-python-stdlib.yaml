@@ -1,0 +1,17 @@
+# GENERATED/SHARED WORKFLOW: copied into consuming repos by sync-shared.
+# Do not edit in consuming repos; change jr200-labs/github-action-templates and sync.
+name: ci-python-stdlib
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    uses: jr200-labs/github-action-templates/.github/workflows/ci_python_stdlib.yaml@master
+    with:
+      runner: ${{ fromJSON(vars.RUNNER_PROFILES)[vars.RUNNER_PROFILE].default }}

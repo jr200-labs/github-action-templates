@@ -1,0 +1,29 @@
+name: template-ci-python-stdlib
+
+on:
+  workflow_call:
+    inputs:
+      runner:
+        description: Runner label for the Python checks
+        required: true
+        type: string
+      test-directory:
+        description: Directory containing standard-library unittest modules
+        required: false
+        type: string
+        default: scripts
+
+permissions:
+  contents: read
+
+jobs:
+  unit-tests:
+    runs-on: ${{ inputs.runner }}
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - name: Run repository tests
+        shell: bash
+        env:
+          TEST_DIRECTORY: ${{ inputs.test-directory }}
+        run: python3 -m unittest discover -s "$TEST_DIRECTORY" -p 'test_*.py'

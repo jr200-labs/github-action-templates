@@ -1,0 +1,3 @@
+# Standard-library Python checks for repositories with tests under scripts/.
+includes:
+  - ci-python-stdlib
