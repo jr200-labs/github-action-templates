@@ -71,7 +71,7 @@ jobs:
         env:
           APP_CONFIG: ${{ inputs.config-path }}
         run: python3 .shared/package-macos-app.py metadata --config "$APP_CONFIG" >> "$GITHUB_OUTPUT"
-      - uses: astral-sh/setup-uv@v10.3.3
+      - uses: astral-sh/setup-uv@v10.4.0
         if: steps.config.outputs.portable == 'true' && steps.config.outputs.setup_uv == 'true'
       - name: Verify portable inputs
         id: checked
@@ -128,7 +128,7 @@ jobs:
         env:
           APP_CONFIG: ${{ inputs.config-path }}
         run: python3 .shared/package-macos-app.py metadata --config "$APP_CONFIG" >> "$GITHUB_OUTPUT"
-      - uses: astral-sh/setup-uv@v10.3.3
+      - uses: astral-sh/setup-uv@v10.4.0
         if: steps.config.outputs.setup_uv == 'true'
       - name: Resolve verification inputs
         id: verification
@@ -208,7 +208,7 @@ jobs:
         env:
           APP_CONFIG: ${{ inputs.config-path }}
         run: python3 .shared/package-macos-app.py metadata --config "$APP_CONFIG" >> "$GITHUB_OUTPUT"
-      - uses: astral-sh/setup-uv@v10.3.3
+      - uses: astral-sh/setup-uv@v10.4.0
         if: steps.config.outputs.setup_uv == 'true'
       - name: Download verification receipt
         uses: actions/download-artifact@v8

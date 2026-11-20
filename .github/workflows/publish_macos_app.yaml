@@ -106,7 +106,7 @@ jobs:
         with:
           ref: refs/tags/${{ inputs.release-tag }}
           persist-credentials: false
-      - uses: astral-sh/setup-uv@v10.3.3
+      - uses: astral-sh/setup-uv@v10.4.0
         if: needs.resolve.outputs.setup-uv == 'true'
       - name: Download promoted publication input
         uses: actions/download-artifact@v8
