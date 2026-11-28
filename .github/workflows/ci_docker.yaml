@@ -36,9 +36,19 @@ jobs:
         uses: actions/cache/restore@v6
         continue-on-error: true
         with:
-          path: ${{ runner.temp }}/gat-image-cache/import
+          path: ${{ runner.temp }}/gat-image-cache/export
           key: gat-docker-ci-v1-${{ runner.os }}-${{ runner.arch }}-${{ github.sha }}
           restore-keys: gat-docker-ci-v1-${{ runner.os }}-${{ runner.arch }}-
+
+      # Cache versions are path-sensitive. Keep the restore and save paths
+      # identical, then make the restored archive available to BuildKit.
+      - name: Stage restored image layers
+        if: steps.buildx.outcome == 'success'
+        run: |
+          cache="$RUNNER_TEMP/gat-image-cache"
+          if [ -d "$cache/export" ]; then
+            mv "$cache/export" "$cache/import"
+          fi
 
       - name: Build and smoke-test production images
         env:
