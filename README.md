@@ -123,8 +123,8 @@ No new labels, credentials or publication permissions are required.
 Opt into `docker-ci` for production-image validation on pull requests. Sync the
 released group to install `ci-docker.yaml` and `.shared/check-docker-images.py`.
 The canonical caller uses the shared `ci_docker.yaml` reusable with contents-read
-permission and the configured default runner. It builds locally without registry
-login, publication or artifact uploads. The ten-minute PR job limit includes smoke
+permission and the configured default runner. It builds and smoke-tests images
+without registry login, publication or artifact uploads. The ten-minute PR job limit includes smoke
 tests. Manual runs on the default branch have a 30-minute limit for cold cache
 seeding. Docker, Python 3 and yq must be installed on the runner.
 
@@ -159,6 +159,12 @@ The cache is scoped to the repository and native runner architecture. Enable it
 only for image builds whose intermediate layers are safe for PRs to read.
 Buildx setup failures fall back to the local Docker build. Cache misses build
 normally.
+
+Set `ci-managed-buildkit: true` alongside `ci-cache: true` to prefer the
+runner-provided BuildKit service for same-repository pull requests. The image
+is loaded into local Docker for the same smoke test. If the managed builder
+cannot be configured or connected, the job uses the per-job builder and
+restores the archive. Manual default-branch dispatches seed the archive.
 
 Add generic build capabilities here and release them before adopting them in a
 consumer. A missing shared Docker check is a reason to extend GAT; application

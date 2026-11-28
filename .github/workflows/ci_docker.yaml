@@ -17,15 +17,54 @@ jobs:
     timeout-minutes: ${{ github.event_name == 'workflow_dispatch' && github.ref_name == github.event.repository.default_branch && 30 || 10 }}
     steps:
       - uses: actions/checkout@v7
-      - name: Read image cache setting
+      - name: Read image cache settings
         id: image-cache
         run: |
           if [ -f .github/images.yaml ] && yq -e '.["ci-cache"] == true' .github/images.yaml >/dev/null; then
             echo 'enabled=true' >> "$GITHUB_OUTPUT"
           fi
 
+          if [ -f .github/images.yaml ] && yq -e '.["ci-managed-buildkit"] == true' .github/images.yaml >/dev/null; then
+            echo 'managed=true' >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Detect runner-provided BuildKit
+        id: managed-config
+        if: steps.image-cache.outputs.managed == 'true' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+        run: |
+          if [ -z "${BUILDKIT_ENDPOINT:-}" ] || [ -z "${BUILDKIT_SERVER_NAME:-}" ] || [ -z "${BUILDKIT_TLS_DIR:-}" ]; then
+            echo "::notice::Runner-provided BuildKit is unavailable. Using the per-job builder."
+            exit 0
+          fi
+          for file in ca.crt tls.crt tls.key; do
+            if [ ! -r "$BUILDKIT_TLS_DIR/$file" ]; then
+              echo "::notice::Runner-provided BuildKit TLS configuration is incomplete. Using the per-job builder."
+              exit 0
+            fi
+          done
+          {
+            echo "endpoint=$BUILDKIT_ENDPOINT"
+            echo "tls-dir=$BUILDKIT_TLS_DIR"
+            echo "server-name=$BUILDKIT_SERVER_NAME"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Set up managed BuildKit
+        id: managed
+        if: steps.managed-config.outputs.endpoint != ''
+        uses: docker/setup-buildx-action@v4
+        continue-on-error: true
+        timeout-minutes: 1
+        with:
+          driver: remote
+          endpoint: ${{ steps.managed-config.outputs.endpoint }}
+          driver-opts: |
+            cacert=${{ steps.managed-config.outputs.tls-dir }}/ca.crt
+            cert=${{ steps.managed-config.outputs.tls-dir }}/tls.crt
+            key=${{ steps.managed-config.outputs.tls-dir }}/tls.key
+            servername=${{ steps.managed-config.outputs.server-name }}
+
       - name: Set up Buildx
-        if: steps.image-cache.outputs.enabled == 'true'
+        if: steps.image-cache.outputs.enabled == 'true' && steps.managed.outcome != 'success'
         id: buildx
         uses: docker/setup-buildx-action@v4
         continue-on-error: true
@@ -52,7 +91,7 @@ jobs:
 
       - name: Build and smoke-test production images
         env:
-          GAT_DOCKER_BUILDER: ${{ steps.buildx.outcome == 'success' && steps.buildx.outputs.name || '' }}
+          GAT_DOCKER_BUILDER: ${{ steps.managed.outcome == 'success' && steps.managed.outputs.name || steps.buildx.outcome == 'success' && steps.buildx.outputs.name || '' }}
           GAT_DOCKER_CACHE_DIR: ${{ runner.temp }}/gat-image-cache
           GAT_DOCKER_CACHE_EXPORT: ${{ steps.buildx.outcome == 'success' && github.event_name == 'workflow_dispatch' && github.ref_name == github.event.repository.default_branch && steps.restore.outputs.cache-hit != 'true' }}
         run: python3 .shared/check-docker-images.py
