@@ -78,6 +78,8 @@ jobs:
               - '.size-limit.json'
 
   unit:
+    outputs:
+      inline-integration: ${{ steps.ci-options.outputs.inline-integration }}
     runs-on: ${{ inputs.runner || fromJSON(vars.RUNNER_PROFILES)[vars.RUNNER_PROFILE].default }}
     steps:
       - name: Checkout
@@ -109,8 +111,17 @@ jobs:
         env:
           PNPM_CONFIG_MINIMUM_RELEASE_AGE: ${{ inputs.minimum-release-age }}
 
-      # Speeds up Next.js rebuilds. No-op for non-Next repos (path simply missing).
+      - name: Read repository CI options
+        id: ci-options
+        run: |
+          node <<'NODE' >> "$GITHUB_OUTPUT"
+          const { config } = require('./package.json');
+          console.log('inline-integration=' + (config?.ci_inline_integration === true));
+          console.log('cache-nextjs=' + (config?.ci_cache_nextjs !== false));
+          NODE
+
       - name: Cache Next.js build
+        if: steps.ci-options.outputs.cache-nextjs == 'true'
         uses: actions/cache@v6
         with:
           path: .next/cache
@@ -201,8 +212,19 @@ jobs:
         env:
           PNPM_CONFIG_MINIMUM_RELEASE_AGE: ${{ inputs.minimum-release-age }}
 
+      - name: Integration tests
+        if: inputs.run-integration && steps.ci-options.outputs.inline-integration == 'true'
+        run: &run-integration-tests |
+          if node -e "const p=require('./package.json'); process.exit(p.scripts?.['test:integration'] ? 0 : 1)" 2>/dev/null; then
+            pnpm test:integration
+          else
+            echo "No test:integration script found, skipping"
+          fi
+        env:
+          PNPM_CONFIG_MINIMUM_RELEASE_AGE: ${{ inputs.minimum-release-age }}
+
   integration:
-    if: inputs.run-integration
+    if: inputs.run-integration && needs.unit.outputs.inline-integration != 'true'
     runs-on: ${{ inputs.runner || fromJSON(vars.RUNNER_PROFILES)[vars.RUNNER_PROFILE].default }}
     needs: unit
     steps:
@@ -236,12 +258,7 @@ jobs:
           PNPM_CONFIG_MINIMUM_RELEASE_AGE: ${{ inputs.minimum-release-age }}
 
       - name: Integration tests
-        run: |
-          if node -e "const p=require('./package.json'); process.exit(p.scripts?.['test:integration'] ? 0 : 1)" 2>/dev/null; then
-            pnpm test:integration
-          else
-            echo "No test:integration script found, skipping"
-          fi
+        run: *run-integration-tests
         env:
           PNPM_CONFIG_MINIMUM_RELEASE_AGE: ${{ inputs.minimum-release-age }}
 
