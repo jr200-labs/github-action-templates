@@ -147,7 +147,17 @@ own application-specific assertions and must remove containers they start.
 Build or smoke failures fail the check. The catalog is validated before any build.
 Run `python3 .shared/check-docker-images.py` locally for the same check. Private
 build-time registry authentication and cross-platform execution remain in the
-release publisher; this PR lane validates the runner's native platform.
+release publisher. This PR lane validates the runner's native platform.
+
+Set `ci-cache: true` at the top level of `.github/images.yaml` to opt in to
+restoring BuildKit image layers. Sync the updated `docker-ci` group first.
+Dispatch `ci-docker` on the default branch to seed or refresh the cache after
+dependency or toolchain changes. Pull requests restore that cache. Default-branch
+dispatches export intermediate layers and save them after smoke tests pass.
+The cache is scoped to the repository and native runner architecture. Enable it
+only for image builds whose intermediate layers are safe for PRs to read.
+Buildx setup failures fall back to the local Docker build. Cache misses build
+normally.
 
 Add generic build capabilities here and release them before adopting them in a
 consumer. A missing shared Docker check is a reason to extend GAT; application
