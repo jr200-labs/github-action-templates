@@ -88,6 +88,25 @@ if sys.argv[1] == 'build' and os.environ.get('FAIL_BUILD'):
         self.assertNotEqual(first[2], second[2])
         self.assertFalse((self.root / 'unexpected').exists())
 
+    def test_workflow_uses_one_path_for_save_and_restore(self):
+        workflow = json.loads(subprocess.check_output(
+            ['yq', '-o=json', str(ROOT / '.github/workflows/ci_docker.yaml')], text=True))
+        steps = {step.get('name'): step for step in workflow['jobs']['image']['steps']}
+        restore = steps['Restore image layers']
+        save = steps['Save image layers']
+        self.assertEqual(restore['with']['path'], save['with']['path'])
+        self.assertEqual(restore['with']['key'], save['with']['key'])
+
+        cache = self.root / 'gat-image-cache'
+        export = cache / 'export' / '0'
+        export.mkdir(parents=True)
+        (export / 'index.json').write_text('seeded')
+        stage = steps['Stage restored image layers']
+        subprocess.run(['bash', '-ec', stage['run']],
+                       env=dict(self.env, RUNNER_TEMP=str(self.root)), check=True)
+        self.assertEqual((cache / 'import' / '0' / 'index.json').read_text(), 'seeded')
+        self.assertFalse((cache / 'export').exists())
+
     def test_cache_import_and_export_keep_smoke_and_cleanup(self):
         self.catalog([{}, {'dockerfile': 'two/Dockerfile', 'smoke-test': ['/bin/true']}])
         cache = self.root / 'cache'
