@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """Build local production images and run optional repository-owned assertions."""
 import json
+import os
 from pathlib import Path
 import subprocess
+import time
 import uuid
 
 
@@ -35,18 +37,40 @@ def images():
     return entries
 
 
+def build_command(entry, tag, index):
+    dockerfile = entry.get('dockerfile', 'Dockerfile')
+    builder = os.environ.get('GAT_DOCKER_BUILDER')
+    if not builder:
+        return ['docker', 'build', '--tag', tag, '--file', dockerfile]
+    cache = Path(os.environ['GAT_DOCKER_CACHE_DIR'])
+    cache_import = cache / 'import' / str(index)
+    cache_export = cache / 'export' / str(index)
+    command = ['docker', 'buildx', 'build', '--builder', builder, '--load', '--progress=plain',
+               '--tag', tag, '--file', dockerfile]
+    if (cache_import / 'index.json').is_file():
+        command.extend(['--cache-from', f'type=local,src={cache_import}'])
+    if os.environ.get('GAT_DOCKER_CACHE_EXPORT') == 'true':
+        cache_export.mkdir(parents=True, exist_ok=True)
+        command.extend(['--cache-to', f'type=local,dest={cache_export},mode=max,ignore-error=true'])
+    return command
+
+
 def main():
-    for entry in images():
+    for index, entry in enumerate(images()):
         tag = f'gat-ci:{uuid.uuid4().hex}'
-        command = ['docker', 'build', '--tag', tag, '--file', entry.get('dockerfile', 'Dockerfile')]
+        command = build_command(entry, tag, index)
         for context in entry.get('build_contexts', '').splitlines():
             if context.strip():
                 command.extend(['--build-context', context.strip()])
         command.append(entry.get('context', '.'))
         try:
+            started = time.monotonic()
             subprocess.run(command, check=True)
+            print(f"Image {index + 1} build and load: {time.monotonic() - started:.1f}s", flush=True)
             if entry.get('smoke-test'):
+                started = time.monotonic()
                 subprocess.run([*entry['smoke-test'], tag], check=True)
+                print(f"Image {index + 1} smoke test: {time.monotonic() - started:.1f}s", flush=True)
         finally:
             subprocess.run(['docker', 'image', 'rm', tag], check=False)
 

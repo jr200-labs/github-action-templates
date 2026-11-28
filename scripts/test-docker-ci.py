@@ -88,6 +88,35 @@ if sys.argv[1] == 'build' and os.environ.get('FAIL_BUILD'):
         self.assertNotEqual(first[2], second[2])
         self.assertFalse((self.root / 'unexpected').exists())
 
+    def test_cache_import_and_export_keep_smoke_and_cleanup(self):
+        self.catalog([{}, {'dockerfile': 'two/Dockerfile', 'smoke-test': ['/bin/true']}])
+        cache = self.root / 'cache'
+        restored = cache / 'import' / '0'
+        restored.mkdir(parents=True)
+        (restored / 'index.json').write_text('{}')
+        self.env.update(GAT_DOCKER_BUILDER='ci-builder', GAT_DOCKER_CACHE_DIR=str(cache),
+                        GAT_DOCKER_CACHE_EXPORT='true')
+        result = self.run_verifier()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        first, cleanup, second, second_cleanup = self.calls()
+        self.assertEqual(first[:7], ['buildx', 'build', '--builder', 'ci-builder', '--load',
+                                     '--progress=plain', '--tag'])
+        self.assertIn(f'type=local,src={restored}', first)
+        self.assertNotIn('--cache-from', second)
+        for index, command in enumerate((first, second)):
+            destination = cache / 'export' / str(index)
+            self.assertIn(f'type=local,dest={destination},mode=max,ignore-error=true', command)
+        self.assertIn('Image 2 smoke test:', result.stdout)
+        self.assertEqual(cleanup, ['image', 'rm', first[7]])
+        self.assertEqual(second_cleanup, ['image', 'rm', second[7]])
+
+        self.log.unlink()
+        self.env['GAT_DOCKER_CACHE_EXPORT'] = 'false'
+        result = self.run_verifier()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('--cache-from', self.calls()[0])
+        self.assertNotIn('--cache-to', self.calls()[0])
+
     def test_failed_build_stops_before_smoke_and_cleans_up(self):
         self.catalog([{'smoke-test': ['./missing-smoke']}])
         self.env['FAIL_BUILD'] = '1'
