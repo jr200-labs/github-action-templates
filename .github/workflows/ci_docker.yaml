@@ -13,7 +13,8 @@ permissions:
 jobs:
   image:
     runs-on: ${{ inputs.runner }}
-    timeout-minutes: 10
+    # A manual default-branch run can populate the cache from a cold builder.
+    timeout-minutes: ${{ github.event_name == 'workflow_dispatch' && github.ref_name == github.event.repository.default_branch && 30 || 10 }}
     steps:
       - uses: actions/checkout@v7
       - name: Read image cache setting

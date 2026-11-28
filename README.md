@@ -124,8 +124,9 @@ Opt into `docker-ci` for production-image validation on pull requests. Sync the
 released group to install `ci-docker.yaml` and `.shared/check-docker-images.py`.
 The canonical caller uses the shared `ci_docker.yaml` reusable with contents-read
 permission and the configured default runner. It builds locally without registry
-login, publication or artifact uploads. The ten-minute job limit includes smoke
-tests. Docker, Python 3 and yq must be installed on the runner.
+login, publication or artifact uploads. The ten-minute PR job limit includes smoke
+tests. Manual runs on the default branch have a 30-minute limit for cold cache
+seeding. Docker, Python 3 and yq must be installed on the runner.
 
 The verifier uses `.github/images.yaml`, the same catalog as publication. Without
 a catalog, it builds `Dockerfile` or `docker/Dockerfile` with the repository root
