@@ -14,6 +14,31 @@ def workflow(name):
 
 
 class ProjectCI(unittest.TestCase):
+    def test_node_ci_options_preserve_defaults_and_allow_runner_reuse(self):
+        jobs = workflow('ci_npmjs.yaml')['jobs']
+        unit = jobs['unit']
+        separate = jobs['integration']
+        options = next(step for step in unit['steps'] if step.get('id') == 'ci-options')
+        cache = next(step for step in unit['steps'] if step.get('name') == 'Cache Next.js build')
+        inline = next(step for step in unit['steps'] if step.get('name') == 'Integration tests')
+        self.assertEqual(cache['if'], "steps.ci-options.outputs.cache-nextjs == 'true'")
+        self.assertEqual(inline['if'], "inputs.run-integration && steps.ci-options.outputs.inline-integration == 'true'")
+        self.assertEqual(unit['outputs']['inline-integration'], '${{ steps.ci-options.outputs.inline-integration }}')
+        self.assertEqual(separate['if'], "inputs.run-integration && needs.unit.outputs.inline-integration != 'true'")
+        self.assertEqual(inline['run'], separate['steps'][-1]['run'])
+        for manifest, expected in (
+            ({}, 'inline-integration=false\ncache-nextjs=true\n'),
+            ({'config': {'ci_inline_integration': True, 'ci_cache_nextjs': False}},
+             'inline-integration=true\ncache-nextjs=false\n'),
+        ):
+            with self.subTest(manifest=manifest), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                output = root / 'output'
+                (root / 'package.json').write_text(json.dumps(manifest))
+                subprocess.run(['bash', '-c', options['run']], cwd=root,
+                               env=dict(os.environ, GITHUB_OUTPUT=str(output)), check=True)
+                self.assertEqual(output.read_text(), expected)
+
     def test_linter_binary_caches_skip_install_on_hits_and_save_before_lint(self):
         for file, job, tool, cache_id, version, lint in (
             ('ci.yaml', 'validate-workflow-syntax', 'actionlint', 'actionlint-cache', 'v1.7.12', 'Run actionlint'),
